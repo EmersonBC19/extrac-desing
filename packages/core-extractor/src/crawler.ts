@@ -331,10 +331,20 @@ export class SiteCrawler {
             // Intento 1: Navegación SPA por clic en enlace de sidebar
             const clicked = await page.evaluate((targetRoute) => {
               try {
-                const clean = targetRoute.replace(/^\/administration\//, '');
-                const links = Array.from(document.querySelectorAll('a, [routerlink]'));
+                const clean = targetRoute.replace(/^\/administration\//, '').replace(/^\//, '');
+
+                // Desplegar acordeones de menú si están contraídos
+                const accordions = Array.from(document.querySelectorAll('aside [class*="item"], nav [class*="item"], .sidebar-item'));
+                for (const acc of accordions) {
+                  const sub = acc.nextElementSibling || acc.querySelector('.sidebar-sublist');
+                  if (sub && window.getComputedStyle(sub).display === 'none') {
+                    (acc as HTMLElement).click();
+                  }
+                }
+
+                const links = Array.from(document.querySelectorAll('a, [routerlink], [ng-reflect-router-link], [role="menuitem"], .sidebar-subitem, .sidebar-item'));
                 for (const link of links) {
-                  const href = link.getAttribute('href') || link.getAttribute('routerlink') || '';
+                  const href = link.getAttribute('href') || link.getAttribute('routerlink') || link.getAttribute('ng-reflect-router-link') || '';
                   if (href.includes(targetRoute) || (clean.length > 2 && href.includes(clean))) {
                     (link as HTMLElement).click();
                     return true;
@@ -389,13 +399,26 @@ export class SiteCrawler {
               const node = evalFn(targetEl);
               if (node) {
                 node.name = 'Screen / ' + screenName;
+                node.layout = node.layout || {};
+                node.layout.mode = 'NONE'; // Lienzo raíz fijo 1440x900 libre para capas superpuestas
               }
               return node;
             },
             { scriptCode: browserDomExtractorScript, sel: contentSelector, screenName: screenTitle }
           );
 
+          function countTreeNodes(n: any): number {
+            let c = 1;
+            if (n && n.children) {
+              for (const ch of n.children) c += countTreeNodes(ch);
+            }
+            return c;
+          }
+
           if (uiNode) {
+            const count = countTreeNodes(uiNode);
+            console.log(`   📊 Vista base extraída: "${screenTitle}" (${count} elementos, URL: ${page.url()})`);
+
             const screenResult: CrawlScreenResult = {
               title: screenTitle,
               routeOrTab: target.route,
@@ -431,13 +454,19 @@ export class SiteCrawler {
                       const targetEl = document.querySelector(sel);
                       if (!targetEl) return null;
                       const node = evalFn(targetEl);
-                      if (node) node.name = 'Screen / ' + screenName;
+                      if (node) {
+                        node.name = 'Screen / ' + screenName;
+                        node.layout = node.layout || {};
+                        node.layout.mode = 'NONE';
+                      }
                       return node;
                     },
                     { scriptCode: browserDomExtractorScript, sel: contentSelector, screenName: tabScreenTitle }
                   );
 
                   if (tabNode) {
+                    const count = countTreeNodes(tabNode);
+                    console.log(`      📑 Pestaña extraída: "${tabScreenTitle}" (${count} elementos)`);
                     const tabResult: CrawlScreenResult = {
                       title: tabScreenTitle,
                       routeOrTab: `${target.route}#tab-${t}`,
@@ -531,13 +560,19 @@ export class SiteCrawler {
                         const targetEl = document.querySelector(sel);
                         if (!targetEl) return null;
                         const node = evalFn(targetEl);
-                        if (node) node.name = 'Screen / ' + screenName;
+                        if (node) {
+                          node.name = 'Screen / ' + screenName;
+                          node.layout = node.layout || {};
+                          node.layout.mode = 'NONE';
+                        }
                         return node;
                       },
                       { scriptCode: browserDomExtractorScript, sel: contentSelector, screenName: modalScreenTitle }
                     );
 
                     if (modalNode) {
+                      const count = countTreeNodes(modalNode);
+                      console.log(`      🗂️ Modal extraído: "${modalScreenTitle}" (${count} elementos)`);
                       const modalResult: CrawlScreenResult = {
                         title: modalScreenTitle,
                         routeOrTab: `${target.route}#modal-${m + 1}`,

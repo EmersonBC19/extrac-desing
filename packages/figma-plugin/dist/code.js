@@ -313,11 +313,17 @@ async function buildFigmaNode(nodeData) {
                             else if (childData.layout?.width === 'HUG' && 'layoutSizingHorizontal' in layoutChild) {
                                 layoutChild.layoutSizingHorizontal = 'HUG';
                             }
+                            else if (typeof childData.layout?.width === 'number' && 'layoutSizingHorizontal' in layoutChild) {
+                                layoutChild.layoutSizingHorizontal = 'FIXED';
+                            }
                             if (childData.layout?.height === 'FILL' && 'layoutSizingVertical' in layoutChild) {
                                 layoutChild.layoutSizingVertical = 'FILL';
                             }
                             else if (childData.layout?.height === 'HUG' && 'layoutSizingVertical' in layoutChild) {
                                 layoutChild.layoutSizingVertical = 'HUG';
+                            }
+                            else if (typeof childData.layout?.height === 'number' && 'layoutSizingVertical' in layoutChild) {
+                                layoutChild.layoutSizingVertical = 'FIXED';
                             }
                             if (childData.layout?.positioning === 'ABSOLUTE' && 'layoutPositioning' in layoutChild) {
                                 layoutChild.layoutPositioning = 'ABSOLUTE';
@@ -342,8 +348,22 @@ async function buildFigmaNode(nodeData) {
                 if (nodeData.layout?.width === 'HUG') {
                     frame.layoutSizingHorizontal = 'HUG';
                 }
+                else if (nodeData.layout?.width === 'FILL') {
+                    frame.layoutSizingHorizontal = 'FILL';
+                }
+                else if (typeof nodeData.layout?.width === 'number' && nodeData.layout.width > 0) {
+                    frame.layoutSizingHorizontal = 'FIXED';
+                    frame.resize(nodeData.layout.width, frame.height);
+                }
                 if (nodeData.layout?.height === 'HUG') {
                     frame.layoutSizingVertical = 'HUG';
+                }
+                else if (nodeData.layout?.height === 'FILL') {
+                    frame.layoutSizingVertical = 'FILL';
+                }
+                else if (typeof nodeData.layout?.height === 'number' && nodeData.layout.height > 0) {
+                    frame.layoutSizingVertical = 'FIXED';
+                    frame.resize(frame.width, nodeData.layout.height);
                 }
             }
             createdNode = frame;

@@ -69,72 +69,77 @@ function extractNodeTree(element, counter = { id: 0 }, parentRect = null) {
   const vpW = window.innerWidth || 1440;
   const vpH = window.innerHeight || 900;
 
-  // 1. Descartar elementos colapsados (acordeones cerrados, max-height:0 con overflow hidden)
-  const isZeroClipped = (rect.height <= 0.5 || rect.width <= 0.5) &&
-    (style.overflow === 'hidden' || style.overflowY === 'hidden' || style.overflowX === 'hidden' || style.maxHeight === '0px');
+  // 1. Descartar elementos colapsados (acordeones cerrados con max-height:0 o height:0)
+  const isZeroClipped = (rect.height <= 0.5) &&
+    (style.overflow === 'hidden' || style.overflowY === 'hidden') &&
+    (style.maxHeight === '0px' || style.height === '0px');
   if (isZeroClipped) return null;
 
   // Filtrado de elementos fuera de pantalla
   if (element.children.length === 0) {
     if (rect.width <= 0 && rect.height <= 0 && (!element.textContent || !element.textContent.trim())) return null;
     if (parentRect !== null && (rect.left >= vpW + 100 || rect.right <= -100)) return null;
-    // CLIPPING: ignorar hojas que estén debajo del viewport visible
-    if (parentRect !== null && rect.top >= vpH + 50) return null;
+    // Ignorar hojas que estén excesivamente abajo
+    if (parentRect !== null && rect.top >= 3500) return null;
   } else {
-    if (parentRect !== null && rect.right < -200) return null;
-    if (rect.width <= 0 && rect.height <= 0) return null;
+    // Para contenedores con hijos: NUNCA descartar por rect.width <= 0 o rect.height <= 0
+    // (en Angular y HTML5, elementos personalizados como <app-users> tienen display:inline con rect 0x0)
+    if (parentRect !== null && rect.right < -400) return null;
   }
 
   const currentId = 'node_' + (++counter.id);
   const relX = parentRect ? Math.round(rect.left - parentRect.left) : 0;
   const relY = parentRect ? Math.round(rect.top - parentRect.top) : 0;
 
-  // ── parseColor robusto: rgb/rgba (espacio o coma), hex (3,6,8), fallback canvas GPU ──
+  // ── parseColor robusto: rgb/rgba (espacio o coma), hex (3,4,6,8), fallback con canvas GPU compartido ──
+  let _sharedCanvas = null;
+  let _sharedCtx = null;
   function parseColor(str) {
     if (!str || str === 'transparent' || str === 'inherit' || str === 'initial' || str === 'currentcolor') return null;
-
-    // 1. rgb / rgba estándar (soporta comas o espacios y barras / alpha)
-    const rgbM = str.match(/^rgba?\\(\\s*([\\d.]+)[,\\s]+([\\d.]+)[,\\s]+([\\d.]+)(?:[,\\s/]+([\\d.]+%?))?\\s*\\)$/i);
-    if (rgbM) {
-      let a = 1;
-      if (rgbM[4] !== undefined) {
-        a = rgbM[4].endsWith('%') ? parseFloat(rgbM[4]) / 100 : parseFloat(rgbM[4]);
-      }
-      return {
-        r: Math.max(0, Math.min(1, parseFloat(rgbM[1]) / 255)),
-        g: Math.max(0, Math.min(1, parseFloat(rgbM[2]) / 255)),
-        b: Math.max(0, Math.min(1, parseFloat(rgbM[3]) / 255)),
-        a: Math.max(0, Math.min(1, a))
-      };
-    }
-
-    // 2. Hex #rgb, #rgba, #rrggbb, #rrggbbaa
-    const hexM = str.match(/^#([a-f\\d]{3,8})$/i);
-    if (hexM) {
-      let hex = hexM[1];
-      if (hex.length === 3) hex = hex[0]+hex[0] + hex[1]+hex[1] + hex[2]+hex[2];
-      if (hex.length === 6) {
-        return { r: parseInt(hex.slice(0,2),16)/255, g: parseInt(hex.slice(2,4),16)/255, b: parseInt(hex.slice(4,6),16)/255, a: 1 };
-      }
-      if (hex.length === 8) {
-        return { r: parseInt(hex.slice(0,2),16)/255, g: parseInt(hex.slice(2,4),16)/255, b: parseInt(hex.slice(4,6),16)/255, a: parseInt(hex.slice(6,8),16)/255 };
+    str = str.trim();
+    if (str.startsWith('rgb')) {
+      const open = str.indexOf('(');
+      const close = str.lastIndexOf(')');
+      if (open > -1 && close > open) {
+        const parts = str.slice(open + 1, close).split(/[, /]+/).map(s => s.trim()).filter(Boolean);
+        if (parts.length >= 3) {
+          const r = Math.max(0, Math.min(255, parseFloat(parts[0]))) / 255;
+          const g = Math.max(0, Math.min(255, parseFloat(parts[1]))) / 255;
+          const b = Math.max(0, Math.min(255, parseFloat(parts[2]))) / 255;
+          let a = 1;
+          if (parts.length >= 4) {
+            a = parts[3].endsWith('%') ? parseFloat(parts[3]) / 100 : parseFloat(parts[3]);
+          }
+          return { r, g, b, a: Math.max(0, Math.min(1, a)) };
+        }
       }
     }
-
-    // 3. Fallback universal con canvas GPU para resolver hsl, oklch, color-mix, nombres CSS, etc.
+    if (str.startsWith('#')) {
+      let h = str.slice(1);
+      if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+      else if (h.length === 4) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2]+h[3]+h[3];
+      if (h.length === 6) {
+        return { r: parseInt(h.slice(0,2),16)/255, g: parseInt(h.slice(2,4),16)/255, b: parseInt(h.slice(4,6),16)/255, a: 1 };
+      }
+      if (h.length === 8) {
+        return { r: parseInt(h.slice(0,2),16)/255, g: parseInt(h.slice(2,4),16)/255, b: parseInt(h.slice(4,6),16)/255, a: parseInt(h.slice(6,8),16)/255 };
+      }
+    }
     try {
-      const c = document.createElement('canvas');
-      c.width = 1; c.height = 1;
-      const ctx = c.getContext('2d', { willReadFrequently: true });
-      if (ctx) {
-        ctx.fillStyle = str;
-        ctx.fillRect(0, 0, 1, 1);
-        const d = ctx.getImageData(0, 0, 1, 1).data;
+      if (!_sharedCanvas) {
+        _sharedCanvas = document.createElement('canvas');
+        _sharedCanvas.width = 1; _sharedCanvas.height = 1;
+        _sharedCtx = _sharedCanvas.getContext('2d', { willReadFrequently: true });
+      }
+      if (_sharedCtx) {
+        _sharedCtx.clearRect(0, 0, 1, 1);
+        _sharedCtx.fillStyle = str;
+        _sharedCtx.fillRect(0, 0, 1, 1);
+        const d = _sharedCtx.getImageData(0, 0, 1, 1).data;
         if (d[3] === 0) return null;
         return { r: d[0]/255, g: d[1]/255, b: d[2]/255, a: d[3]/255 };
       }
     } catch(_e){}
-
     return null;
   }
 
@@ -339,8 +344,10 @@ function extractNodeTree(element, counter = { id: 0 }, parentRect = null) {
   const rootW = isRoot ? (vpW || 1440) : null;
   const rootH = isRoot ? (vpH || 900) : null;
 
-  const initialWidth = isRoot ? rootW : (mode === 'NONE' ? Math.round(rect.width) : 'HUG');
-  const initialHeight = isRoot ? rootH : (mode === 'NONE' ? Math.round(rect.height) : 'HUG');
+  const measuredW = Math.round(rect.width);
+  const measuredH = Math.round(rect.height);
+  const initialWidth = isRoot ? rootW : (measuredW > 0 ? measuredW : 'HUG');
+  const initialHeight = isRoot ? rootH : (measuredH > 0 ? measuredH : 'HUG');
 
   if (isRoot && fills.length === 0) {
     const htmlBg = parseColor(window.getComputedStyle(document.documentElement).backgroundColor);
@@ -430,15 +437,12 @@ function extractNodeTree(element, counter = { id: 0 }, parentRect = null) {
     }
   }
 
-  // ── 15. CLIPPING: asegurar hijos no desborden del frame raíz ──
+  // ── 15. CLIPPING: asegurar que elementos no se dispersen al infinito ──
   if (isRoot && node.children.length > 0) {
-    const maxW = typeof node.layout.width === 'number' ? node.layout.width : vpW;
-    const maxH = typeof node.layout.height === 'number' ? node.layout.height : vpH;
     node.children = node.children.filter(ch => {
       const cx = typeof ch.layout?.x === 'number' ? ch.layout.x : 0;
       const cy = typeof ch.layout?.y === 'number' ? ch.layout.y : 0;
-      // Solo filtrar los que están completamente fuera
-      return cx < maxW + 50 && cy < maxH + 50;
+      return cx < 3500 && cy < 4500;
     });
   }
 

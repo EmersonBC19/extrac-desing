@@ -1,0 +1,21 @@
+{
+  "name": "code-to-figma-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pipeline híbrido para convertir código UI (React, Tailwind, CSS) a componentes nativos en Figma con Auto Layout",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "build:contracts": "npm run build --workspace=@code-to-figma/contracts",
+    "build:plugin": "npm run build --workspace=@code-to-figma/plugin",
+    "watch:plugin": "npm run watch --workspace=@code-to-figma/plugin",
+    "test:send": "npm run test:send --workspace=@code-to-figma/mcp-server",
+    "crawl": "npm run crawl --workspace=@code-to-figma/mcp-server --",
+    "start:hub": "npm run start:hub --workspace=@code-to-figma/mcp-server"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

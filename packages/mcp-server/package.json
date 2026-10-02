@@ -1,0 +1,25 @@
+{
+  "name": "@code-to-figma/mcp-server",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "MCP Server and WebSocket Hub connecting IDE and AI agents to Figma",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start:hub": "tsx src/ws-hub.ts",
+    "test:send": "tsx src/test-send.ts",
+    "crawl": "tsx src/crawl-cli.ts"
+  },
+  "dependencies": {
+    "@code-to-figma/contracts": "*",
+    "@code-to-figma/core-extractor": "*",
+    "@modelcontextprotocol/sdk": "^1.6.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.8",
+    "@types/ws": "^8.5.14",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3"
+  }
+}

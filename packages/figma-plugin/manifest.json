@@ -1,0 +1,12 @@
+{
+  "name": "Code to Figma AI Bridge",
+  "id": "code-to-figma-bridge-local",
+  "api": "1.0.0",
+  "main": "dist/code.js",
+  "ui": "src/ui.html",
+  "editorType": ["figma"],
+  "networkAccess": {
+    "allowedDomains": ["*"],
+    "reasoning": "Permite conectar vía WebSocket local (ws://localhost:8080) con el servidor MCP y extractor"
+  }
+}

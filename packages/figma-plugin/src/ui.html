@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>⚡ Code to Figma Bridge</title>
+  <style>
+    :root {
+      --bg: #0c0d12;
+      --card-bg: rgba(26, 29, 39, 0.7);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --card-border-hover: rgba(59, 130, 246, 0.4);
+      --text: #f3f4f6;
+      --text-muted: #9ca3af;
+      --accent: #3b82f6;
+      --accent-glow: rgba(59, 130, 246, 0.25);
+      --green: #10b981;
+      --green-glow: rgba(16, 185, 129, 0.2);
+      --red: #ef4444;
+      --red-glow: rgba(239, 68, 68, 0.2);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      padding: 14px;
+      font-size: 11px;
+      user-select: none;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    /* Header con glassmorphism */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand-icon {
+      width: 26px;
+      height: 26px;
+      border-radius: 7px;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 10px var(--accent-glow);
+    }
+
+    .brand-title {
+      font-weight: 700;
+      font-size: 12px;
+      letter-spacing: -0.2px;
+      background: linear-gradient(180deg, #ffffff, #cbd5e1);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-version {
+      font-size: 9px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    /* Badges de conexión con pulso */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 9px;
+      border-radius: 9999px;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.2px;
+      transition: all 0.2s ease;
+    }
+
+    .badge.connected {
+      background: rgba(16, 185, 129, 0.12);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      box-shadow: 0 0 12px var(--green-glow);
+    }
+
+    .badge.disconnected {
+      background: rgba(239, 68, 68, 0.12);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      box-shadow: 0 0 12px var(--red-glow);
+    }
+
+    .pulse-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 6px currentColor;
+      animation: pulse 2s infinite ease-in-out;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(1.2); }
+    }
+
+    /* Métricas Grid */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .metric-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      backdrop-filter: blur(8px);
+      transition: border-color 0.2s ease;
+    }
+
+    .metric-card:hover {
+      border-color: var(--card-border-hover);
+    }
+
+    .metric-label {
+      color: var(--text-muted);
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 3px;
+    }
+
+    .metric-value {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .metric-value.highlight {
+      color: #60a5fa;
+    }
+
+    /* Barra de herramientas / Acciones rápidas */
+    .actions-bar {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    .action-btn {
+      flex: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--card-border);
+      color: var(--text);
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .action-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .action-btn.danger:hover {
+      background: rgba(239, 68, 68, 0.15);
+      border-color: rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+    }
+
+    /* Terminal de Logs en vivo */
+    .log-panel {
+      flex: 1;
+      background: #07080b;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+
+    .log-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 9px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    .log-content {
+      flex: 1;
+      overflow-y: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 10px;
+      display: flex;
+      flex-direction: column-reverse;
+      gap: 3px;
+    }
+
+    .log-content::-webkit-scrollbar {
+      width: 4px;
+    }
+    .log-content::-webkit-scrollbar-thumb {
+      background: #27272a;
+      border-radius: 4px;
+    }
+
+    .log-item {
+      line-height: 1.3;
+      word-break: break-all;
+    }
+    .log-item.info { color: #94a3b8; }
+    .log-item.success { color: #34d399; }
+    .log-item.warn { color: #facc15; }
+    .log-item.error { color: #f87171; }
+    .log-time { color: #475569; margin-right: 4px; }
+
+    /* Footer con info de red */
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: #64748b;
+      font-size: 9px;
+    }
+
+    .server-status {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <div class="header">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+        </svg>
+      </div>
+      <div>
+        <div class="brand-title">Code to Figma AI</div>
+        <div class="brand-version">v2.0 Ultra-Lite</div>
+      </div>
+    </div>
+    <div id="statusBadge" class="badge disconnected">
+      <span class="pulse-dot"></span>
+      <span id="statusText">Desconectado</span>
+    </div>
+  </div>
+
+  <!-- Métricas en vivo -->
+  <div class="metrics-grid">
+    <div class="metric-card">
+      <div class="metric-label">Renders</div>
+      <div class="metric-value highlight" id="renderCount">0</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Nodos Pintados</div>
+      <div class="metric-value" id="nodeCount">0</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Latencia</div>
+      <div class="metric-value" id="latencyVal">-- ms</div>
+    </div>
+  </div>
+
+  <!-- Barra de Acciones Rápidas -->
+  <div class="actions-bar">
+    <button id="zoomBtn" class="action-btn" title="Enfocar los componentes en el lienzo">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
+      Enfocar
+    </button>
+    <button id="clearBtn" class="action-btn danger" title="Limpiar la página actual de Figma">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+      Limpiar Lienzo
+    </button>
+  </div>
+
+  <!-- Panel de logs -->
+  <div class="log-panel">
+    <div class="log-header">
+      <span>Consola de Actividad</span>
+      <span id="activePageName">Página: Inicial</span>
+    </div>
+    <div class="log-content" id="logContainer">
+      <div class="log-item info"><span class="log-time">[Init]</span> Esperando conexión a ws://localhost:8080...</div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <div class="server-status">
+      <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"></circle></svg>
+      <span id="serverUrl">ws://localhost:8080</span>
+    </div>
+    <span>Auto Layout & Fonts Sync</span>
+  </div>
+
+  <script>
+    const WS_URL = 'ws://localhost:8080';
+    let socket = null;
+    let reconnectTimeout = null;
+    let renderCount = 0;
+    let totalNodesDrawn = 0;
+    let lastRenderStartTime = 0;
+
+    const statusBadge = document.getElementById('statusBadge');
+    const statusText = document.getElementById('statusText');
+    const logContainer = document.getElementById('logContainer');
+    const renderCountEl = document.getElementById('renderCount');
+    const nodeCountEl = document.getElementById('nodeCount');
+    const latencyEl = document.getElementById('latencyVal');
+    const activePageEl = document.getElementById('activePageName');
+    const clearBtn = document.getElementById('clearBtn');
+    const zoomBtn = document.getElementById('zoomBtn');
+
+    function log(message, type = 'info') {
+      const entry = document.createElement('div');
+      entry.className = `log-item ${type}`;
+      const now = new Date();
+      const time = now.toTimeString().split(' ')[0] + '.' + String(now.getMilliseconds()).padStart(3, '0').slice(0, 2);
+      entry.innerHTML = `<span class="log-time">[${time}]</span> ${message}`;
+      logContainer.prepend(entry);
+    }
+
+    function setStatus(connected, text) {
+      if (connected) {
+        statusBadge.className = 'badge connected';
+        statusText.textContent = text || 'En línea';
+      } else {
+        statusBadge.className = 'badge disconnected';
+        statusText.textContent = text || 'Desconectado';
+      }
+    }
+
+    function connect() {
+      if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+        return;
+      }
+
+      try {
+        socket = new WebSocket(WS_URL);
+
+        socket.onopen = () => {
+          setStatus(true, 'En línea');
+          log('Conectado al Hub local (ws://localhost:8080)', 'success');
+          socket.send(JSON.stringify({
+            type: 'REGISTER_CLIENT',
+            clientType: 'FIGMA_PLUGIN'
+          }));
+        };
+
+        socket.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'RENDER_NODES') {
+              renderCount++;
+              renderCountEl.textContent = renderCount;
+              lastRenderStartTime = performance.now();
+
+              const name = data.payload?.rootNode?.name || 'Componente';
+              log(`Procesando render: "${name}"`, 'info');
+
+              parent.postMessage({
+                pluginMessage: {
+                  type: 'RENDER_NODES',
+                  payload: data.payload
+                }
+              }, '*');
+            } else if (data.type === 'PING') {
+              socket.send(JSON.stringify({ type: 'PONG' }));
+            }
+          } catch (err) {
+            log('Error parseando payload: ' + err.message, 'error');
+          }
+        };
+
+        socket.onclose = () => {
+          setStatus(false, 'Reconectando...');
+          clearTimeout(reconnectTimeout);
+          reconnectTimeout = setTimeout(connect, 2500);
+        };
+
+        socket.onerror = () => {};
+      } catch (err) {
+        setStatus(false, 'Error');
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = setTimeout(connect, 3000);
+      }
+    }
+
+    // Mensajes recibidos del motor Figma (code.ts)
+    window.onmessage = (event) => {
+      const msg = event.data.pluginMessage;
+      if (!msg) return;
+
+      if (msg.type === 'RENDER_SUCCESS') {
+        const elapsed = Math.round(performance.now() - lastRenderStartTime);
+        latencyEl.textContent = `${elapsed} ms`;
+
+        const drawnCount = msg.nodeCount || 1;
+        totalNodesDrawn += drawnCount;
+        nodeCountEl.textContent = totalNodesDrawn;
+
+        if (msg.pageName) {
+          activePageEl.textContent = `Página: ${msg.pageName}`;
+        }
+
+        log(`✓ Dibujado en Figma: "${msg.name}" (${elapsed}ms)`, 'success');
+
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({
+            type: 'RENDER_SUCCESS',
+            nodeId: msg.nodeId,
+            name: msg.name,
+            durationMs: elapsed
+          }));
+        }
+      } else if (msg.type === 'RENDER_ERROR') {
+        log(`✗ Error en Figma: ${msg.error}`, 'error');
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({
+            type: 'RENDER_ERROR',
+            error: msg.error
+          }));
+        }
+      }
+    };
+
+    // Botones de acción
+    clearBtn.addEventListener('click', () => {
+      parent.postMessage({ pluginMessage: { type: 'CLEAR_PAGE' } }, '*');
+      log('Lienzo actual limpiado', 'warn');
+    });
+
+    zoomBtn.addEventListener('click', () => {
+      parent.postMessage({ pluginMessage: { type: 'ZOOM_ALL' } }, '*');
+    });
+
+    // Iniciar conexión automática
+    connect();
+  </script>
+</body>
+</html>

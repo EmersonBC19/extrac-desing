@@ -1,0 +1,19 @@
+{
+  "name": "@code-to-figma/core-extractor",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Headless browser and AST extractor that converts rendered DOM and source code to UINode trees",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@code-to-figma/contracts": "*",
+    "playwright": "^1.50.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.8",
+    "typescript": "^5.7.3"
+  }
+}

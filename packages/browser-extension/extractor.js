@@ -591,7 +591,6 @@
         return c && c !== "none" && c !== "normal";
       });
       if (!hasText && !isReplaced && !hasPseudo && (rect.width <= 0.5 || rect.height <= 0.5)) return null;
-      if (parentRect !== null && rect.top - parentRect.top >= 12e3) return null;
     }
     const currentId = "node_" + ++counter.id;
     const relX = parentRect ? Math.round(rect.left - parentRect.left) : 0;
@@ -2007,6 +2006,82 @@
     return node;
   }
 
+  // packages/core-extractor/src/browser/capture.ts
+  var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  var nextFrame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
+  var intersects = (a, b) => a.left < b.left + b.width && b.left < a.left + a.width && a.top < b.top + b.height && b.top < a.top + a.height;
+  function hideFloatingElements(keep) {
+    const hidden = [];
+    for (const el of Array.from(document.body ? document.body.querySelectorAll("*") : [])) {
+      const pos = getComputedStyle(el).position;
+      if (pos !== "fixed" && pos !== "sticky") continue;
+      const r = el.getBoundingClientRect();
+      const rect = { left: r.left, top: r.top, width: r.width, height: r.height };
+      if (keep.some((k) => intersects(rect, k))) continue;
+      hidden.push([el, el.style.getPropertyValue("visibility"), el.style.getPropertyPriority("visibility")]);
+      el.style.setProperty("visibility", "hidden", "important");
+    }
+    return () => {
+      for (const [el, value, priority] of hidden) {
+        if (value) el.style.setProperty("visibility", value, priority);
+        else el.style.removeProperty("visibility");
+      }
+    };
+  }
+  async function captureRegionsAcrossPage(rects, capture, options = {}) {
+    const { minIntervalMs = 600, maxBands = 20, settleMs = 120 } = options;
+    const out = rects.map(() => null);
+    if (!rects.length) return out;
+    const vh = window.innerHeight;
+    const startX = window.scrollX;
+    const startY = window.scrollY;
+    let lastShot = 0;
+    const shoot = async (idx, shifted) => {
+      const wait = lastShot + minIntervalMs - Date.now();
+      if (lastShot && wait > 0) await sleep(wait);
+      lastShot = Date.now();
+      const crops = await capture(shifted) || [];
+      idx.forEach((i, k) => {
+        out[i] = crops[k] || null;
+      });
+    };
+    const visible = [];
+    const offscreen = [];
+    rects.forEach((r, i) => (r.top < vh && r.top + r.height > 0 ? visible : offscreen).push(i));
+    if (visible.length)
+      await shoot(
+        visible,
+        visible.map((i) => rects[i])
+      );
+    if (!offscreen.length) return out;
+    const docTop = (i) => rects[i].top + startY;
+    const pending = offscreen.slice().sort((a, b) => docTop(a) - docTop(b));
+    const restoreFloating = hideFloatingElements(offscreen.map((i) => rects[i]));
+    try {
+      let bands = 0;
+      while (pending.length && bands < maxBands) {
+        bands++;
+        const target = Math.max(0, docTop(pending[0]) - 16);
+        window.scrollTo({ left: startX, top: target, behavior: "instant" });
+        await nextFrame();
+        await sleep(settleMs);
+        const y = window.scrollY;
+        const band = pending.filter((i) => docTop(i) >= y - 1 && docTop(i) < y + vh);
+        if (!band.length) break;
+        await shoot(
+          band,
+          band.map((i) => ({ ...rects[i], top: docTop(i) - y }))
+        );
+        for (const i of band) pending.splice(pending.indexOf(i), 1);
+      }
+    } finally {
+      restoreFloating();
+      window.scrollTo({ left: startX, top: startY, behavior: "instant" });
+      await nextFrame();
+    }
+    return out;
+  }
+
   // packages/core-extractor/src/browser/images.ts
   function isImageDataUri(value) {
     return typeof value === "string" && /^data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=\s]*$/i.test(value);
@@ -2100,18 +2175,21 @@
         }
       })
     );
-    const vw = window.innerWidth, vh = window.innerHeight;
+    const vw = window.innerWidth;
     const shotNodes = [];
     (function collectShot(n) {
       const r = n._vpRect;
-      if (!n.imageData && r && (n._needsShot || n._hadPendingImage) && (!n.children || n.children.length === 0) && r.width > 2 && r.height > 2 && r.left < vw && r.top < vh && r.left + r.width > 0 && r.top + r.height > 0) {
+      if (!n.imageData && r && (n._needsShot || n._hadPendingImage) && (!n.children || n.children.length === 0) && r.width > 2 && r.height > 2 && r.left < vw && r.left + r.width > 0) {
         shotNodes.push(n);
       }
       (n.children || []).forEach(collectShot);
     })(rootNode);
     if (shotNodes.length > 0 && typeof window.__codeToFigmaCaptureRegions === "function") {
       try {
-        const crops = await window.__codeToFigmaCaptureRegions(shotNodes.map((n) => n._vpRect));
+        const crops = await captureRegionsAcrossPage(
+          shotNodes.map((n) => n._vpRect),
+          window.__codeToFigmaCaptureRegions
+        );
         (crops || []).forEach((c, i) => {
           if (isImageDataUri(c)) shotNodes[i].imageData = c;
         });

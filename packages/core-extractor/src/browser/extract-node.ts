@@ -71,7 +71,6 @@ export function extractNodeTree(
       return c && c !== 'none' && c !== 'normal';
     });
     if (!hasText && !isReplaced && !hasPseudo && (rect.width <= 0.5 || rect.height <= 0.5)) return null;
-    if (parentRect !== null && rect.top - parentRect.top >= 12000) return null;
   }
 
   const currentId = 'node_' + ++counter.id;

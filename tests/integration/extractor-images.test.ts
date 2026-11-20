@@ -85,3 +85,54 @@ describe('captura de pantalla para lo que el DOM no entrega (synthetic/shot.html
     expect(media.every((n: any) => n.imageData)).toBe(true);
   });
 });
+
+describe('páginas largas (synthetic/long.html)', () => {
+  /** Color del centro de una imagen dataURL, decodificada en el navegador */
+  const centerColor = (page: any, uri: string) =>
+    page.evaluate(async (src: string) => {
+      const im = new Image();
+      im.src = src;
+      await im.decode();
+      const c = document.createElement('canvas');
+      c.width = im.naturalWidth;
+      c.height = im.naturalHeight;
+      const ctx = c.getContext('2d')!;
+      ctx.drawImage(im, 0, 0);
+      const d = ctx.getImageData(c.width >> 1, c.height >> 1, 1, 1).data;
+      return [d[0], d[1], d[2]];
+    }, uri);
+  const near = (rgb: number[], hex: string) => {
+    const n = parseInt(hex.slice(1), 16);
+    const ref = [n >> 16, (n >> 8) & 255, n & 255];
+    return rgb.every((v, i) => Math.abs(v - ref[i]) < 24);
+  };
+
+  it('captura los iframes fuera de la pantalla, sin el header fijo encima, y deja la página como estaba', async () => {
+    const page = await B.page('synthetic/long.html');
+    const { rootNode } = await extract(page, ROOT);
+    const embeds = flatten(rootNode)
+      .map((x: any) => x.node)
+      .filter((n: any) => /^Embed/.test(n.name));
+    expect(embeds).toHaveLength(3);
+    expect(embeds.every((n: any) => n.imageData)).toBe(true);
+    // Cada captura es la de su iframe (no la de otra franja ni la del header rojo)
+    expect(near(await centerColor(page, embeds[0].imageData), '#2563eb')).toBe(true);
+    expect(near(await centerColor(page, embeds[1].imageData), '#16a34a')).toBe(true);
+    expect(near(await centerColor(page, embeds[2].imageData), '#f59e0b')).toBe(true);
+    // El header fijo vuelve a verse y el scroll vuelve a donde estaba
+    const after = await page.evaluate(() => ({
+      header: getComputedStyle(document.getElementById('bar')!).visibility,
+      inline: document.getElementById('bar')!.style.visibility,
+      top: Math.round(document.getElementById('root')!.getBoundingClientRect().top),
+    }));
+    expect(after).toEqual({ header: 'visible', inline: '', top: 0 });
+  }, 30_000);
+
+  it('una hoja a más de 12 000 px de su contenedor ya no se descarta', async () => {
+    const page = await B.page('synthetic/long.html');
+    const { rootNode } = await extract(page, "document.getElementById('tall')");
+    const leaves = flatten(rootNode).filter((x: any) => x.node !== rootNode);
+    expect(leaves).toHaveLength(1);
+    expect(leaves[0].node.layout.y).toBe(13000);
+  });
+});

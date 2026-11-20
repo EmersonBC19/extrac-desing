@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+  <!-- Página larga (fase 5.2): iframes fuera de la vista (se capturan recorriendo la página),
+       un header fijo que no debe tapar las capturas y una hoja lejos de su contenedor. -->
+  <body style="margin: 0; font-family: sans-serif">
+    <header
+      id="bar"
+      style="position: fixed; top: 0; left: 0; right: 0; height: 120px; background: #e11d48; z-index: 10"
+    >
+      Header fijo
+    </header>
+    <main id="root" style="width: 900px; padding: 140px 20px 20px">
+      <iframe
+        id="f1"
+        srcdoc="<body style='margin:0;background:#2563eb'></body>"
+        width="300"
+        height="150"
+        style="border: 0; display: block"
+      ></iframe>
+      <div style="height: 2400px"></div>
+      <iframe
+        id="f2"
+        srcdoc="<body style='margin:0;background:#16a34a'></body>"
+        width="300"
+        height="150"
+        style="border: 0; display: block"
+      ></iframe>
+      <div style="height: 2400px"></div>
+      <iframe
+        id="f3"
+        srcdoc="<body style='margin:0;background:#f59e0b'></body>"
+        width="300"
+        height="150"
+        style="border: 0; display: block"
+      ></iframe>
+    </main>
+    <div id="tall" style="position: relative; width: 300px; height: 14000px">
+      <span
+        id="far"
+        style="position: absolute; top: 13000px; left: 0; width: 50px; height: 20px; background: #0ea5e9"
+      ></span>
+    </div>
+  </body>
+</html>

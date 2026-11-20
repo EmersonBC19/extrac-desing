@@ -56,6 +56,9 @@
     multi: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>`,
   };
 
+  /** Recorrido previo de páginas largas: pasos de ~0,8 pantallas, 220 ms cada uno (≈ 1 min como máximo) */
+  const MAX_PRESCROLL_STEPS = 260;
+
   /** Texto de la página o de la extracción → HTML seguro dentro del overlay */
   function escapeHtml(str) {
     return String(str == null ? '' : str)
@@ -1444,7 +1447,10 @@
         // La elevación altera posiciones y tamaños: quitarla mientras se mide
         const relift = await this.suspendLift();
         try {
-          await this.prepareForExtraction(this.selectedElements);
+          await this.prepareForExtraction(this.selectedElements, pct => {
+            if (btn) btn.innerHTML = `${ICONS.spinner} Recorriendo la página… ${pct}%`;
+          });
+          if (btn) btn.innerHTML = `${ICONS.spinner} Extrayendo componentes e imágenes...`;
 
           if (this.selectedElements.length === 1) {
             const res = await window.__codeToFigmaExtract(this.selectedElements[0]);
@@ -1808,7 +1814,7 @@
      *    lazy-loaders por IntersectionObserver y animaciones "reveal on scroll" (opacity 0 → 1);
      *  - espera (máx. 3 s) a que las imágenes terminen de cargar.
      */
-    async prepareForExtraction(elements) {
+    async prepareForExtraction(elements, onProgress) {
       const sleep = ms => new Promise(r => setTimeout(r, ms));
       const imgs = [];
       let top = Infinity;
@@ -1830,11 +1836,13 @@
         const prevVisibility = this.host ? this.host.style.visibility : '';
         if (this.host) this.host.style.visibility = 'hidden';
         try {
+          // Pasos proporcionales al largo de la selección (antes: máx. 40, el resto de una página
+          // larga quedaba sin cargar). Tope de seguridad: ~1 min en páginas desmesuradas.
           const step = Math.max(200, window.innerHeight * 0.8);
-          const maxSteps = 40; // límite de seguridad en páginas muy largas
-          let i = 0;
-          for (let y = top; y < bottom && i < maxSteps; y += step, i++) {
-            window.scrollTo({ left: startX, top: y, behavior: 'instant' });
+          const steps = Math.min(MAX_PRESCROLL_STEPS, Math.ceil((bottom - top) / step));
+          for (let i = 0; i < steps; i++) {
+            window.scrollTo({ left: startX, top: top + i * step, behavior: 'instant' });
+            if (onProgress) onProgress(Math.round(((i + 1) / steps) * 100));
             await sleep(220);
           }
         } finally {

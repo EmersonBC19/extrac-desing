@@ -3,6 +3,7 @@
  * Fuente única del extractor: se empaqueta en packages/browser-extension/extractor.js (scripts/build-extractor.mjs).
  */
 import type { RawNode } from './types';
+import { captureRegionsAcrossPage } from './capture';
 
 /**
  * Recorre el árbol UINode y resuelve imágenes CORS / background-image de forma asíncrona
@@ -121,9 +122,10 @@ export async function resolvePendingImages(rootNode: RawNode) {
 
   // 3. Fallback estilo swarm-rebuild: lo que el DOM no puede devolver (video cross-origin,
   //    WebGL, iframes, imágenes con hotlink-protection) se recorta de una captura de pantalla.
-  //    Solo nodos hoja visibles: si tuvieran hijos, la captura duplicaría el texto encima.
-  const vw = window.innerWidth,
-    vh = window.innerHeight;
+  //    Solo nodos hoja: si tuvieran hijos, la captura duplicaría el texto encima.
+  //    Los que quedan arriba o abajo de la vista se capturan recorriendo la página (capture.ts);
+  //    los que quedan a los lados (slides de carrusel ocultos) no se pueden ver: se omiten.
+  const vw = window.innerWidth;
   const shotNodes: RawNode[] = [];
   (function collectShot(n: RawNode) {
     const r = n._vpRect;
@@ -135,9 +137,7 @@ export async function resolvePendingImages(rootNode: RawNode) {
       r.width > 2 &&
       r.height > 2 &&
       r.left < vw &&
-      r.top < vh &&
-      r.left + r.width > 0 &&
-      r.top + r.height > 0
+      r.left + r.width > 0
     ) {
       shotNodes.push(n);
     }
@@ -146,7 +146,10 @@ export async function resolvePendingImages(rootNode: RawNode) {
 
   if (shotNodes.length > 0 && typeof window.__codeToFigmaCaptureRegions === 'function') {
     try {
-      const crops = await window.__codeToFigmaCaptureRegions(shotNodes.map(n => n._vpRect));
+      const crops = await captureRegionsAcrossPage(
+        shotNodes.map(n => n._vpRect),
+        window.__codeToFigmaCaptureRegions,
+      );
       (crops || []).forEach((c, i) => {
         if (isImageDataUri(c)) shotNodes[i].imageData = c;
       });

@@ -271,7 +271,17 @@ Hoy se pierden o se aproximan:
 
 ---
 
-## Fase 6 — Producto en Figma
+## Fase 6 — Producto en Figma — ✅ hecha (2026-11-20)
+
+> **Resultado:**
+> - **6.1 Variantes de tamaño/estilo:** los componentes con el mismo nombre base y la misma forma ("Tile Ctas", "Tile Ctas 2"…) se unen en un Component Set con `combineAsVariants`: `Size=L/M/S` si solo cambia el tamaño, `Style=<color>` si solo cambia el estilo, `Variant=n` si cambian ambos. La vista completa usa instancias de cada variante.
+> - **6.1 Variantes de estado:** el estado `:hover` se emula desde las hojas de estilo de la página (`core-extractor/src/browser/states.ts`): las reglas se reescriben a `[data-ctf-state~="hover"]` y se marcan el elemento y sus ancestros, sin mover el puntero y sin depender del modo congelar. Se envía como `states` y el plugin arma `State=Default/Hover`. Solo para componentes sueltos de tamaño razonable; si el hover no cambia nada, no se envía. Al deshacer no hay parpadeo: las transiciones siguen congeladas mientras se quita el estado. **Límites:** hojas de otro dominio sin CORS y efectos hechos con JavaScript (`mouseenter`).
+> - **6.2 Variables:** colores (paleta agrupada), espaciados y radios repetidos (≥ 2 usos) → Variables de Figma en una colección por sitio, vinculadas a las capas (`setBoundVariableForPaint`, `setBoundVariable`) y con scopes (rellenos, GAP, CORNER_RADIUS). Los tokens CSS de `:root` van a la colección "Tokens CSS"; reenviar actualiza sin duplicar. Si el archivo o el plan no tiene Variables, se usan Paint Styles como antes. Los estilos de texto se mantienen.
+> - **6.3 Tablero:** cada sección de 02 es un componente y la vista completa usa su instancia en el mismo lugar, así que se sincronizan. Colores que el ojo no distingue (ΔE ≤ 2,3) se unen en lugar de cortar a 32 (hasta 48). Ajuste "Tablero: automático / siempre / nunca" en el plugin.
+> - Corregido: los estilos del tablero no vinculaban la raíz de cada bloque (fondo de la página y de las secciones).
+> - Pruebas: 257 (incluye la UI del plugin en Chromium) y 9/9 live.
+>
+> ⚠️ **Verificar en Figma real:** sets de variantes (aspecto del marco), secciones como instancias dentro de la vista completa (tamaño/FILL), Variables en el panel de Figma y estados hover en sitios con hojas de otro dominio.
 
 ### 6.1 Variantes automáticas (Component Sets)  `[A1]` `[CONV]`
 - **De tamaño/estilo**: hoy el tablero crea `Tile Ctas`, `Tile Ctas 2`, `Tile Ctas 3` por separado (misma estructura, distinto tamaño). Agruparlos con `combineAsVariants` (`Size=L/M/S`).
@@ -317,7 +327,7 @@ Origen: prueba en Figma real del tablero con el `body` de indudesk.online (fase 
 | ID | Síntoma observado | Hipótesis (a confirmar) | Prioridad |
 |---|---|---|---|
 | **QA-1** | "No se ven bien": el resultado general en Figma no se parece lo suficiente a la web. | Síntoma general: hay que desglosarlo comparando cada sección lado a lado (web vs Figma). Las auditorías automáticas miden posiciones, no apariencia. | Alta |
-| **QA-2** | En **02 · Secciones** varias sub-vistas salen claras/grises y sin el fondo oscuro de la web (ej. "Preguntas frecuentes"). | La sección no tiene fondo propio: lo hereda del `body`/`main`. Al copiarla como sub-vista pierde ese fondo heredado. Arreglo probable: aplicar al clon el fondo efectivo del ancestro más cercano. | Alta |
+| **QA-2** ✅ (fase 6.3) | En **02 · Secciones** varias sub-vistas salen claras/grises y sin el fondo oscuro de la web (ej. "Preguntas frecuentes"). | La sección no tiene fondo propio: lo hereda del `body`/`main`. Al copiarla como sub-vista pierde ese fondo heredado. Arreglo probable: aplicar al clon el fondo efectivo del ancestro más cercano. | Alta |
 | **QA-3** | Títulos de las sub-vistas y etiquetas de componentes casi ilegibles. | Texto oscuro (`#1A1A1F` / morado) sobre el fondo de Section de Figma, que es oscuro con la UI en modo oscuro. Arreglo: fondo explícito claro en las Sections o colores de texto con contraste suficiente en ambos modos. | Media |
 | **QA-4** | En **04 · Estilos** las muestras tipográficas se cortan a la derecha ("74 · Outfit ExtraBold — Aa B…"). | El ancho de la Section se calcula antes de que el texto tome su ancho final, o las muestras grandes (hasta 72 px) desbordan. Arreglo: ajustar la Section después de crear las muestras o limitar su ancho con salto de línea. | Media |
 | **QA-5** | **03 · Componentes** se ve pequeño y poco claro a la escala del tablero. | Pocos componentes detectados en esa landing y sin agrupación visual por tipo. Revisar al hacer QA-1 (posible mejora: variantes y grilla por categoría, fase 6.1). | Baja |

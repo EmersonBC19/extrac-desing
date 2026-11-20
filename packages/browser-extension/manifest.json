@@ -1,0 +1,40 @@
+{
+  "manifest_version": 3,
+  "name": "Code to Figma AI — 3D Inspector",
+  "version": "1.1.0",
+  "description": "Inspecciona y clona cualquier componente web directamente a Figma con Auto Layout y efecto 3D Pop-out.",
+  "action": {
+    "default_title": "Code to Figma AI (Alt+Shift+F)",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+Shift+F",
+        "mac": "Alt+Shift+F"
+      },
+      "description": "Activar Code to Figma 3D Inspector"
+    }
+  }
+}

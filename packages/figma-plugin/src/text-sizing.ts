@@ -14,7 +14,7 @@ export async function applyTextSegments(tn: TextNode, segments: UITextSegment[])
     if (end <= start) continue;
     try {
       if (seg.fontFamily || seg.fontWeight) {
-        const f = await loadFontSafely(seg.fontFamily || 'Inter', seg.fontWeight || 400);
+        const f = await loadFontSafely(seg.fontStack || seg.fontFamily || 'Inter', seg.fontWeight || 400);
         tn.setRangeFontName(start, end, f);
       }
       if (seg.fontSize && seg.fontSize > 0) tn.setRangeFontSize(start, end, seg.fontSize);

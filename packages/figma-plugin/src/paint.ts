@@ -1,3 +1,5 @@
+import { conicGeometry, linearGeometry, radialGeometry, resolveStops } from './gradient-geometry';
+
 /**
  * Conversión de rellenos CSS a Paint de Figma y de imágenes base64 a bytes.
  */
@@ -23,45 +25,30 @@ export function base64ToBytes(dataUrl: string): Uint8Array {
   return bytes;
 }
 
-// Convierte un fill CSS extraído (SOLID / GRADIENT_*) a Paint de Figma
-export function cssFillToPaint(f: any): Paint {
-  if (f.type === 'GRADIENT_RADIAL') {
-    const transform: Transform = [
-      [0.5, 0, 0.5],
-      [0, 0.5, 0.5],
-    ];
+/**
+ * Convierte un fill CSS extraído (SOLID / GRADIENT_*) a Paint de Figma.
+ * w × h: tamaño del nodo en px. La geometría del degradado depende de su forma (fase 5.4).
+ */
+export function cssFillToPaint(f: any, w = 100, h = 100): Paint {
+  const width = w > 0 ? w : 100;
+  const height = h > 0 ? h : 100;
+  if (f.type === 'GRADIENT_LINEAR' || f.type === 'GRADIENT_RADIAL' || f.type === 'GRADIENT_ANGULAR') {
+    const geo =
+      f.type === 'GRADIENT_LINEAR'
+        ? linearGeometry(f, width, height)
+        : f.type === 'GRADIENT_RADIAL'
+          ? radialGeometry(f, width, height)
+          : conicGeometry(f, width, height);
+    const stops: any[] = f.stops || [];
+    const positions = resolveStops(stops, geo.rayPx);
     return {
-      type: 'GRADIENT_RADIAL',
-      gradientTransform: transform,
-      gradientStops: (f.stops || []).map((s: any) => ({
-        position: Math.max(0, Math.min(1, s.position)),
+      type: f.type,
+      gradientTransform: geo.T as Transform,
+      gradientStops: stops.map((s: any, i: number) => ({
+        position: positions[i],
         color: { r: s.color.r, g: s.color.g, b: s.color.b, a: s.color.a !== undefined ? s.color.a : 1 },
       })),
-    };
-  }
-  if (f.type === 'GRADIENT_LINEAR') {
-    const angleDeg = typeof f.angle === 'number' ? f.angle : 180;
-    const rad = ((angleDeg - 90) * Math.PI) / 180;
-    const cos = Math.cos(rad);
-    const sin = Math.sin(rad);
-    const x1 = 0.5 - 0.5 * cos;
-    const y1 = 0.5 - 0.5 * sin;
-    const x2 = 0.5 + 0.5 * cos;
-    const y2 = 0.5 + 0.5 * sin;
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    const transform: Transform = [
-      [dx, dy, x1],
-      [-dy, dx, y1],
-    ];
-    return {
-      type: 'GRADIENT_LINEAR',
-      gradientTransform: transform,
-      gradientStops: (f.stops || []).map((s: any) => ({
-        position: Math.max(0, Math.min(1, s.position)),
-        color: { r: s.color.r, g: s.color.g, b: s.color.b, a: s.color.a !== undefined ? s.color.a : 1 },
-      })),
-    };
+    } as GradientPaint;
   }
   return {
     type: 'SOLID',

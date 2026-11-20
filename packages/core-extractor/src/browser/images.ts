@@ -129,6 +129,12 @@ export async function resolvePendingImages(rootNode: RawNode) {
   const shotNodes: RawNode[] = [];
   (function collectShot(n: RawNode) {
     const r = n._vpRect;
+    // Efecto CSS sin equivalente en Figma (rotación, filtro de color, clip-path, máscara…): se
+    // captura el elemento entero con su contenido. Sus hijos no necesitan captura propia.
+    if (n._rasterize && r && r.width > 2 && r.height > 2 && r.left < vw && r.left + r.width > 0) {
+      shotNodes.push(n);
+      return;
+    }
     if (
       !n.imageData &&
       r &&
@@ -151,7 +157,16 @@ export async function resolvePendingImages(rootNode: RawNode) {
         window.__codeToFigmaCaptureRegions,
       );
       (crops || []).forEach((c, i) => {
-        if (isImageDataUri(c)) shotNodes[i].imageData = c;
+        if (!isImageDataUri(c)) return; // sin captura: queda la versión aproximada (editable)
+        const n = shotNodes[i];
+        n.imageData = c;
+        if (n._rasterize) {
+          // La captura ya muestra fondo, bordes, hijos y el efecto: la imagen los reemplaza
+          n.children = [];
+          n.styles = { ...n.styles, fills: [], strokes: [], boxShadow: [], borderSides: undefined };
+          n.layout = { ...n.layout, mode: 'NONE' };
+          n.metadata = { ...(n.metadata || {}), rasterized: n._rasterize };
+        }
       });
     } catch (_shotErr) {
       console.warn('[CodeToFigma] Captura de pantalla no disponible:', _shotErr);
@@ -162,6 +177,7 @@ export async function resolvePendingImages(rootNode: RawNode) {
     delete n._vpRect;
     delete n._needsShot;
     delete n._hadPendingImage;
+    delete n._rasterize;
     (n.children || []).forEach(cleanup);
   })(rootNode);
 

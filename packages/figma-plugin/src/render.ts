@@ -4,6 +4,7 @@
 import type { UINode } from './types';
 import { loadFontSafely } from './fonts';
 import { base64ToBytes, cssFillToPaint } from './paint';
+import { blendModeFromStyles, effectsFromStyles } from './effects';
 import { buildBoardInstance } from './board/board';
 import { getBoardCtx } from './board/context';
 import { applyTextSegments, applyNoWrapSizing } from './text-sizing';
@@ -43,7 +44,11 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
       } catch (_e) {}
 
       // 2. Cargar la fuente deseada preservando peso visual
-      const font = await loadFontSafely(nodeData.textData.fontFamily, nodeData.textData.fontWeight, { track: true });
+      const font = await loadFontSafely(
+        nodeData.textData.fontStack || nodeData.textData.fontFamily,
+        nodeData.textData.fontWeight,
+        { track: true },
+      );
 
       // 3. Crear el nodo de texto (garantizado libre de excepciones)
       const textNode = figma.createText();
@@ -103,6 +108,14 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
         } catch (_e) {}
       }
 
+      // 10b. text-shadow, desenfoque y modo de fusión
+      try {
+        const textFx = effectsFromStyles(nodeData.styles, 'TEXT');
+        if (textFx.length) textNode.effects = textFx;
+        const textBlend = blendModeFromStyles(nodeData.styles);
+        if (textBlend) textNode.blendMode = textBlend;
+      } catch (_e) {}
+
       // 11. Tramos con estilo propio (links, negritas, <sup>…) dentro del mismo texto
       if (Array.isArray(nodeData.textData.segments) && nodeData.textData.segments.length > 0) {
         await applyTextSegments(textNode, nodeData.textData.segments);
@@ -142,6 +155,12 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
       frame.name = nodeData.name || 'Frame';
 
       // Auto Layout
+      // Tamaño medido en la web: la geometría de los degradados depende de la forma del nodo
+      const num = (v: unknown) => (typeof v === 'number' && v > 0 ? v : 0);
+      const boxW = num(nodeData.layout?.measuredWidth) || num(nodeData.layout?.width) || 100;
+      const boxH = num(nodeData.layout?.measuredHeight) || num(nodeData.layout?.height) || 100;
+      const toPaint = (f: any) => cssFillToPaint(f, boxW, boxH);
+
       const mode = nodeData.layout?.mode || 'NONE';
       if (mode === 'HORIZONTAL') {
         frame.layoutMode = 'HORIZONTAL';
@@ -206,7 +225,7 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
             scaleMode: (nodeData.styles?.imageScaleMode as any) || 'FILL',
             imageHash: image.hash,
           };
-          frame.fills = [...baseFills.map(cssFillToPaint), imagePaint, ...overlayFills.map(cssFillToPaint)];
+          frame.fills = [...baseFills.map(toPaint), imagePaint, ...overlayFills.map(toPaint)];
         } catch (_imgErr: any) {
           log.warn('Error decodificando imagen base64', { error: errText(_imgErr) });
           figma.ui.postMessage({
@@ -218,7 +237,7 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
           frame.fills = [{ type: 'SOLID', color: { r: 0.9, g: 0.9, b: 0.92 } }];
         }
       } else if (nodeData.styles?.fills) {
-        frame.fills = nodeData.styles.fills.map(cssFillToPaint);
+        frame.fills = nodeData.styles.fills.map(toPaint);
       }
 
       // Bordes (Strokes) y lados individuales
@@ -267,36 +286,11 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
         frame.opacity = Math.max(0, Math.min(1, nodeData.styles.opacity));
       }
 
-      // Efectos: Box Shadows & Glassmorphism Backdrop Blur
-      const effects: Effect[] = [];
-      if (nodeData.styles?.boxShadow && nodeData.styles.boxShadow.length > 0) {
-        for (const shadow of nodeData.styles.boxShadow) {
-          effects.push({
-            type: 'DROP_SHADOW',
-            color: {
-              r: shadow.color.r,
-              g: shadow.color.g,
-              b: shadow.color.b,
-              a: shadow.color.a,
-            },
-            offset: { x: shadow.offset.x, y: shadow.offset.y },
-            radius: Math.max(0, shadow.radius),
-            spread: shadow.spread || 0,
-            visible: true,
-            blendMode: 'NORMAL',
-          });
-        }
-      }
-      if (typeof nodeData.styles?.backdropBlur === 'number' && nodeData.styles.backdropBlur > 0) {
-        effects.push({
-          type: 'BACKGROUND_BLUR',
-          radius: Math.max(1, nodeData.styles.backdropBlur),
-          visible: true,
-        } as any);
-      }
-      if (effects.length > 0) {
-        frame.effects = effects;
-      }
+      // Efectos: sombras, desenfoques y modo de fusión (effects.ts, fase 5.4)
+      const effects = effectsFromStyles(nodeData.styles, 'FRAME');
+      if (effects.length > 0) frame.effects = effects;
+      const frameBlend = blendModeFromStyles(nodeData.styles);
+      if (frameBlend) frame.blendMode = frameBlend;
 
       // Dimensiones iniciales (usar width explícito o measuredWidth del DOM real)
       // Ojo: measured 0 es un valor real (elemento colapsado), no "desconocido"

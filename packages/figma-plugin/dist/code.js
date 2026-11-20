@@ -6396,7 +6396,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     const fontsToLoad = /* @__PURE__ */ new Set();
     function traverse(n) {
       if (n.type === "TEXT" && n.textData) {
-        const fam = n.textData.fontFamily || "Inter";
+        const fam = n.textData.fontStack || n.textData.fontFamily || "Inter";
         const weight = n.textData.fontWeight || 400;
         fontsToLoad.add(`${fam}:::${weight}`);
       }
@@ -6411,6 +6411,125 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         await loadFontSafely(family, weight);
       })
     );
+  }
+
+  // packages/figma-plugin/src/gradient-geometry.ts
+  var resolveLen = (l, total, fallback) => !l || !isFinite(l.v) ? fallback : l.u === "%" ? l.v / 100 * total : l.v;
+  function invert(m) {
+    const [[a, b, c], [d, e, f]] = m;
+    const det = a * e - b * d;
+    if (Math.abs(det) < 1e-12)
+      return [
+        [1, 0, 0],
+        [0, 1, 0]
+      ];
+    return [
+      [e / det, -b / det, (b * f - c * e) / det],
+      [-d / det, a / det, (c * d - a * f) / det]
+    ];
+  }
+  function transformFromHandles(kind, S, E, W) {
+    let c0, c1, t;
+    if (kind === "linear") {
+      c0 = [E[0] - S[0], E[1] - S[1]];
+      c1 = [2 * (W[0] - S[0]), 2 * (W[1] - S[1])];
+      t = [S[0] - 0.5 * c1[0], S[1] - 0.5 * c1[1]];
+    } else {
+      c0 = [2 * (E[0] - S[0]), 2 * (E[1] - S[1])];
+      c1 = [2 * (W[0] - S[0]), 2 * (W[1] - S[1])];
+      t = [S[0] - 0.5 * c0[0] - 0.5 * c1[0], S[1] - 0.5 * c0[1] - 0.5 * c1[1]];
+    }
+    const M = [
+      [c0[0], c1[0], t[0]],
+      [c0[1], c1[1], t[1]]
+    ];
+    return invert(M);
+  }
+  var norm = ([x, y], w, h) => [x / w, y / h];
+  function cornerAngle(toCorner, w, h) {
+    const sx = /right/.test(toCorner) ? 1 : -1;
+    const sy = /bottom/.test(toCorner) ? 1 : -1;
+    return Math.atan2(sx * h, -sy * w) * 180 / Math.PI;
+  }
+  function linearGeometry(desc, w, h) {
+    const angle = desc.toCorner ? cornerAngle(desc.toCorner, w, h) : typeof desc.angle === "number" ? desc.angle : 180;
+    const rad = angle * Math.PI / 180;
+    const dir = [Math.sin(rad), -Math.cos(rad)];
+    const L = Math.abs(w * dir[0]) + Math.abs(h * dir[1]) || 1;
+    const C = [w / 2, h / 2];
+    const S = [C[0] - dir[0] * L / 2, C[1] - dir[1] * L / 2];
+    const E = [C[0] + dir[0] * L / 2, C[1] + dir[1] * L / 2];
+    const W = [S[0] - dir[1] * L / 2, S[1] + dir[0] * L / 2];
+    return { T: transformFromHandles("linear", norm(S, w, h), norm(E, w, h), norm(W, w, h)), rayPx: L };
+  }
+  function radialGeometry(desc, w, h) {
+    const cx = resolveLen(desc.at?.x, w, w / 2);
+    const cy = resolveLen(desc.at?.y, h, h / 2);
+    const sideX = { closest: Math.min(cx, w - cx), farthest: Math.max(cx, w - cx) };
+    const sideY = { closest: Math.min(cy, h - cy), farthest: Math.max(cy, h - cy) };
+    const corners = [
+      [0, 0],
+      [w, 0],
+      [0, h],
+      [w, h]
+    ].map(([x, y]) => Math.hypot(x - cx, y - cy));
+    const explicit = Array.isArray(desc.size) ? desc.size : null;
+    const shape = desc.shape || (explicit && explicit.length === 1 ? "circle" : "ellipse");
+    const size = explicit ? null : desc.size || "farthest-corner";
+    let rx, ry;
+    if (explicit) {
+      rx = resolveLen(explicit[0], w, w / 2);
+      ry = shape === "circle" ? rx : resolveLen(explicit[1] || explicit[0], h, h / 2);
+    } else if (shape === "circle") {
+      const r = size === "closest-side" ? Math.min(sideX.closest, sideY.closest) : size === "farthest-side" ? Math.max(sideX.farthest, sideY.farthest) : size === "closest-corner" ? Math.min(...corners) : Math.max(...corners);
+      rx = ry = r;
+    } else {
+      const k = size === "closest-corner" || size === "farthest-corner" ? Math.SQRT2 : 1;
+      const which = size === "closest-side" || size === "closest-corner" ? "closest" : "farthest";
+      rx = sideX[which] * k;
+      ry = sideY[which] * k;
+    }
+    rx = Math.max(0.5, rx);
+    ry = Math.max(0.5, ry);
+    const C = [cx, cy];
+    return {
+      T: transformFromHandles("radial", norm(C, w, h), norm([cx + rx, cy], w, h), norm([cx, cy + ry], w, h)),
+      rayPx: rx
+    };
+  }
+  function conicGeometry(desc, w, h) {
+    const cx = resolveLen(desc.at?.x, w, w / 2);
+    const cy = resolveLen(desc.at?.y, h, h / 2);
+    const rad = (desc.from || 0) * Math.PI / 180;
+    const r = Math.max(w, h) / 2 || 1;
+    const dir = [Math.sin(rad), -Math.cos(rad)];
+    const E = [cx + dir[0] * r, cy + dir[1] * r];
+    const W = [cx - dir[1] * r, cy + dir[0] * r];
+    return { T: transformFromHandles("radial", norm([cx, cy], w, h), norm(E, w, h), norm(W, w, h)), rayPx: 360 };
+  }
+  function resolveStops(stops, rayPx) {
+    const n = stops.length;
+    const pos = stops.map(
+      (s) => typeof s.position === "number" ? s.position : typeof s.px === "number" ? s.px / (rayPx || 1) : void 0
+    );
+    if (n === 0) return [];
+    if (pos[0] === void 0) pos[0] = 0;
+    if (pos[n - 1] === void 0) pos[n - 1] = 1;
+    for (let i2 = 1; i2 < n; i2++) if (pos[i2] !== void 0 && pos[i2] < pos[i2 - 1]) pos[i2] = pos[i2 - 1];
+    let i = 0;
+    while (i < n) {
+      if (pos[i] !== void 0) {
+        i++;
+        continue;
+      }
+      const start = i - 1;
+      let end = i;
+      while (pos[end] === void 0) end++;
+      const a = pos[start], b = pos[end];
+      for (let k = start + 1; k < end; k++) pos[k] = a + (b - a) * (k - start) / (end - start);
+      i = end;
+    }
+    return pos.map((p) => Math.max(0, Math.min(1, p)));
   }
 
   // packages/figma-plugin/src/paint.ts
@@ -6433,41 +6552,18 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     }
     return bytes;
   }
-  function cssFillToPaint(f) {
-    if (f.type === "GRADIENT_RADIAL") {
-      const transform2 = [
-        [0.5, 0, 0.5],
-        [0, 0.5, 0.5]
-      ];
+  function cssFillToPaint(f, w = 100, h = 100) {
+    const width = w > 0 ? w : 100;
+    const height = h > 0 ? h : 100;
+    if (f.type === "GRADIENT_LINEAR" || f.type === "GRADIENT_RADIAL" || f.type === "GRADIENT_ANGULAR") {
+      const geo = f.type === "GRADIENT_LINEAR" ? linearGeometry(f, width, height) : f.type === "GRADIENT_RADIAL" ? radialGeometry(f, width, height) : conicGeometry(f, width, height);
+      const stops = f.stops || [];
+      const positions = resolveStops(stops, geo.rayPx);
       return {
-        type: "GRADIENT_RADIAL",
-        gradientTransform: transform2,
-        gradientStops: (f.stops || []).map((s) => ({
-          position: Math.max(0, Math.min(1, s.position)),
-          color: { r: s.color.r, g: s.color.g, b: s.color.b, a: s.color.a !== void 0 ? s.color.a : 1 }
-        }))
-      };
-    }
-    if (f.type === "GRADIENT_LINEAR") {
-      const angleDeg = typeof f.angle === "number" ? f.angle : 180;
-      const rad = (angleDeg - 90) * Math.PI / 180;
-      const cos = Math.cos(rad);
-      const sin = Math.sin(rad);
-      const x1 = 0.5 - 0.5 * cos;
-      const y1 = 0.5 - 0.5 * sin;
-      const x2 = 0.5 + 0.5 * cos;
-      const y2 = 0.5 + 0.5 * sin;
-      const dx = x2 - x1;
-      const dy = y2 - y1;
-      const transform2 = [
-        [dx, dy, x1],
-        [-dy, dx, y1]
-      ];
-      return {
-        type: "GRADIENT_LINEAR",
-        gradientTransform: transform2,
-        gradientStops: (f.stops || []).map((s) => ({
-          position: Math.max(0, Math.min(1, s.position)),
+        type: f.type,
+        gradientTransform: geo.T,
+        gradientStops: stops.map((s, i) => ({
+          position: positions[i],
           color: { r: s.color.r, g: s.color.g, b: s.color.b, a: s.color.a !== void 0 ? s.color.a : 1 }
         }))
       };
@@ -6477,6 +6573,57 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       color: { r: f.r, g: f.g, b: f.b },
       opacity: f.a !== void 0 ? f.a : 1
     };
+  }
+
+  // packages/figma-plugin/src/effects.ts
+  var BLEND_MODES = /* @__PURE__ */ new Set([
+    "MULTIPLY",
+    "SCREEN",
+    "OVERLAY",
+    "DARKEN",
+    "LIGHTEN",
+    "COLOR_DODGE",
+    "COLOR_BURN",
+    "HARD_LIGHT",
+    "SOFT_LIGHT",
+    "DIFFERENCE",
+    "EXCLUSION",
+    "HUE",
+    "SATURATION",
+    "COLOR",
+    "LUMINOSITY",
+    "LINEAR_DODGE",
+    "LINEAR_BURN"
+  ]);
+  var dropShadow = (s, withSpread) => ({
+    type: "DROP_SHADOW",
+    color: { r: s.color.r, g: s.color.g, b: s.color.b, a: s.color.a !== void 0 ? s.color.a : 1 },
+    offset: { x: s.offset.x, y: s.offset.y },
+    radius: Math.max(0, s.radius),
+    spread: withSpread ? s.spread || 0 : 0,
+    visible: true,
+    blendMode: "NORMAL"
+  });
+  function effectsFromStyles(styles, kind) {
+    const effects = [];
+    if (!styles) return effects;
+    if (kind === "FRAME") {
+      for (const s of styles.boxShadow || []) effects.push(dropShadow(s, true));
+      for (const s of styles.dropShadows || []) effects.push(dropShadow(s, false));
+      if (typeof styles.backdropBlur === "number" && styles.backdropBlur > 0) {
+        effects.push({ type: "BACKGROUND_BLUR", radius: Math.max(1, styles.backdropBlur), visible: true });
+      }
+    } else {
+      for (const s of styles.textShadow || []) effects.push(dropShadow(s, false));
+    }
+    if (typeof styles.layerBlur === "number" && styles.layerBlur > 0) {
+      effects.push({ type: "LAYER_BLUR", radius: styles.layerBlur, visible: true });
+    }
+    return effects;
+  }
+  function blendModeFromStyles(styles) {
+    const m = styles && typeof styles.blendMode === "string" ? styles.blendMode : "";
+    return BLEND_MODES.has(m) ? m : null;
   }
 
   // packages/figma-plugin/src/board/context.ts
@@ -6991,7 +7138,7 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
       if (end <= start) continue;
       try {
         if (seg.fontFamily || seg.fontWeight) {
-          const f = await loadFontSafely(seg.fontFamily || "Inter", seg.fontWeight || 400);
+          const f = await loadFontSafely(seg.fontStack || seg.fontFamily || "Inter", seg.fontWeight || 400);
           tn.setRangeFontName(start, end, f);
         }
         if (seg.fontSize && seg.fontSize > 0) tn.setRangeFontSize(start, end, seg.fontSize);
@@ -7075,7 +7222,11 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
           await figma.loadFontAsync({ family: "Inter", style: "Regular" });
         } catch (_e) {
         }
-        const font = await loadFontSafely(nodeData.textData.fontFamily, nodeData.textData.fontWeight, { track: true });
+        const font = await loadFontSafely(
+          nodeData.textData.fontStack || nodeData.textData.fontFamily,
+          nodeData.textData.fontWeight,
+          { track: true }
+        );
         const textNode = figma.createText();
         try {
           textNode.fontName = font;
@@ -7124,6 +7275,13 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
           } catch (_e) {
           }
         }
+        try {
+          const textFx = effectsFromStyles(nodeData.styles, "TEXT");
+          if (textFx.length) textNode.effects = textFx;
+          const textBlend = blendModeFromStyles(nodeData.styles);
+          if (textBlend) textNode.blendMode = textBlend;
+        } catch (_e) {
+        }
         if (Array.isArray(nodeData.textData.segments) && nodeData.textData.segments.length > 0) {
           await applyTextSegments(textNode, nodeData.textData.segments);
         }
@@ -7153,6 +7311,10 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
         const frame = nodeData.type === "COMPONENT" ? figma.createComponent() : figma.createFrame();
         createdNode = frame;
         frame.name = nodeData.name || "Frame";
+        const num = (v) => typeof v === "number" && v > 0 ? v : 0;
+        const boxW = num(nodeData.layout?.measuredWidth) || num(nodeData.layout?.width) || 100;
+        const boxH = num(nodeData.layout?.measuredHeight) || num(nodeData.layout?.height) || 100;
+        const toPaint = (f) => cssFillToPaint(f, boxW, boxH);
         const mode = nodeData.layout?.mode || "NONE";
         if (mode === "HORIZONTAL") {
           frame.layoutMode = "HORIZONTAL";
@@ -7207,7 +7369,7 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
               scaleMode: nodeData.styles?.imageScaleMode || "FILL",
               imageHash: image.hash
             };
-            frame.fills = [...baseFills.map(cssFillToPaint), imagePaint, ...overlayFills.map(cssFillToPaint)];
+            frame.fills = [...baseFills.map(toPaint), imagePaint, ...overlayFills.map(toPaint)];
           } catch (_imgErr) {
             log.warn("Error decodificando imagen base64", { error: errText(_imgErr) });
             figma.ui.postMessage({
@@ -7218,7 +7380,7 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
             frame.fills = [{ type: "SOLID", color: { r: 0.9, g: 0.9, b: 0.92 } }];
           }
         } else if (nodeData.styles?.fills) {
-          frame.fills = nodeData.styles.fills.map(cssFillToPaint);
+          frame.fills = nodeData.styles.fills.map(toPaint);
         }
         if (nodeData.styles?.strokes && nodeData.styles.strokes.length > 0) {
           const stroke = nodeData.styles.strokes[0];
@@ -7258,35 +7420,10 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
         if (typeof nodeData.styles?.opacity === "number") {
           frame.opacity = Math.max(0, Math.min(1, nodeData.styles.opacity));
         }
-        const effects = [];
-        if (nodeData.styles?.boxShadow && nodeData.styles.boxShadow.length > 0) {
-          for (const shadow of nodeData.styles.boxShadow) {
-            effects.push({
-              type: "DROP_SHADOW",
-              color: {
-                r: shadow.color.r,
-                g: shadow.color.g,
-                b: shadow.color.b,
-                a: shadow.color.a
-              },
-              offset: { x: shadow.offset.x, y: shadow.offset.y },
-              radius: Math.max(0, shadow.radius),
-              spread: shadow.spread || 0,
-              visible: true,
-              blendMode: "NORMAL"
-            });
-          }
-        }
-        if (typeof nodeData.styles?.backdropBlur === "number" && nodeData.styles.backdropBlur > 0) {
-          effects.push({
-            type: "BACKGROUND_BLUR",
-            radius: Math.max(1, nodeData.styles.backdropBlur),
-            visible: true
-          });
-        }
-        if (effects.length > 0) {
-          frame.effects = effects;
-        }
+        const effects = effectsFromStyles(nodeData.styles, "FRAME");
+        if (effects.length > 0) frame.effects = effects;
+        const frameBlend = blendModeFromStyles(nodeData.styles);
+        if (frameBlend) frame.blendMode = frameBlend;
         const initW = typeof nodeData.layout?.width === "number" ? nodeData.layout.width : typeof nodeData.layout?.measuredWidth === "number" ? nodeData.layout.measuredWidth : 100;
         const initH = typeof nodeData.layout?.height === "number" ? nodeData.layout.height : typeof nodeData.layout?.measuredHeight === "number" ? nodeData.layout.measuredHeight : 40;
         frame.resize(Math.max(1, initW), Math.max(1, initH));

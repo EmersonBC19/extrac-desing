@@ -44,12 +44,38 @@ export interface UILayout {
     y?: number;
 }
 export interface GradientStop {
-    position: number;
+    /** Fracción 0..1 (CSS en %); puede faltar: se reparte como en CSS */
+    position?: number;
+    /** Posición en px a lo largo del rayo (CSS en px) */
+    px?: number;
     color: RGBAColor;
 }
+/** Degradado CSS (fase 5.4): parámetros CSS; el plugin calcula la geometría con el tamaño del nodo */
 export interface GradientPaint {
-    type: 'GRADIENT_LINEAR' | 'GRADIENT_RADIAL';
+    type: 'GRADIENT_LINEAR' | 'GRADIENT_RADIAL' | 'GRADIENT_ANGULAR';
+    /** Lineal: grados CSS (0 = hacia arriba) */
     angle?: number;
+    /** Lineal: "top right", "bottom left"… */
+    toCorner?: string;
+    /** Radial */
+    shape?: 'circle' | 'ellipse';
+    size?: string | {
+        v: number;
+        u: '%' | 'px';
+    }[];
+    /** Radial y angular: centro */
+    at?: {
+        x?: {
+            v: number;
+            u: '%' | 'px';
+        };
+        y?: {
+            v: number;
+            u: '%' | 'px';
+        };
+    };
+    /** Angular (conic-gradient): ángulo inicial */
+    from?: number;
     stops: GradientStop[];
 }
 export type CanvasFill = RGBAColor | GradientPaint;
@@ -74,6 +100,8 @@ export interface UITextData {
     fontSize: number;
     fontWeight: number | string;
     fontFamily: string;
+    /** Pila CSS completa ("Circular, Helvetica, sans-serif"): el plugin prueba cada familia */
+    fontStack?: string;
     lineHeight?: number;
     letterSpacing?: number;
     textAlign?: 'LEFT' | 'CENTER' | 'RIGHT' | 'JUSTIFIED';
@@ -89,6 +117,7 @@ export interface UITextSegment {
     start: number;
     end: number;
     fontFamily?: string;
+    fontStack?: string;
     fontWeight?: number | string;
     fontSize?: number;
     italic?: boolean;

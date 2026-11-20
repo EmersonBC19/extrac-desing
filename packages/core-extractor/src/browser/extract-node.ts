@@ -167,8 +167,14 @@ export function extractNodeTree(
         _sharedCtx = _sharedCanvas.getContext('2d', { willReadFrequently: true });
       }
       if (_sharedCtx) {
-        _sharedCtx.clearRect(0, 0, 1, 1);
+        // Un color inválido no cambia fillStyle (se quedaría el anterior): comprobar con dos centinelas
+        _sharedCtx.fillStyle = '#000000';
         _sharedCtx.fillStyle = str;
+        const asBlack = _sharedCtx.fillStyle;
+        _sharedCtx.fillStyle = '#ffffff';
+        _sharedCtx.fillStyle = str;
+        if (_sharedCtx.fillStyle !== asBlack) return null;
+        _sharedCtx.clearRect(0, 0, 1, 1);
         _sharedCtx.fillRect(0, 0, 1, 1);
         const d = _sharedCtx.getImageData(0, 0, 1, 1).data;
         if (d[3] === 0) return null;
@@ -178,93 +184,152 @@ export function extractNodeTree(
     return null;
   }
 
-  // ── 2. Gradient Parser (Linear & Radial) ──
-  function parseGradient(bgStr: string) {
-    if (!bgStr || !bgStr.includes('gradient')) return null;
+  // ── 2. Degradados (lineal, radial y cónico) ──
+  // Se guardan los parámetros CSS (ángulo/esquina, forma, tamaño, `at`, paradas): el plugin
+  // calcula la geometría con el tamaño real del nodo (figma-plugin/src/gradient-geometry.ts).
+  // background-image puede tener varias capas: se usa la de más arriba que sea un degradado.
+  const COLOR_RE = /^(rgba?\([^)]*\)|hsla?\([^)]*\)|(?:oklch|oklab|lab|lch|color)\([^)]*\)|#[0-9a-f]{3,8}\b|[a-z]+)/i;
 
-    // Gradientes Radiales
-    const radMatch = bgStr.match(/radial-gradient\((.*)\)/i);
-    if (radMatch) {
-      const inner = radMatch[1];
-      let stopsStr = inner;
-      const firstComma = inner.indexOf(',');
-      if (firstComma > -1 && (inner.includes('circle') || inner.includes('ellipse') || inner.includes('at'))) {
-        stopsStr = inner.slice(firstComma + 1).trim();
+  function parseCssLen(tok: string) {
+    const m = String(tok || '').match(/^(-?[\d.]+)(%|px)?$/i);
+    if (!m) return null;
+    return { v: parseFloat(m[1]), u: (m[2] === '%' ? '%' : 'px') as '%' | 'px' };
+  }
+
+  /** "at left 30%", "at center", "at 20px bottom" → { x, y } */
+  function parseCssPosition(str: string) {
+    const KW: Record<string, ['x' | 'y', number]> = {
+      left: ['x', 0],
+      right: ['x', 100],
+      top: ['y', 0],
+      bottom: ['y', 100],
+    };
+    const toks = str.trim().split(/\s+/).filter(Boolean);
+    const out: { x?: { v: number; u: '%' | 'px' }; y?: { v: number; u: '%' | 'px' } } = {};
+    const free: { v: number; u: '%' | 'px' }[] = [];
+    for (const t of toks) {
+      const k = t.toLowerCase();
+      if (KW[k]) out[KW[k][0]] = { v: KW[k][1], u: '%' };
+      else if (k === 'center') free.push({ v: 50, u: '%' });
+      else {
+        const l = parseCssLen(t);
+        if (l) free.push(l);
       }
-      const rawStops = splitCssList(stopsStr);
-      const stops = [];
-      for (let i = 0; i < rawStops.length; i++) {
-        const stopPart = rawStops[i];
-        const colorMatch = stopPart.match(/(rgba?\([^)]+\)|#[a-f0-9]+|[a-z]+)/i);
-        if (!colorMatch) continue;
-        const col = parseColor(colorMatch[0]);
-        if (!col) continue;
+    }
+    if (!out.x && free.length) out.x = free.shift();
+    if (!out.y && free.length) out.y = free.shift();
+    if (!out.x) out.x = { v: 50, u: '%' };
+    if (!out.y) out.y = { v: 50, u: '%' };
+    return out;
+  }
 
-        let pos = i / Math.max(1, rawStops.length - 1);
-        const posMatch = stopPart
-          .replace(colorMatch[0], '')
-          .trim()
-          .match(/([\d.]+)%/);
-        if (posMatch) {
-          pos = parseFloat(posMatch[1]) / 100;
+  /** Paradas: "rgb(…) 10%", "red 10% 20%" (doble), "blue 24px", "red 90deg" (cónico) */
+  function parseStops(parts: string[], angular: boolean) {
+    const stops: { color: Rgba; position?: number; px?: number }[] = [];
+    for (const part of parts) {
+      const cm = part.trim().match(COLOR_RE);
+      if (!cm) continue; // pista de interpolación sin color: se ignora
+      const color = parseColor(cm[0]);
+      if (!color) continue;
+      const rest = part.trim().slice(cm[0].length).trim();
+      const positions = rest ? rest.split(/\s+/) : [];
+      const toStop = (p: string) => {
+        const m = p.match(/^(-?[\d.]+)(%|px|deg|turn)?$/i);
+        if (!m) return { color };
+        const v = parseFloat(m[1]);
+        const u = (m[2] || '').toLowerCase();
+        if (u === '%') return { color, position: v / 100 };
+        if (u === 'deg') return { color, position: v / 360 };
+        if (u === 'turn') return { color, position: v };
+        if (angular) return { color };
+        return { color, px: v };
+      };
+      if (!positions.length) stops.push({ color });
+      else positions.slice(0, 2).forEach(p => stops.push(toStop(p)));
+    }
+    return stops;
+  }
+
+  function parseGradientLayer(layer: string) {
+    const m = layer.match(/^\s*(repeating-)?(linear|radial|conic)-gradient\(([\s\S]*)\)\s*$/i);
+    if (!m) return null;
+    const kind = m[2].toLowerCase();
+    const parts = splitCssList(m[3]);
+    if (!parts.length) return null;
+    const first = parts[0].trim();
+    const firstIsColorStop = COLOR_RE.test(first) && !!parseColor((first.match(COLOR_RE) || [''])[0]);
+
+    if (kind === 'linear') {
+      let angle: number | undefined = 180;
+      let toCorner: string | undefined;
+      let stopParts = parts;
+      if (!firstIsColorStop) {
+        stopParts = parts.slice(1);
+        const t = first.toLowerCase();
+        const deg = t.match(/^(-?[\d.]+)(deg|turn|rad|grad)$/);
+        if (deg) {
+          const v = parseFloat(deg[1]);
+          angle =
+            deg[2] === 'turn' ? v * 360 : deg[2] === 'rad' ? (v * 180) / Math.PI : deg[2] === 'grad' ? v * 0.9 : v;
+        } else if (/^to\s/.test(t)) {
+          const dirs = t.slice(3).trim();
+          const SIDES: Record<string, number> = { top: 0, right: 90, bottom: 180, left: 270 };
+          if (SIDES[dirs] !== undefined) angle = SIDES[dirs];
+          else {
+            toCorner = dirs;
+            angle = undefined;
+          }
         }
-        stops.push({ position: Math.max(0, Math.min(1, pos)), color: col });
       }
-      if (stops.length >= 2) {
-        return { type: 'GRADIENT_RADIAL', stops };
-      }
+      const stops = parseStops(stopParts, false);
+      return stops.length >= 2 ? { type: 'GRADIENT_LINEAR', angle, toCorner, stops } : null;
     }
 
-    // Gradientes Lineales
-    const linMatch = bgStr.match(/linear-gradient\((.*)\)/i);
-    if (!linMatch) return null;
-    const inner = linMatch[1];
-
-    let angle = 180;
-    let stopsStr = inner;
-    const firstComma = inner.indexOf(',');
-    if (firstComma > -1) {
-      const firstToken = inner.slice(0, firstComma).trim().toLowerCase();
-      if (firstToken.includes('deg')) {
-        angle = parseFloat(firstToken) || 180;
-        stopsStr = inner.slice(firstComma + 1).trim();
-      } else if (firstToken === 'to top') {
-        angle = 0;
-        stopsStr = inner.slice(firstComma + 1).trim();
-      } else if (firstToken === 'to right') {
-        angle = 90;
-        stopsStr = inner.slice(firstComma + 1).trim();
-      } else if (firstToken === 'to bottom') {
-        angle = 180;
-        stopsStr = inner.slice(firstComma + 1).trim();
-      } else if (firstToken === 'to left') {
-        angle = 270;
-        stopsStr = inner.slice(firstComma + 1).trim();
+    if (kind === 'radial') {
+      let shape: 'circle' | 'ellipse' | undefined;
+      let size: string | { v: number; u: '%' | 'px' }[] | undefined;
+      let at: ReturnType<typeof parseCssPosition> | undefined;
+      let stopParts = parts;
+      if (!firstIsColorStop) {
+        stopParts = parts.slice(1);
+        const [shapeSize, pos] = first.split(/\bat\b/i);
+        if (pos !== undefined) at = parseCssPosition(pos);
+        const lens: { v: number; u: '%' | 'px' }[] = [];
+        for (const t of shapeSize.trim().split(/\s+/).filter(Boolean)) {
+          const k = t.toLowerCase();
+          if (k === 'circle' || k === 'ellipse') shape = k;
+          else if (/^(closest|farthest)-(side|corner)$/.test(k)) size = k;
+          else {
+            const l = parseCssLen(t);
+            if (l) lens.push(l);
+          }
+        }
+        if (lens.length) size = lens;
       }
+      const stops = parseStops(stopParts, false);
+      return stops.length >= 2 ? { type: 'GRADIENT_RADIAL', shape, size, at, stops } : null;
     }
 
-    const rawStops = splitCssList(stopsStr);
-    const stops = [];
-    for (let i = 0; i < rawStops.length; i++) {
-      const stopPart = rawStops[i];
-      const colorMatch = stopPart.match(/(rgba?\([^)]+\)|#[a-f0-9]+|[a-z]+)/i);
-      if (!colorMatch) continue;
-      const col = parseColor(colorMatch[0]);
-      if (!col) continue;
-
-      let pos = i / Math.max(1, rawStops.length - 1);
-      const posMatch = stopPart
-        .replace(colorMatch[0], '')
-        .trim()
-        .match(/([\d.]+)%/);
-      if (posMatch) {
-        pos = parseFloat(posMatch[1]) / 100;
-      }
-      stops.push({ position: Math.max(0, Math.min(1, pos)), color: col });
+    // Cónico → GRADIENT_ANGULAR de Figma
+    let from = 0;
+    let at: ReturnType<typeof parseCssPosition> | undefined;
+    let stopParts = parts;
+    if (!firstIsColorStop) {
+      stopParts = parts.slice(1);
+      const fm = first.match(/from\s+(-?[\d.]+)(deg|turn)?/i);
+      if (fm) from = parseFloat(fm[1]) * (fm[2] && fm[2].toLowerCase() === 'turn' ? 360 : 1);
+      const am = first.split(/\bat\b/i);
+      if (am.length > 1) at = parseCssPosition(am[1]);
     }
+    const stops = parseStops(stopParts, true);
+    return stops.length >= 2 ? { type: 'GRADIENT_ANGULAR', from, at, stops } : null;
+  }
 
-    if (stops.length >= 2) {
-      return { type: 'GRADIENT_LINEAR', angle, stops };
+  function parseGradient(bgStr: string): any {
+    if (!bgStr || !bgStr.includes('gradient')) return null;
+    for (const layer of splitCssList(bgStr)) {
+      const g = parseGradientLayer(layer);
+      if (g) return g;
     }
     return null;
   }
@@ -291,6 +356,144 @@ export function extractNodeTree(
       }
     }
     return shadows;
+  }
+
+  // ── 3.2 Efectos CSS (fase 5.4) ──
+  // Los que Figma tiene de forma nativa se traducen (desenfoque, sombras de filter, opacidad,
+  // modos de fusión, text-shadow). Los que no (rotaciones, filtros de color, clip-path con formas,
+  // máscaras, degradados repetidos) se marcan para rasterizar el elemento con una captura.
+  const BLEND_MODES: Record<string, string> = {
+    multiply: 'MULTIPLY',
+    screen: 'SCREEN',
+    overlay: 'OVERLAY',
+    darken: 'DARKEN',
+    lighten: 'LIGHTEN',
+    'color-dodge': 'COLOR_DODGE',
+    'color-burn': 'COLOR_BURN',
+    'hard-light': 'HARD_LIGHT',
+    'soft-light': 'SOFT_LIGHT',
+    difference: 'DIFFERENCE',
+    exclusion: 'EXCLUSION',
+    hue: 'HUE',
+    saturation: 'SATURATION',
+    color: 'COLOR',
+    luminosity: 'LUMINOSITY',
+    'plus-lighter': 'LINEAR_DODGE',
+    'plus-darker': 'LINEAR_BURN',
+  };
+
+  /** Sombra "color x y blur" (formato de getComputedStyle: el color va primero) */
+  function parseShadowParts(str: string, withSpread: boolean) {
+    const out: { color: Rgba; offset: { x: number; y: number }; radius: number; spread: number }[] = [];
+    for (const part of splitCssList(str)) {
+      const t = part.trim();
+      if (!t || t === 'none') continue;
+      const cm = t.match(/(rgba?\([^)]+\)|#[a-f0-9]{3,8}\b)/i);
+      const color = cm ? parseColor(cm[1]) : { r: 0, g: 0, b: 0, a: 0.5 };
+      if (!color || color.a === 0) continue;
+      const lens = t
+        .replace(cm ? cm[1] : '', '')
+        .trim()
+        .split(/\s+/)
+        .map(l => parseFloat(l))
+        .filter(v => !isNaN(v));
+      if (lens.length < 2) continue;
+      out.push({
+        color,
+        offset: { x: lens[0], y: lens[1] },
+        radius: Math.max(0, lens[2] || 0),
+        spread: withSpread ? lens[3] || 0 : 0,
+      });
+    }
+    return out;
+  }
+
+  /** filter: lo traducible a Figma y, si hay algo más, el motivo para rasterizar */
+  function parseCssFilter(filter: string) {
+    const res: {
+      layerBlur?: number;
+      dropShadows: ReturnType<typeof parseShadowParts>;
+      opacity: number;
+      raster?: string;
+    } = {
+      dropShadows: [],
+      opacity: 1,
+    };
+    if (!filter || filter === 'none') return res;
+    const IDENTITY: Record<string, number> = {
+      grayscale: 0,
+      sepia: 0,
+      invert: 0,
+      brightness: 1,
+      contrast: 1,
+      saturate: 1,
+      'hue-rotate': 0,
+    };
+    const re = /([a-z-]+)\(((?:[^()]|\([^()]*\))*)\)/gi;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(filter))) {
+      const name = m[1].toLowerCase();
+      const arg = m[2].trim();
+      if (name === 'blur') {
+        const v = parseFloat(arg);
+        if (v > 0) res.layerBlur = v;
+      } else if (name === 'drop-shadow') {
+        res.dropShadows.push(...parseShadowParts(arg, false));
+      } else if (name === 'opacity') {
+        const v = arg.endsWith('%') ? parseFloat(arg) / 100 : parseFloat(arg);
+        if (!isNaN(v)) res.opacity *= Math.max(0, Math.min(1, v));
+      } else if (name in IDENTITY) {
+        const v = arg.endsWith('%') ? parseFloat(arg) / 100 : name === 'hue-rotate' ? parseFloat(arg) : parseFloat(arg);
+        if (!isNaN(v) && Math.abs(v - IDENTITY[name]) > 0.01) res.raster = `filter: ${name}`;
+      } else {
+        res.raster = `filter: ${name}`; // url(#svg-filter) u otros
+      }
+    }
+    return res;
+  }
+
+  /** ¿La transformación rota, inclina o voltea? (traslación y escala ya vienen en el rect medido) */
+  function transformNeedsRaster(style: CSSStyleDeclaration): string | null {
+    const rotate = (style as any).rotate;
+    if (rotate && rotate !== 'none' && parseFloat(rotate) !== 0) return 'rotate';
+    const t = style.transform;
+    if (!t || t === 'none') return null;
+    const inner = t.slice(t.indexOf('(') + 1, t.lastIndexOf(')'));
+    const nums = inner.split(',').map(v => parseFloat(v));
+    let a: number, b: number, c: number, d: number;
+    if (t.startsWith('matrix3d(') && nums.length === 16) {
+      // Columnas: [a b . p1 | c d . p2 | . . . p3 | tx ty tz 1]
+      if (Math.abs(nums[2]) > 1e-4 || Math.abs(nums[6]) > 1e-4) return 'transform 3D';
+      if (Math.abs(nums[3]) > 1e-4 || Math.abs(nums[7]) > 1e-4 || Math.abs(nums[11]) > 1e-4) return 'transform 3D';
+      [a, b, c, d] = [nums[0], nums[1], nums[4], nums[5]];
+    } else if (t.startsWith('matrix(') && nums.length === 6) {
+      [a, b, c, d] = nums;
+    } else return null;
+    if (Math.abs(b) > 1e-3 || Math.abs(c) > 1e-3) return 'transform: rotación/inclinación';
+    if (a < 0 || d < 0) return 'transform: volteado';
+    return null;
+  }
+
+  function effectsNeedingRaster(style: CSSStyleDeclaration, filterInfo: ReturnType<typeof parseCssFilter>) {
+    if (filterInfo.raster) return filterInfo.raster;
+    const tr = transformNeedsRaster(style);
+    if (tr) return tr;
+    const clip = style.clipPath;
+    if (clip && clip !== 'none' && !/^inset\(/.test(clip)) return 'clip-path';
+    const mask = (style as any).maskImage || (style as any).webkitMaskImage;
+    if (mask && mask !== 'none') return 'mask';
+    if (/repeating-(linear|radial|conic)-gradient/.test(style.backgroundImage || '')) return 'degradado repetido';
+    return null;
+  }
+
+  /** Efectos de un texto: text-shadow y modo de fusión */
+  function textEffects(style: CSSStyleDeclaration) {
+    const out: Record<string, unknown> = {};
+    const ts = parseShadowParts(style.textShadow, false);
+    if (ts.length) out.textShadow = ts;
+    const blend = BLEND_MODES[style.mixBlendMode];
+    if (blend) out.blendMode = blend;
+    return out;
   }
 
   // ── 3.5 Pseudo-element (::before / ::after) Extractor ──
@@ -369,6 +572,7 @@ export function extractNodeTree(
             fontSize: Math.round(parseFloat(style.fontSize) || 14),
             fontWeight: style.fontWeight || 400,
             fontFamily: style.fontFamily ? style.fontFamily.split(',')[0].replace(/['"]/g, '').trim() : 'Inter',
+            fontStack: style.fontFamily || undefined,
           },
         };
       } else if (w > 0 && h > 0 && ((bg && bg.a > 0.05) || hasBgGrad)) {
@@ -1249,12 +1453,14 @@ export function extractNodeTree(
         x: relX,
         y: relY,
       },
-      styles: { fills: [tc] },
+      styles: { fills: [tc], ...textEffects(style) },
       textData: {
         characters: rawText,
         fontSize: Math.round(fontSize),
         fontWeight: style.fontWeight || 400,
         fontFamily: cleanFontFamily,
+        // Pila CSS completa: el plugin prueba cada familia en orden (fase 5.3)
+        fontStack: style.fontFamily || undefined,
         lineHeight: parsedLineHeight,
         letterSpacing: parsedLetterSpacing,
         textAlign,
@@ -1427,6 +1633,23 @@ export function extractNodeTree(
         ? true
         : undefined,
   };
+  // ── 16b. Efectos CSS (fase 5.4): nativos en Figma o, si no hay equivalente, rasterizar ──
+  const filterInfo = parseCssFilter(style.filter);
+  if (filterInfo.layerBlur) node.styles.layerBlur = Math.round(filterInfo.layerBlur * 10) / 10;
+  if (filterInfo.dropShadows.length) node.styles.dropShadows = filterInfo.dropShadows;
+  if (filterInfo.opacity < 1) node.styles.opacity = Math.round(node.styles.opacity * filterInfo.opacity * 1000) / 1000;
+  const blendMode = BLEND_MODES[style.mixBlendMode];
+  if (blendMode) node.styles.blendMode = blendMode;
+  const rasterReason = effectsNeedingRaster(style, filterInfo);
+  if (rasterReason) {
+    node.metadata = { ...(node.metadata || {}), cssEffect: rasterReason };
+    // Solo elementos de tamaño razonable: rasterizar media página perdería toda la edición
+    const vpArea = (window.innerWidth || 1440) * (window.innerHeight || 900);
+    if (rect.width > 2 && rect.height > 2 && rect.width * rect.height <= vpArea * 1.5) {
+      node._rasterize = rasterReason;
+      node._vpRect = vpRectOf(rect);
+    }
+  }
   if (pendingBgSrc) {
     node._pendingBgImageSrc = pendingBgSrc;
     node.styles.imageScaleMode = bgScaleMode(style);
@@ -1482,6 +1705,7 @@ export function extractNodeTree(
           fontSize: Math.round(parseFloat(style.fontSize) || 14),
           fontWeight: 400,
           fontFamily: style.fontFamily ? style.fontFamily.split(',')[0].replace(/['"]/g, '').trim() : 'Inter',
+          fontStack: style.fontFamily || undefined,
         },
       });
     } else if (tagName === 'select') {
@@ -1585,6 +1809,7 @@ export function extractNodeTree(
           fontSize: Math.round(parseFloat(style.fontSize) || 14),
           fontWeight: style.fontWeight || 500,
           fontFamily: style.fontFamily ? style.fontFamily.split(',')[0].replace(/['"]/g, '').trim() : 'Inter',
+          fontStack: style.fontFamily || undefined,
           textAlign: textAlignment,
           lineHeight:
             style.lineHeight && style.lineHeight.endsWith('px') ? Math.round(parseFloat(style.lineHeight)) : undefined,
@@ -1688,6 +1913,7 @@ export function extractNodeTree(
               fontSize: Math.round(nodeFontSize),
               fontWeight: style.fontWeight || 400,
               fontFamily: style.fontFamily ? style.fontFamily.split(',')[0].replace(/['"]/g, '').trim() : 'Inter',
+              fontStack: style.fontFamily || undefined,
               lineHeight: nodeLh,
               letterSpacing: nodeLs,
               textAlign: style.textAlign.includes('center')

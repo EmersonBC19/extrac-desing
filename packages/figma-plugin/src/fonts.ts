@@ -247,7 +247,7 @@ export async function prewarmFonts(node: UINode): Promise<void> {
   const fontsToLoad = new Set<string>();
   function traverse(n: UINode) {
     if (n.type === 'TEXT' && n.textData) {
-      const fam = n.textData.fontFamily || 'Inter';
+      const fam = n.textData.fontStack || n.textData.fontFamily || 'Inter';
       const weight = n.textData.fontWeight || 400;
       fontsToLoad.add(`${fam}:::${weight}`);
     }

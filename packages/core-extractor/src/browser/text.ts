@@ -10,6 +10,8 @@ type ScriptBaseline = 'SUPER' | 'SUB';
 /** Estilo de un carácter (cacheado por elemento); _tt/_ws son text-transform y white-space del elemento. */
 interface CharStyle {
   fontFamily: string;
+  /** Pila CSS completa (fase 5.3) */
+  fontStack?: string;
   fontWeight: string | number;
   fontSize: number;
   italic: boolean;
@@ -28,6 +30,7 @@ interface RichSegment {
   end: number;
   _key?: string;
   fontFamily: string;
+  fontStack?: string;
   fontWeight: string | number;
   fontSize: number;
   italic?: boolean;
@@ -174,6 +177,7 @@ export function buildRichText(root: Element, rootStyle: CSSStyleDeclaration) {
     const cs = window.getComputedStyle(el);
     const st: CharStyle = {
       fontFamily: (cs.fontFamily || '').split(',')[0].replace(/['"]/g, '').trim() || 'Inter',
+      fontStack: cs.fontFamily || '',
       fontWeight: cs.fontWeight || 400,
       fontSize: Math.round((parseFloat(cs.fontSize) || rootFs) * 10) / 10,
       italic: cs.fontStyle === 'italic' || cs.fontStyle === 'oblique',
@@ -326,6 +330,7 @@ export function buildRichText(root: Element, rootStyle: CSSStyleDeclaration) {
       end: i + 1,
       _key: st.key,
       fontFamily: st.fontFamily,
+      fontStack: st.fontStack,
       fontWeight: st.fontWeight,
       fontSize: st.fontSize,
       italic: st.italic || undefined,

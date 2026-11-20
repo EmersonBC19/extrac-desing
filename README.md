@@ -9,8 +9,21 @@ Sistema híbrido que analiza interfaces en código fuente (HTML, Tailwind, CSS, 
 * **[`packages/contracts`](./packages/contracts):** Definición del contrato canónico de datos (`UINode`), eventos y tipos de WebSocket.
 * **[`packages/figma-plugin`](./packages/figma-plugin):** Plugin nativo de Figma (100% gratuito) con UI WebSocket y motor recursivo de Auto Layout.
 * **[`packages/browser-extension`](./packages/browser-extension):** Extensión de navegador (Manifest V3) con selector estilizado, efecto 3D Pop-out y extracción directa a Figma.
-* **[`packages/core-extractor`](./packages/core-extractor):** Motor en Playwright/Chromium que evalúa `getComputedStyle`, resuelve cascada CSS y genera el árbol `UINode`.
+* **[`packages/core-extractor`](./packages/core-extractor):** Fuente única del extractor de navegador (`src/browser`, TypeScript) y crawler en Playwright que lo usa para recorrer sitios completos.
 * **[`packages/mcp-server`](./packages/mcp-server):** Servidor MCP estándar (@modelcontextprotocol/sdk) y Hub de WebSocket en puerto 8080.
+
+### 🧑‍💻 Desarrollo: qué se edita y qué se genera
+
+Hay **un solo extractor**, compartido por la extensión y el crawler, y el plugin se empaqueta con esbuild:
+
+| Se edita (fuente) | Se genera | Comando |
+|---|---|---|
+| `packages/core-extractor/src/browser/*.ts` | `packages/browser-extension/extractor.js` (extensión y crawler) | `npm run build:extractor` |
+| `packages/figma-plugin/src/**/*.ts` (+ esquemas de `contracts`) | `packages/figma-plugin/dist/code.js` | `npm run build:plugin` |
+
+- **No edites los archivos generados**: llevan la cabecera "ARCHIVO GENERADO" y se sobrescriben.
+- Se versionan para que la extensión y el plugin se carguen sin compilar. El CI falla si no están al día (`npm run check:generated`).
+- `npm run build` compila todo en orden. `npm test` ejecuta la suite (ver [`tests/README.md`](./tests/README.md)).
 
 ---
 

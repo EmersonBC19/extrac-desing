@@ -24,6 +24,11 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
+      # extractor.js (extensión + crawler) y dist/code.js (plugin) se generan con esbuild y se
+      # versionan: la extensión se carga sin compilar. Falla si alguien editó la fuente y no regeneró.
+      - name: Archivos generados al día
+        run: npm run check:generated
+
       - name: Instalar Chromium para Playwright
         run: npx playwright install --with-deps chromium
 

@@ -56,5 +56,5 @@ node scratch/_board_sim.cjs https://sitio.com/ "document.body"
 
 ## Notas
 
-- La lógica pura del tablero se lee de `packages/figma-plugin/dist/code.js` (marcadores `@@BOARD_PURE`), porque el plugin aún no tiene módulos. Con el empaquetador (fase 3) se importará directamente.
+- Las pruebas unitarias importan los módulos fuente (extractor de navegador y tablero); las de integración prueban los archivos generados (`extractor.js`, `dist/code.js`).
 - Las pruebas de integración corren en serie (`fileParallelism: false`): navegador + hubs a la vez saturan equipos modestos.

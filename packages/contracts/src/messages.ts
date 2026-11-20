@@ -180,6 +180,25 @@ export const MESSAGE_CATALOG = {
     description: 'Guardar los ajustes del plugin',
   },
   SETTINGS: { channel: 'plugin', kind: 'event', route: 'sandbox → UI', description: 'Respuesta a GET_SETTINGS' },
+  GET_HISTORY: {
+    channel: 'plugin',
+    kind: 'query',
+    route: 'UI → sandbox',
+    description: 'Historial del receptor (clientStorage), sin lo que ya no existe en el lienzo',
+  },
+  SET_HISTORY: {
+    channel: 'plugin',
+    kind: 'command',
+    route: 'UI → sandbox',
+    description: 'Guardar el historial del receptor',
+  },
+  HISTORY: { channel: 'plugin', kind: 'event', route: 'sandbox → UI', description: 'Respuesta a GET_HISTORY' },
+  DELETED: {
+    channel: 'plugin',
+    kind: 'event',
+    route: 'sandbox → UI',
+    description: 'Resultado real de un borrado (qué se borró y cuántos ya no existían)',
+  },
   GET_PAGE_INFO: { channel: 'plugin', kind: 'query', route: 'UI → sandbox', description: 'Nombre de la página actual' },
   PAGE_INFO: {
     channel: 'plugin',
@@ -323,6 +342,8 @@ export type PluginUiMessage =
   | { type: 'GET_PAIRING_CODE' }
   | { type: 'SET_PAIRING_CODE'; code: string }
   | { type: 'GET_SETTINGS' }
+  | { type: 'GET_HISTORY' }
+  | { type: 'SET_HISTORY'; items: unknown[] }
   | { type: 'SET_SETTINGS'; settings: Record<string, unknown> };
 
 export type PluginUiMessageType = PluginUiMessage['type'];
@@ -332,6 +353,8 @@ export type PluginSandboxMessage =
   | { type: 'PAGE_INFO'; pageName: string }
   | { type: 'PAIRING_CODE'; code: string }
   | { type: 'SETTINGS'; settings: Record<string, unknown> }
+  | { type: 'HISTORY'; items: unknown[] }
+  | { type: 'DELETED'; nodeIds: string[]; missing: number }
   | { type: 'LOG'; message: string; level?: 'info' | 'warn' | 'error' | 'success' }
   | { type: 'RENDER_SUCCESS'; nodeId: string; name: string; [k: string]: unknown }
   | { type: 'RENDER_ERROR'; error: string };

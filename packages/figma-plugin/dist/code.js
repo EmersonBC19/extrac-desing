@@ -7769,7 +7769,8 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
       x += s.width + 240;
     }
     figma.viewport.scrollAndZoomIntoView(order.filter((s) => !s.removed));
-    return { main: full, nodeCount: countNodes(root), components: componentCount, page };
+    const sections = order.filter((s) => !s.removed);
+    return { main: full, nodeCount: countNodes(root), components: componentCount, page, sections };
   }
 
   // packages/figma-plugin/src/text-sizing.ts
@@ -8413,9 +8414,12 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
           level: "success",
           message: `Tablero creado en "${board.page.name}": ${board.components} componentes enlazados, secciones y estilos organizados`
         });
+        const boardTotal = Date.now() - t0;
         post2({
           type: "RENDER_SUCCESS",
           nodeId: board.main.id,
+          // QA-12: todas las capas del envío, para que borrarlo desde el plugin borre el tablero entero
+          nodeIds: board.sections.map((sec) => sec.id),
           name: board.main.name,
           nodeCount: board.nodeCount,
           pageName: board.page.name,
@@ -8425,8 +8429,8 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
           tokensCount: createdTokensCount,
           rawPayload: payload.rootNode,
           fontSubstitutions: reportFonts(),
-          durationMs: Date.now() - t0,
-          timings: { fontsMs, buildMs: Date.now() - boardStart, totalMs: Date.now() - t0 }
+          durationMs: boardTotal,
+          timings: { fontsMs, buildMs: boardTotal - (boardStart - t0), totalMs: boardTotal }
         });
         return;
       }
@@ -8434,6 +8438,7 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     const totalNodeCount = countNodes(payload.rootNode);
     const renderStartTime = Date.now();
     const rootFigmaNode = await buildStateVariants(payload, log2) || await buildFigmaNode(payload.rootNode);
+    const extraNodeIds = [];
     const buildMs = Date.now() - renderStartTime;
     if (rootFigmaNode) {
       targetPage.appendChild(rootFigmaNode);
@@ -8451,6 +8456,7 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
             headerText.x = payload.targetCanvasPosition.x;
             headerText.y = payload.targetCanvasPosition.y - 65;
             targetPage.appendChild(headerText);
+            extraNodeIds.push(headerText.id);
           } catch (_hdrErr) {
           }
         }
@@ -8502,9 +8508,11 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
       }
       figma.viewport.scrollAndZoomIntoView([rootFigmaNode]);
       targetPage.selection = [rootFigmaNode];
+      const totalMs = Date.now() - t0;
       post2({
         type: "RENDER_SUCCESS",
         nodeId: rootFigmaNode.id,
+        nodeIds: [rootFigmaNode.id, ...extraNodeIds],
         name: rootFigmaNode.name,
         nodeCount: totalNodeCount,
         pageName: targetPage.name,
@@ -8514,8 +8522,8 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
         tokensCount: createdTokensCount,
         rawPayload: payload.rootNode,
         fontSubstitutions: reportFonts(),
-        durationMs: Date.now() - t0,
-        timings: { fontsMs, buildMs, placeMs: Date.now() - renderStartTime - buildMs, totalMs: Date.now() - t0 }
+        durationMs: totalMs,
+        timings: { fontsMs, buildMs, placeMs: totalMs - (renderStartTime - t0) - buildMs, totalMs }
       });
     } else {
       throw new Error("No se pudo generar el nodo raíz");
@@ -8612,33 +8620,41 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     CLEAR_PAGE: () => {
       for (const child of figma.currentPage.children) child.remove();
     },
-    DELETE_NODE: (msg) => {
-      if (!msg.nodeId) return;
-      try {
-        const node2 = figma.getNodeById(msg.nodeId);
-        if (node2 && !node2.removed) {
-          const name = node2.name;
-          node2.remove();
-          post({ type: "LOG", message: `"${name}" eliminado del lienzo de Figma`, level: "info" });
-        }
-      } catch (delErr) {
-        log.warn("Error al borrar nodo", { error: String(delErr?.message || delErr) });
-      }
+    // QA-12: borrar de verdad (todas las capas de un envío, p. ej. las 4 Sections de un tablero) y
+    // confirmar a la UI lo que se borró. getNodeByIdAsync funciona también con acceso dinámico a páginas.
+    DELETE_NODE: async (msg) => {
+      if (msg.nodeId) await deleteNodes([msg.nodeId]);
     },
-    DELETE_MULTIPLE_NODES: (msg) => {
-      if (!Array.isArray(msg.nodeIds)) return;
+    DELETE_MULTIPLE_NODES: async (msg) => {
+      if (Array.isArray(msg.nodeIds)) await deleteNodes(msg.nodeIds.map(String));
+    },
+    // Historial del receptor (QA-12): en clientStorage, sin lo que ya no existe en el lienzo
+    GET_HISTORY: async () => {
+      let items = [];
       try {
-        let count = 0;
-        for (const id of msg.nodeIds) {
-          const node2 = figma.getNodeById(id);
-          if (node2 && !node2.removed) {
-            node2.remove();
-            count++;
+        const saved = await figma.clientStorage.getAsync("receivedItems");
+        if (Array.isArray(saved)) items = saved;
+      } catch (_e) {
+      }
+      const alive = [];
+      for (const item of items) {
+        const ids = Array.isArray(item?.nodeIds) && item.nodeIds.length ? item.nodeIds : [item?.id];
+        for (const id of ids) {
+          const n = id ? await findNode(String(id)) : null;
+          if (n && !n.removed) {
+            alive.push(item);
+            break;
           }
         }
-        post({ type: "LOG", message: `${count} componentes eliminados del lienzo de Figma`, level: "info" });
-      } catch (batchDelErr) {
-        log.warn("Error al borrar nodos múltiples", { error: String(batchDelErr?.message || batchDelErr) });
+      }
+      post({ type: "HISTORY", items: alive });
+    },
+    SET_HISTORY: async (msg) => {
+      const items = Array.isArray(msg.items) ? msg.items.slice(0, 50) : [];
+      try {
+        await figma.clientStorage.setAsync("receivedItems", items);
+      } catch (err) {
+        log.warn("No se pudo guardar el historial", { error: String(err?.message || err) });
       }
     },
     ZOOM_ALL: () => {
@@ -8709,6 +8725,37 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
       }
     }
   };
+  async function findNode(id) {
+    try {
+      if (typeof figma.getNodeByIdAsync === "function") return await figma.getNodeByIdAsync(id);
+      return figma.getNodeById(id);
+    } catch (_e) {
+      return null;
+    }
+  }
+  async function deleteNodes(ids) {
+    const removed = [];
+    let missing = 0;
+    for (const id of ids) {
+      const node2 = await findNode(id);
+      if (!node2 || node2.removed || node2.type === "PAGE" || node2.type === "DOCUMENT") {
+        missing++;
+        continue;
+      }
+      try {
+        node2.remove();
+        removed.push(id);
+      } catch (err) {
+        log.warn("Error al borrar nodo", { id, error: String(err?.message || err) });
+      }
+    }
+    post({ type: "DELETED", nodeIds: removed, missing });
+    post({
+      type: "LOG",
+      level: removed.length ? "info" : "warn",
+      message: removed.length ? `${removed.length} capa(s) eliminada(s) del lienzo de Figma` + (missing ? ` (${missing} ya no existían)` : "") : "No había nada que borrar: las capas ya no existen en el lienzo"
+    });
+  }
   figma.ui.onmessage = async (msg) => {
     const handler = msg && typeof msg.type === "string" && Object.prototype.hasOwnProperty.call(handlers, msg.type) ? handlers[msg.type] : null;
     if (!handler) {

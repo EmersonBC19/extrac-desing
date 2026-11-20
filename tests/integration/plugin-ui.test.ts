@@ -127,4 +127,38 @@ describe('ajustes del plugin', () => {
     expect(text).toMatch(/recibido: 1\.5 MB en 3 partes/);
     await page.close();
   });
+
+  it('QA-12: el historial llega del sandbox; borrar un tablero manda todas sus capas', async () => {
+    const page = await openUi({});
+    await page.evaluate(() =>
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            pluginMessage: {
+              type: 'HISTORY',
+              items: [
+                {
+                  id: '1:2',
+                  name: 'Landing',
+                  nodeIds: ['1:1', '1:2', '1:3', '1:4'],
+                  timestamp: '2026-11-20T10:00:00Z',
+                },
+              ],
+            },
+          },
+        }),
+      ),
+    );
+    expect(await page.evaluate(() => document.getElementById('badgeReceiverCount')!.textContent)).toBe('1');
+    await page.evaluate(() => (window as any).deleteInboxItem('1:2'));
+    const del = await page.evaluate(() =>
+      (window as any).__toSandbox.filter((m: any) => m.type === 'DELETE_MULTIPLE_NODES').at(-1),
+    );
+    expect(del.nodeIds).toEqual(['1:1', '1:2', '1:3', '1:4']);
+    const saved = await page.evaluate(() =>
+      (window as any).__toSandbox.filter((m: any) => m.type === 'SET_HISTORY').at(-1),
+    );
+    expect(saved.items).toEqual([]);
+    await page.close();
+  });
 });

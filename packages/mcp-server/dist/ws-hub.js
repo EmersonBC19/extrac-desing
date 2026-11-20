@@ -32,7 +32,6 @@ export class FigmaWsHub {
     wss = null;
     figmaSockets = new Set();
     otherClients = new Set();
-    lastRenderPayload = null;
     pairing = loadOrCreatePairingCode();
     pairingLimiter = new PairingRateLimiter();
     log;
@@ -163,7 +162,6 @@ export class FigmaWsHub {
                 return;
             }
             const renderMsg = msg;
-            this.lastRenderPayload = renderMsg;
             if (DEBUG_CAPTURE)
                 this.saveDebugCapture(msg.payload);
             this.log.info(`Render recibido. Transmitiendo a ${this.figmaSockets.size} plugin(s) de Figma`, {
@@ -261,11 +259,8 @@ export class FigmaWsHub {
             this.log.info(`Plugin de Figma conectado. Total activos: ${this.figmaSockets.size}`);
             // Enviar catálogo de vistas al plugin automáticamente
             this.send(ws, { type: 'VIEWS_CATALOG', payload: { views: this.getCatalog() } });
-            if (this.lastRenderPayload) {
-                this.log.info('Reenviando el último diseño al plugin recién conectado');
-                if (ws.readyState === WebSocket.OPEN)
-                    ws.send(JSON.stringify(this.lastRenderPayload));
-            }
+            // QA-11: no se reenvía el último render. Antes, abrir el plugin (o reconectar) volvía a
+            // dibujar lo último enviado; un render solo se dibuja cuando alguien lo envía.
         }
         else {
             this.otherClients.add(ws);
@@ -301,7 +296,6 @@ export class FigmaWsHub {
                 type: 'RENDER_NODES',
                 payload: { rootNode, pageName: useSeparatePage ? pageName : undefined, clearPage: false },
             };
-            this.lastRenderPayload = renderMsg;
             this.broadcastToFigma(renderMsg);
             return;
         }

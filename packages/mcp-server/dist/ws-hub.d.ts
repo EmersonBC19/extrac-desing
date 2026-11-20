@@ -7,7 +7,6 @@ export declare class FigmaWsHub {
     private wss;
     private figmaSockets;
     private otherClients;
-    private lastRenderPayload;
     private pairing;
     private pairingLimiter;
     private log;

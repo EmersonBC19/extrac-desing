@@ -203,6 +203,30 @@ export declare const MESSAGE_CATALOG: {
         readonly route: "sandbox → UI";
         readonly description: "Respuesta a GET_SETTINGS";
     };
+    readonly GET_HISTORY: {
+        readonly channel: "plugin";
+        readonly kind: "query";
+        readonly route: "UI → sandbox";
+        readonly description: "Historial del receptor (clientStorage), sin lo que ya no existe en el lienzo";
+    };
+    readonly SET_HISTORY: {
+        readonly channel: "plugin";
+        readonly kind: "command";
+        readonly route: "UI → sandbox";
+        readonly description: "Guardar el historial del receptor";
+    };
+    readonly HISTORY: {
+        readonly channel: "plugin";
+        readonly kind: "event";
+        readonly route: "sandbox → UI";
+        readonly description: "Respuesta a GET_HISTORY";
+    };
+    readonly DELETED: {
+        readonly channel: "plugin";
+        readonly kind: "event";
+        readonly route: "sandbox → UI";
+        readonly description: "Resultado real de un borrado (qué se borró y cuántos ya no existían)";
+    };
     readonly GET_PAGE_INFO: {
         readonly channel: "plugin";
         readonly kind: "query";
@@ -391,6 +415,11 @@ export type PluginUiMessage = {
 } | {
     type: 'GET_SETTINGS';
 } | {
+    type: 'GET_HISTORY';
+} | {
+    type: 'SET_HISTORY';
+    items: unknown[];
+} | {
     type: 'SET_SETTINGS';
     settings: Record<string, unknown>;
 };
@@ -405,6 +434,13 @@ export type PluginSandboxMessage = {
 } | {
     type: 'SETTINGS';
     settings: Record<string, unknown>;
+} | {
+    type: 'HISTORY';
+    items: unknown[];
+} | {
+    type: 'DELETED';
+    nodeIds: string[];
+    missing: number;
 } | {
     type: 'LOG';
     message: string;

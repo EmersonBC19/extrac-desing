@@ -437,7 +437,7 @@ function sectionToComponent(original: SceneNode, copy: SceneNode, title: string)
  */
 export async function buildDesignBoard(
   payload: any,
-): Promise<{ main: SceneNode; nodeCount: number; components: number; page: PageNode }> {
+): Promise<{ main: SceneNode; nodeCount: number; components: number; page: PageNode; sections: SceneNode[] }> {
   const root = payload.rootNode;
   root.type = 'FRAME'; // el tablero gestiona sus propios componentes
   let host = 'Landing';
@@ -649,5 +649,6 @@ export async function buildDesignBoard(
   }
 
   figma.viewport.scrollAndZoomIntoView(order.filter(s => !s.removed));
-  return { main: full, nodeCount: countNodes(root), components: componentCount, page };
+  const sections = order.filter(s => !s.removed);
+  return { main: full, nodeCount: countNodes(root), components: componentCount, page, sections };
 }

@@ -67,34 +67,43 @@ const handlers: { [T in PluginUiMessageType]: Handler<T> } = {
     for (const child of figma.currentPage.children) child.remove();
   },
 
-  DELETE_NODE: msg => {
-    if (!msg.nodeId) return;
-    try {
-      const node = figma.getNodeById(msg.nodeId) as SceneNode;
-      if (node && !node.removed) {
-        const name = node.name;
-        node.remove();
-        post({ type: 'LOG', message: `"${name}" eliminado del lienzo de Figma`, level: 'info' });
-      }
-    } catch (delErr: any) {
-      log.warn('Error al borrar nodo', { error: String(delErr?.message || delErr) });
-    }
+  // QA-12: borrar de verdad (todas las capas de un envío, p. ej. las 4 Sections de un tablero) y
+  // confirmar a la UI lo que se borró. getNodeByIdAsync funciona también con acceso dinámico a páginas.
+  DELETE_NODE: async msg => {
+    if (msg.nodeId) await deleteNodes([msg.nodeId]);
   },
 
-  DELETE_MULTIPLE_NODES: msg => {
-    if (!Array.isArray(msg.nodeIds)) return;
+  DELETE_MULTIPLE_NODES: async msg => {
+    if (Array.isArray(msg.nodeIds)) await deleteNodes(msg.nodeIds.map(String));
+  },
+
+  // Historial del receptor (QA-12): en clientStorage, sin lo que ya no existe en el lienzo
+  GET_HISTORY: async () => {
+    let items: any[] = [];
     try {
-      let count = 0;
-      for (const id of msg.nodeIds) {
-        const node = figma.getNodeById(id) as SceneNode;
-        if (node && !node.removed) {
-          node.remove();
-          count++;
+      const saved = await figma.clientStorage.getAsync('receivedItems');
+      if (Array.isArray(saved)) items = saved;
+    } catch (_e) {}
+    const alive: any[] = [];
+    for (const item of items) {
+      const ids: string[] = Array.isArray(item?.nodeIds) && item.nodeIds.length ? item.nodeIds : [item?.id];
+      for (const id of ids) {
+        const n = id ? await findNode(String(id)) : null;
+        if (n && !n.removed) {
+          alive.push(item);
+          break;
         }
       }
-      post({ type: 'LOG', message: `${count} componentes eliminados del lienzo de Figma`, level: 'info' });
-    } catch (batchDelErr: any) {
-      log.warn('Error al borrar nodos múltiples', { error: String(batchDelErr?.message || batchDelErr) });
+    }
+    post({ type: 'HISTORY', items: alive });
+  },
+
+  SET_HISTORY: async msg => {
+    const items = Array.isArray(msg.items) ? msg.items.slice(0, 50) : [];
+    try {
+      await figma.clientStorage.setAsync('receivedItems', items);
+    } catch (err: any) {
+      log.warn('No se pudo guardar el historial', { error: String(err?.message || err) });
     }
   },
 
@@ -172,6 +181,41 @@ const handlers: { [T in PluginUiMessageType]: Handler<T> } = {
     }
   },
 };
+
+async function findNode(id: string): Promise<BaseNode | null> {
+  try {
+    if (typeof (figma as any).getNodeByIdAsync === 'function') return await figma.getNodeByIdAsync(id);
+    return figma.getNodeById(id);
+  } catch (_e) {
+    return null;
+  }
+}
+
+async function deleteNodes(ids: string[]): Promise<void> {
+  const removed: string[] = [];
+  let missing = 0;
+  for (const id of ids) {
+    const node = await findNode(id);
+    if (!node || node.removed || node.type === 'PAGE' || node.type === 'DOCUMENT') {
+      missing++;
+      continue;
+    }
+    try {
+      (node as SceneNode).remove();
+      removed.push(id);
+    } catch (err: any) {
+      log.warn('Error al borrar nodo', { id, error: String(err?.message || err) });
+    }
+  }
+  post({ type: 'DELETED', nodeIds: removed, missing });
+  post({
+    type: 'LOG',
+    level: removed.length ? 'info' : 'warn',
+    message: removed.length
+      ? `${removed.length} capa(s) eliminada(s) del lienzo de Figma` + (missing ? ` (${missing} ya no existían)` : '')
+      : 'No había nada que borrar: las capas ya no existen en el lienzo',
+  });
+}
 
 // Receptor de mensajes de la UI del plugin
 figma.ui.onmessage = async (msg: PluginUiMessage) => {

@@ -351,6 +351,52 @@ describe('tablero design system', () => {
     for (const c of comps) expect(c.fills[0].color).toMatchObject({ r: 0.05, g: 0.05 });
   });
 
+  it('QA-12: borrar el envío desde el plugin borra el tablero entero y el historial se depura', async () => {
+    const figma = loadPlugin({}, { ...console, log() {}, warn() {} });
+    await figma.ui.onmessage({ type: 'RENDER_NODES', payload: { rootNode: clone(landing), board: true } });
+    const ok = figma.logs.find((m: any) => m.type === 'RENDER_SUCCESS');
+    // Todas las Sections del tablero (03 se omite si la página no tiene componentes repetidos)
+    expect(ok.nodeIds.length).toBeGreaterThanOrEqual(3);
+    expect([...ok.nodeIds].sort()).toEqual(
+      sectionsOf(figma)
+        .map((x: any) => x.id)
+        .sort(),
+    );
+    // El historial guarda el envío; tras borrarlo, GET_HISTORY ya no lo devuelve
+    await figma.ui.onmessage({ type: 'SET_HISTORY', items: [{ id: ok.nodeId, name: ok.name, nodeIds: ok.nodeIds }] });
+    await figma.ui.onmessage({ type: 'DELETE_MULTIPLE_NODES', nodeIds: ok.nodeIds });
+    expect(sectionsOf(figma)).toHaveLength(0);
+    expect(figma.logs.find((m: any) => m.type === 'DELETED')).toMatchObject({ nodeIds: ok.nodeIds, missing: 0 });
+    await figma.ui.onmessage({ type: 'GET_HISTORY' });
+    expect(figma.logs.filter((m: any) => m.type === 'HISTORY').at(-1).items).toEqual([]);
+    // Borrar otra vez: informa que ya no existían, sin errores
+    await figma.ui.onmessage({ type: 'DELETE_MULTIPLE_NODES', nodeIds: ok.nodeIds });
+    expect(figma.logs.filter((m: any) => m.type === 'DELETED').at(-1)).toMatchObject({
+      nodeIds: [],
+      missing: ok.nodeIds.length,
+    });
+  });
+
+  it('QA-12: el historial conserva lo que sigue en el lienzo', async () => {
+    const figma = loadPlugin({}, { ...console, log() {}, warn() {} });
+    await figma.ui.onmessage({ type: 'RENDER_NODES', payload: { rootNode: clone(hero) } });
+    const ok = figma.logs.find((m: any) => m.type === 'RENDER_SUCCESS');
+    await figma.ui.onmessage({
+      type: 'SET_HISTORY',
+      items: [
+        { id: ok.nodeId, nodeIds: ok.nodeIds },
+        { id: 'n-que-no-existe', nodeIds: ['n-que-no-existe'] },
+      ],
+    });
+    await figma.ui.onmessage({ type: 'GET_HISTORY' });
+    expect(
+      figma.logs
+        .filter((m: any) => m.type === 'HISTORY')
+        .at(-1)
+        .items.map((i: any) => i.id),
+    ).toEqual([ok.nodeId]);
+  });
+
   it('si el tablero falla, limpia lo creado y dibuja en modo normal', async () => {
     const figma = await runPlugin({ rootNode: clone(hero), board: true }, { failSection: true });
     expect(

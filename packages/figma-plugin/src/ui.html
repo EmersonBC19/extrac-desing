@@ -1336,6 +1336,15 @@
         pairingCode = msg.code || '';
         if (!socket) connect();
       },
+      HISTORY(msg) {
+        // Solo lo que aún existe en el lienzo (el sandbox depura lo borrado a mano)
+        receivedItems = (Array.isArray(msg.items) ? msg.items : []).map(i => ({ ...i, timestamp: new Date(i.timestamp || Date.now()) }));
+        badgeReceiverCount.textContent = receivedItems.length;
+        renderInboxFeed();
+      },
+      DELETED() {
+        // El sandbox ya informa en el registro qué se borró; aquí no hay nada más que hacer
+      },
       PAGE_INFO(msg) {
         if (msg.pageName) {
           activePageName.textContent = `Página: ${msg.pageName}`;
@@ -1368,6 +1377,7 @@
         // Agregar al receptor
         addReceivedItem({
           id: msg.nodeId,
+          nodeIds: Array.isArray(msg.nodeIds) && msg.nodeIds.length ? msg.nodeIds : [msg.nodeId],
           name: msg.name,
           nodeType: msg.nodeType,
           width: msg.width,
@@ -1522,8 +1532,9 @@
       const item = receivedItems.find(i => i.id === id);
       const name = item ? item.name : 'Componente';
 
-      // 1. Enviar orden a Figma para eliminar el nodo del lienzo
-      parent.postMessage({ pluginMessage: { type: 'DELETE_NODE', nodeId: id } }, '*');
+      // 1. Pedir al sandbox que borre todas sus capas (el resultado real llega como DELETED + LOG)
+      const nodeIds = item && Array.isArray(item.nodeIds) && item.nodeIds.length ? item.nodeIds : [id];
+      parent.postMessage({ pluginMessage: { type: 'DELETE_MULTIPLE_NODES', nodeIds } }, '*');
 
       // 2. Remover del estado local del plugin
       receivedItems = receivedItems.filter(i => i.id !== id);
@@ -1532,38 +1543,40 @@
       renderInboxFeed();
 
       // 3. Registrar en logs
-      log(`"${name}" eliminado del receptor y del lienzo de Figma`, 'info');
+      log(`Eliminando "${name}" del lienzo de Figma…`, 'info');
     }
 
     function clearAllInboxItems() {
       if (receivedItems.length === 0) return;
       if (!confirm(`¿Deseas eliminar los ${receivedItems.length} componentes de esta lista y del lienzo de Figma?`)) return;
 
-      const nodeIds = receivedItems.map(i => i.id);
+      const nodeIds = receivedItems.flatMap(i => (Array.isArray(i.nodeIds) && i.nodeIds.length ? i.nodeIds : [i.id]));
       parent.postMessage({ pluginMessage: { type: 'DELETE_MULTIPLE_NODES', nodeIds } }, '*');
 
       receivedItems = [];
       badgeReceiverCount.textContent = '0';
       saveReceivedItemsToStorage();
       renderInboxFeed();
-      log('Todos los componentes eliminados del receptor y del lienzo de Figma', 'info');
+      log('Eliminando todos los envíos del lienzo de Figma…', 'info');
     }
 
+    // QA-12: el historial vive en figma.clientStorage (vía el sandbox). localStorage no persiste en el
+    // iframe del plugin: al reabrir, la lista desaparecía y lo anterior ya no se podía borrar.
+    // El árbol completo (para "volver a dibujar") solo se guarda si es liviano: el almacenamiento es limitado.
+    const HISTORY_RAW_MAX = 300 * 1024;
     function saveReceivedItemsToStorage() {
-      try {
-        localStorage.setItem('__codeToFigma_receivedItems', JSON.stringify(receivedItems.slice(0, 50)));
-      } catch (_) {}
+      const items = receivedItems.slice(0, 50).map(item => {
+        let raw = null;
+        try {
+          raw = item.rawPayload && JSON.stringify(item.rawPayload).length <= HISTORY_RAW_MAX ? item.rawPayload : null;
+        } catch (_) {}
+        return { ...item, rawPayload: raw, timestamp: item.timestamp instanceof Date ? item.timestamp.toISOString() : item.timestamp };
+      });
+      parent.postMessage({ pluginMessage: { type: 'SET_HISTORY', items } }, '*');
     }
 
     function loadReceivedItemsFromStorage() {
-      try {
-        const saved = localStorage.getItem('__codeToFigma_receivedItems');
-        if (saved) {
-          receivedItems = JSON.parse(saved);
-          badgeReceiverCount.textContent = receivedItems.length;
-          renderInboxFeed();
-        }
-      } catch (_) {}
+      parent.postMessage({ pluginMessage: { type: 'GET_HISTORY' } }, '*');
     }
 
     // ── Importar JSON Manualmente ──

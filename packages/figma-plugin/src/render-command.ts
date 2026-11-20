@@ -155,9 +155,12 @@ export async function renderNodesCommand(
         level: 'success',
         message: `Tablero creado en "${board.page.name}": ${board.components} componentes enlazados, secciones y estilos organizados`,
       });
+      const boardTotal = Date.now() - t0;
       post({
         type: 'RENDER_SUCCESS',
         nodeId: board.main.id,
+        // QA-12: todas las capas del envío, para que borrarlo desde el plugin borre el tablero entero
+        nodeIds: board.sections.map(sec => sec.id),
         name: board.main.name,
         nodeCount: board.nodeCount,
         pageName: board.page.name,
@@ -167,8 +170,8 @@ export async function renderNodesCommand(
         tokensCount: createdTokensCount,
         rawPayload: payload.rootNode,
         fontSubstitutions: reportFonts(),
-        durationMs: Date.now() - t0,
-        timings: { fontsMs, buildMs: Date.now() - boardStart, totalMs: Date.now() - t0 },
+        durationMs: boardTotal,
+        timings: { fontsMs, buildMs: boardTotal - (boardStart - t0), totalMs: boardTotal },
       });
       return;
     }
@@ -179,6 +182,7 @@ export async function renderNodesCommand(
   const renderStartTime = Date.now();
   // Estados (fase 6.1): Default + Hover… → set de variantes State=…; si falla, solo el normal
   const rootFigmaNode = (await buildStateVariants(payload, log)) || (await buildFigmaNode(payload.rootNode));
+  const extraNodeIds: string[] = []; // capas sueltas que acompañan al render (título de sección)
   const buildMs = Date.now() - renderStartTime;
 
   if (rootFigmaNode) {
@@ -201,6 +205,7 @@ export async function renderNodesCommand(
           headerText.x = payload.targetCanvasPosition.x;
           headerText.y = payload.targetCanvasPosition.y - 65;
           targetPage.appendChild(headerText);
+          extraNodeIds.push(headerText.id);
         } catch (_hdrErr) {}
       }
     } else {
@@ -263,9 +268,11 @@ export async function renderNodesCommand(
     figma.viewport.scrollAndZoomIntoView([rootFigmaNode]);
     targetPage.selection = [rootFigmaNode];
 
+    const totalMs = Date.now() - t0; // un solo instante: duración y suma de etapas coinciden
     post({
       type: 'RENDER_SUCCESS',
       nodeId: rootFigmaNode.id,
+      nodeIds: [rootFigmaNode.id, ...extraNodeIds],
       name: rootFigmaNode.name,
       nodeCount: totalNodeCount,
       pageName: targetPage.name,
@@ -275,8 +282,8 @@ export async function renderNodesCommand(
       tokensCount: createdTokensCount,
       rawPayload: payload.rootNode,
       fontSubstitutions: reportFonts(),
-      durationMs: Date.now() - t0,
-      timings: { fontsMs, buildMs, placeMs: Date.now() - renderStartTime - buildMs, totalMs: Date.now() - t0 },
+      durationMs: totalMs,
+      timings: { fontsMs, buildMs, placeMs: totalMs - (renderStartTime - t0) - buildMs, totalMs },
     });
   } else {
     throw new Error('No se pudo generar el nodo raíz');

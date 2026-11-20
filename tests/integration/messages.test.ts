@@ -128,4 +128,31 @@ describe('resultado del render: plugin → hub → CLI/MCP', () => {
       fs.rmSync(home, { recursive: true, force: true });
     }
   });
+
+  it('QA-11: un plugin que se conecta (o reabre) después de un render NO lo vuelve a recibir', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ctf-msg2-'));
+    const hub = await startHub({ home });
+    try {
+      const code = fs.readFileSync(path.join(home, '.code-to-figma', 'pairing-code'), 'utf8').trim();
+      const pair = async () => {
+        const p = await connectClient(hub.url, 'null');
+        p.send({ type: 'REGISTER_CLIENT', clientType: 'FIGMA_PLUGIN', pairingCode: code });
+        await p.waitFor((m: any) => m.type === 'AUTH_OK');
+        return p;
+      };
+      const first = await pair();
+      const ext = await connectClient(hub.url);
+      ext.send({ type: 'RENDER_NODES', payload: { rootNode: { id: 'r', type: 'FRAME', name: 'Hero', children: [] } } });
+      await first.waitFor((m: any) => m.type === 'RENDER_NODES');
+      first.close(); // se cierra el plugin…
+      const reopened = await pair(); // …y se vuelve a abrir
+      await new Promise(r => setTimeout(r, 400));
+      expect(reopened.msgs.some((m: any) => m.type === 'RENDER_NODES')).toBe(false);
+      reopened.close();
+      ext.close();
+    } finally {
+      await hub.stop();
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
 });

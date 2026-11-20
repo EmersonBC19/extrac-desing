@@ -40,17 +40,64 @@ function uint8ArrayToBase64(bytes) {
 }
 
 // Fetch cross-origin image using extension host privileges
-async function fetchImageBase64(url) {
+// ── Política de descarga de imágenes (plan de mejoras, fase 1.4) ──
+// La extensión descarga con sus propios permisos lo que la página referencia. Sin límites,
+// una web pública podía hacer que accediera a la red local (router, intranet) o a otros sitios
+// con las cookies del usuario.
+
+/** ¿Host de red local / privada? (solo literales: el service worker no resuelve DNS) */
+function isPrivateHost(hostname) {
+  const h = (hostname || "").toLowerCase().replace(/^\[|\]$/g, "");
+  if (h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local") || h.endsWith(".internal") || h.endsWith(".lan")) return true;
+  if (h === "::1" || h === "0.0.0.0" || h.startsWith("fe80:") || /^f[cd][0-9a-f]{2}:/.test(h)) return true;
+  const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!m) return false;
+  const [a, b] = [Number(m[1]), Number(m[2])];
+  return a === 127 || a === 10 || a === 0 || (a === 172 && b >= 16 && b <= 31) ||
+         (a === 192 && b === 168) || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127);
+}
+
+/** Dominio "registrable" aproximado (últimas 2 etiquetas; 3 para dominios tipo .com.co / .co.uk) */
+function siteOf(hostname) {
+  const parts = (hostname || "").toLowerCase().split(".").filter(Boolean);
+  if (parts.length <= 2) return parts.join(".");
+  const sld = parts[parts.length - 2];
+  const twoLevelTld = ["com", "co", "org", "net", "gov", "edu", "gob", "ac"].includes(sld) && parts[parts.length - 1].length === 2;
+  return parts.slice(twoLevelTld ? -3 : -2).join(".");
+}
+
+/**
+ * Decide si se permite descargar `url` para la pestaña `tabUrl` y si se envían cookies.
+ * - solo http/https/data
+ * - red local solo si la pestaña también es de red local (dashboards en localhost sí; web pública no)
+ * - cookies solo para el mismo sitio que la pestaña (imágenes de plataformas con login)
+ */
+function imageFetchPolicy(url, tabUrl) {
+  let target;
+  try { target = new URL(url); } catch (_e) { return { allowed: false, reason: "URL inválida" }; }
+  if (target.protocol === "data:") return { allowed: true, credentials: false };
+  if (target.protocol !== "http:" && target.protocol !== "https:") {
+    return { allowed: false, reason: `Protocolo no permitido (${target.protocol})` };
+  }
+  let tab = null;
+  try { tab = tabUrl ? new URL(tabUrl) : null; } catch (_e) {}
+  const tabIsPrivate = tab ? isPrivateHost(tab.hostname) : false;
+  if (isPrivateHost(target.hostname) && !tabIsPrivate) {
+    return { allowed: false, reason: "Recurso de red local referenciado por un sitio público" };
+  }
+  const sameSite = !!tab && siteOf(tab.hostname) === siteOf(target.hostname);
+  return { allowed: true, credentials: sameSite };
+}
+
+async function fetchImageBase64(url, tabUrl) {
   if (!url) throw new Error("URL no proporcionada");
   if (url.startsWith("data:")) return url;
 
-  // credentials: include → imágenes de plataformas con login (dashboards, intranets)
-  let res;
-  try {
-    res = await fetch(url, { credentials: "include" });
-  } catch (_e) {
-    res = await fetch(url);
-  }
+  const policy = imageFetchPolicy(url, tabUrl);
+  if (!policy.allowed) throw new Error(`Descarga bloqueada: ${policy.reason}`);
+
+  // Cookies solo para imágenes del mismo sitio (plataformas con login, intranets)
+  const res = await fetch(url, { credentials: policy.credentials ? "include" : "omit" });
   if (!res.ok) {
     throw new Error(`HTTP error ${res.status}`);
   }
@@ -263,7 +310,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === "FETCH_IMAGE_AS_BASE64") {
-    fetchImageBase64(message.url)
+    // La pestaña que pide la imagen la da Chrome (no el mensaje): la página no puede falsearla
+    const tabUrl = _sender && _sender.tab ? _sender.tab.url : undefined;
+    fetchImageBase64(message.url, tabUrl)
       .then((base64) => sendResponse({ success: true, base64 }))
       .catch((err) => sendResponse({ success: false, error: err.message || String(err) }));
     return true; // Keep message channel open for async response

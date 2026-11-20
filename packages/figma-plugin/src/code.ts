@@ -791,6 +791,48 @@ async function buildDesignBoard(payload: any): Promise<{ main: SceneNode; nodeCo
   return { main: full, nodeCount: countNodes(root), components: componentCount, page };
 }
 
+/**
+ * Validación del payload antes de tocar el lienzo (plan de mejoras, fase 1.3).
+ * Cubre lo que no pasa por el hub (p. ej. "Pegar JSON"). Mismas reglas y límites que
+ * `validateRenderPayload` de @code-to-figma/contracts (Zod); el plugin aún se compila sin
+ * empaquetador, así que se duplica aquí hasta la fase 3 (bundler), donde se usará el esquema.
+ */
+const PLUGIN_PAYLOAD_LIMITS = { maxDepth: 400, maxNodes: 150_000, maxImageChars: 40 * 1024 * 1024, maxSvgChars: 2 * 1024 * 1024, maxTextChars: 200_000 };
+const VALID_NODE_TYPES = ['FRAME', 'TEXT', 'SVG', 'COMPONENT', 'INSTANCE'];
+
+function guardRenderPayload(root: any): string | null {
+  const isNum = (v: any) => v === undefined || (typeof v === 'number' && isFinite(v));
+  const stack: Array<{ n: any; d: number }> = [{ n: root, d: 0 }];
+  let count = 0;
+  while (stack.length) {
+    const { n, d } = stack.pop()!;
+    if (d > PLUGIN_PAYLOAD_LIMITS.maxDepth) return `árbol demasiado profundo (> ${PLUGIN_PAYLOAD_LIMITS.maxDepth} niveles)`;
+    if (++count > PLUGIN_PAYLOAD_LIMITS.maxNodes) return `demasiados nodos (> ${PLUGIN_PAYLOAD_LIMITS.maxNodes})`;
+    if (!n || typeof n !== 'object' || Array.isArray(n)) return 'nodo que no es un objeto';
+    if (!VALID_NODE_TYPES.includes(n.type)) return `tipo de nodo inválido: ${String(n.type).slice(0, 40)}`;
+    const L = n.layout;
+    if (L !== undefined && (typeof L !== 'object' || !isNum(L.x) || !isNum(L.y) || !isNum(L.measuredWidth) || !isNum(L.measuredHeight))) {
+      return `layout inválido en "${String(n.name || n.type).slice(0, 40)}"`;
+    }
+    if (n.imageData !== undefined && (typeof n.imageData !== 'string' || n.imageData.length > PLUGIN_PAYLOAD_LIMITS.maxImageChars ||
+        !/^data:image\/[a-z0-9.+-]+;base64,/i.test(n.imageData))) {
+      return 'imageData debe ser data:image/...;base64';
+    }
+    if (n.svgContent !== undefined && (typeof n.svgContent !== 'string' || n.svgContent.length > PLUGIN_PAYLOAD_LIMITS.maxSvgChars ||
+        /<script[\s>]/i.test(n.svgContent) || /javascript:/i.test(n.svgContent))) {
+      return 'SVG inválido (script, javascript: o demasiado grande)';
+    }
+    if (n.textData !== undefined && (typeof n.textData?.characters !== 'string' || n.textData.characters.length > PLUGIN_PAYLOAD_LIMITS.maxTextChars)) {
+      return 'textData inválido';
+    }
+    if (n.children !== undefined) {
+      if (!Array.isArray(n.children)) return 'children debe ser una lista';
+      for (let i = n.children.length - 1; i >= 0; i--) stack.push({ n: n.children[i], d: d + 1 });
+    }
+  }
+  return null;
+}
+
 // Aplica estilos por rango (fuente/peso, tamaño, color, decoración) a un TextNode
 async function applyTextSegments(tn: TextNode, segments: UITextSegment[]): Promise<void> {
   const len = tn.characters.length;
@@ -1429,6 +1471,18 @@ async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null> {
 
 // Receptor de eventos de Figma UI
 figma.ui.onmessage = async (msg) => {
+  // Código de vinculación con el hub: se pide una vez y se guarda en el almacenamiento local de Figma
+  if (msg.type === 'GET_PAIRING_CODE') {
+    let code = '';
+    try { code = (await figma.clientStorage.getAsync('hubPairingCode')) || ''; } catch (_e) {}
+    figma.ui.postMessage({ type: 'PAIRING_CODE', code });
+    return;
+  }
+  if (msg.type === 'SET_PAIRING_CODE') {
+    try { await figma.clientStorage.setAsync('hubPairingCode', String(msg.code || '')); } catch (_e) {}
+    return;
+  }
+
   if (msg.type === 'CLEAR_PAGE') {
     for (const child of figma.currentPage.children) {
       child.remove();
@@ -1557,6 +1611,9 @@ figma.ui.onmessage = async (msg) => {
         throw new Error('Payload vacío o inválido (se esperaba rootNode o nodes[0])');
       }
       payload.rootNode = rootNode;
+
+      const invalid = guardRenderPayload(rootNode);
+      if (invalid) throw new Error(`Payload inválido: ${invalid}`);
 
       let targetPage = figma.currentPage;
 

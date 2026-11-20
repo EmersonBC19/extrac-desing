@@ -713,19 +713,9 @@
         }
       } catch (_) {}
 
-      // Direct fallback
-      try {
-        const ws = new WebSocket("ws://localhost:8080");
-        ws.onopen = () => {
-          this.figmaStatus = { hubRunning: true, figmaConnected: true, figmaCount: 1 };
-          this.updateFigmaStatusUI();
-          try { ws.close(); } catch (_) {}
-        };
-        ws.onerror = () => {
-          this.figmaStatus = { hubRunning: false, figmaConnected: false, figmaCount: 0 };
-          this.updateFigmaStatusUI();
-        };
-      } catch (_) {}
+      // Sin service worker no hay forma segura de consultar el hub desde la página
+      this.figmaStatus = { hubRunning: false, figmaConnected: false, figmaCount: 0 };
+      this.updateFigmaStatusUI();
     }
 
     updateFigmaStatusUI() {
@@ -1458,70 +1448,26 @@
       }
     }
 
+    /**
+     * Envía al hub SIEMPRE a través del service worker de la extensión. Un WebSocket abierto
+     * desde la página llevaría el origen del sitio: el hub lo rechaza por seguridad y el CSP
+     * de muchos sitios también lo bloquea.
+     */
     transmitToWebSocket(payloadData) {
       return new Promise((resolve, reject) => {
-        if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage) {
-          chrome.runtime.sendMessage(
-            { type: "TRANSMIT_TO_FIGMA", payload: payloadData, clearPage: false },
-            (response) => {
-              if (chrome.runtime.lastError) {
-                console.warn("[CodeToFigma] Service worker falló, usando fallback WebSocket directo:", chrome.runtime.lastError.message);
-                this.directWebSocketFallback(payloadData).then(resolve).catch(reject);
-                return;
-              }
-              if (response && response.success) {
-                resolve(true);
-              } else {
-                reject(new Error(response?.error || "Error al transmitir a través del service worker"));
-              }
+        if (typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.sendMessage) {
+          return reject(new Error("La extensión no está disponible en esta pestaña. Recarga la página."));
+        }
+        chrome.runtime.sendMessage(
+          { type: "TRANSMIT_TO_FIGMA", payload: payloadData, clearPage: false },
+          (response) => {
+            if (chrome.runtime.lastError) {
+              return reject(new Error("La extensión se recargó o no responde. Recarga la página e inténtalo de nuevo."));
             }
-          );
-          return;
-        }
-
-        this.directWebSocketFallback(payloadData).then(resolve).catch(reject);
-      });
-    }
-
-    directWebSocketFallback(payloadData) {
-      return new Promise((resolve, reject) => {
-        let ws;
-        try {
-          ws = new WebSocket("ws://localhost:8080");
-        } catch (e) {
-          return reject(e);
-        }
-
-        const timeout = setTimeout(() => {
-          try { ws.close(); } catch(_e) {}
-          reject(new Error("Tiempo de espera agotado al conectar a ws://localhost:8080"));
-        }, 3000);
-
-        ws.onopen = () => {
-          clearTimeout(timeout);
-          const payload = (payloadData && payloadData.rootNode) ? {
-            rootNode: payloadData.rootNode,
-            tokens: payloadData.tokens,
-            createAsComponent: payloadData.createAsComponent,
-            board: payloadData.board === true,
-            source: payloadData.source,
-            clearPage: false
-          } : {
-            rootNode: payloadData,
-            clearPage: false
-          };
-
-          ws.send(JSON.stringify({ type: "RENDER_NODES", payload }));
-          setTimeout(() => {
-            try { ws.close(); } catch(_e) {}
-            resolve(true);
-          }, 300);
-        };
-
-        ws.onerror = (e) => {
-          clearTimeout(timeout);
-          reject(e);
-        };
+            if (response && response.success) resolve(true);
+            else reject(new Error(response?.error || "Error al transmitir a través del service worker"));
+          }
+        );
       });
     }
 

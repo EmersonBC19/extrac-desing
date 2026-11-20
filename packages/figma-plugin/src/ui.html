@@ -662,6 +662,32 @@
       color: #64748b;
       flex-shrink: 0;
     }
+    /* ── Vinculación con el hub (solo aparece cuando el hub la pide) ── */
+    .pairing-banner {
+      display: none;
+      margin: 8px 12px 0;
+      padding: 10px 12px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border-hover);
+      border-radius: 10px;
+    }
+    .pairing-banner.visible { display: block; }
+    .pairing-title { font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+    .pairing-desc { font-size: 11px; color: var(--text-muted); line-height: 1.4; margin-bottom: 8px; }
+    .pairing-desc code { color: var(--text); background: rgba(255,255,255,0.06); padding: 1px 4px; border-radius: 4px; }
+    .pairing-row { display: flex; gap: 6px; }
+    .pairing-row input {
+      flex: 1; min-width: 0;
+      background: var(--bg); color: var(--text);
+      border: 1px solid var(--card-border); border-radius: 6px;
+      padding: 6px 8px; font: 600 12px/1 ui-monospace, monospace; letter-spacing: 1px; text-transform: uppercase;
+    }
+    .pairing-row input:focus { outline: none; border-color: var(--accent); }
+    .pairing-row button {
+      background: var(--accent); color: #fff; border: 0; border-radius: 6px;
+      padding: 6px 12px; font-size: 11px; font-weight: 600; cursor: pointer;
+    }
+    .pairing-error { font-size: 11px; color: var(--red); margin-top: 6px; min-height: 0; }
   </style>
 </head>
 <body>
@@ -681,6 +707,18 @@
       <span class="pulse-dot"></span>
       <span id="statusText">Desconectado</span>
     </div>
+  </div>
+
+  <!-- Vinculación con el hub: el código aparece en la terminal al ejecutar `npm run start:hub` -->
+  <div id="pairingBanner" class="pairing-banner" role="region" aria-label="Vincular con el hub">
+    <div class="pairing-title">Vincular con el Hub</div>
+    <div class="pairing-desc">Pega el código que muestra la terminal del hub (<code>npm run start:hub</code>). Solo se pide una vez.</div>
+    <div class="pairing-row">
+      <input id="pairingInput" placeholder="XXXX-XXXX" maxlength="9" autocomplete="off" spellcheck="false"
+             onkeydown="if (event.key === 'Enter') submitPairingCode()">
+      <button onclick="submitPairingCode()">Vincular</button>
+    </div>
+    <div id="pairingError" class="pairing-error"></div>
   </div>
 
   <!-- Pestañas (100% compactas y sin scroll horizontal) -->
@@ -917,6 +955,9 @@
     // ── Estado Global del Plugin UI ──
     const HUB_URL = 'ws://localhost:8080';
     let socket = null;
+    let pairingCode = '';          // código de vinculación guardado en figma.clientStorage
+    let awaitingPairing = false;   // esperando que el usuario ingrese el código: no reconectar solo
+    let hubAuthRequired = false;   // el hub de esta conexión exige vinculación
     let reconnectTimer = null;
     let receivedItems = [];
     let viewsList = [];
@@ -985,12 +1026,21 @@
         socket.onopen = () => {
           updateStatus('connected');
           log('Conectado al Hub WebSocket con éxito.', 'success');
-          socket.send(JSON.stringify({
+          hubAuthRequired = false;
+          const register = () => socket && socket.readyState === WebSocket.OPEN && socket.send(JSON.stringify({
             type: 'REGISTER_CLIENT',
             clientType: 'FIGMA_PLUGIN',
             role: 'plugin',
-            client: 'Figma-Studio-Receiver-v3'
+            client: 'Figma-Studio-Receiver-v3',
+            pairingCode: pairingCode || undefined
           }));
+          if (pairingCode) {
+            register();
+          } else {
+            // Sin código guardado: si el hub exige vinculación (AUTH_REQUIRED) se muestra el aviso;
+            // un hub antiguo no la exige → registrarse igual tras un instante.
+            setTimeout(() => { if (!hubAuthRequired) register(); }, 400);
+          }
         };
 
         socket.onmessage = (event) => {
@@ -1002,8 +1052,15 @@
           }
         };
 
-        socket.onclose = () => {
+        socket.onclose = (event) => {
           updateStatus('disconnected');
+          // 4401/4429: falta código o es incorrecto. No reintentar solo (activaría el bloqueo
+          // anti fuerza bruta del hub): esperar a que el usuario lo ingrese.
+          if (awaitingPairing || event.code === 4401 || event.code === 4429) {
+            awaitingPairing = true;
+            showPairing();
+            return;
+          }
           log('Conexión con el Hub WebSocket cerrada. Reintentando en 3s...', 'warn');
           scheduleReconnect();
         };
@@ -1041,8 +1098,61 @@
       }
     }
 
+    // ── Vinculación con el hub ──
+    function showPairing(errorText) {
+      document.getElementById('pairingBanner').classList.add('visible');
+      // Sin texto (ej. al cerrarse la conexión) se conserva el error que ya se mostraba
+      if (errorText !== undefined) {
+        document.getElementById('pairingError').textContent = errorText;
+        if (errorText) log(`Vinculación: ${errorText}`, 'error');
+      }
+      setTimeout(() => document.getElementById('pairingInput').focus(), 50);
+    }
+
+    function hidePairing() {
+      document.getElementById('pairingBanner').classList.remove('visible');
+      document.getElementById('pairingError').textContent = '';
+    }
+
+    function submitPairingCode() {
+      const raw = document.getElementById('pairingInput').value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (raw.length !== 8) {
+        document.getElementById('pairingError').textContent = 'El código tiene 8 caracteres (XXXX-XXXX).';
+        return;
+      }
+      pairingCode = raw.slice(0, 4) + '-' + raw.slice(4);
+      parent.postMessage({ pluginMessage: { type: 'SET_PAIRING_CODE', code: pairingCode } }, '*');
+      awaitingPairing = false;
+      document.getElementById('pairingError').textContent = '';
+      log('Código de vinculación guardado. Conectando...', 'info');
+      reconnectHub();
+    }
+
     // ── WebSocket Handler ──
     function handleWebSocketMessage(msg) {
+      if (msg.type === 'AUTH_REQUIRED') {
+        hubAuthRequired = true;
+        if (!pairingCode) {
+          awaitingPairing = true;
+          showPairing();
+          log('El hub pide vincular el plugin. Ingresa el código que muestra su terminal.', 'warn');
+        }
+        return;
+      }
+      if (msg.type === 'AUTH_FAILED') {
+        // Código inválido o hub con código nuevo: olvidarlo y pedirlo otra vez
+        pairingCode = '';
+        parent.postMessage({ pluginMessage: { type: 'SET_PAIRING_CODE', code: '' } }, '*');
+        awaitingPairing = true;
+        showPairing(msg.reason || 'Código de vinculación incorrecto');
+        return;
+      }
+      if (msg.type === 'AUTH_OK') {
+        awaitingPairing = false;
+        hidePairing();
+        log('Plugin vinculado con el hub.', 'success');
+        return;
+      }
       if (msg.type === 'VIEWS_CATALOG') {
         viewsList = msg.payload?.views || [];
         renderViewsList();
@@ -1145,6 +1255,12 @@
     window.onmessage = (event) => {
       const msg = event.data.pluginMessage;
       if (!msg) return;
+
+      if (msg.type === 'PAIRING_CODE') {
+        pairingCode = msg.code || '';
+        if (!socket) connect();
+        return;
+      }
 
       if (msg.type === 'PAGE_INFO') {
         if (msg.pageName) {
@@ -1721,7 +1837,9 @@
     applyPluginSettingsToUI();
     loadReceivedItemsFromStorage();
     parent.postMessage({ pluginMessage: { type: 'GET_PAGE_INFO' } }, '*');
-    connect();
+    // Cargar el código de vinculación guardado y luego conectar (respaldo por si no responde)
+    parent.postMessage({ pluginMessage: { type: 'GET_PAIRING_CODE' } }, '*');
+    setTimeout(() => { if (!socket) connect(); }, 800);
   </script>
 </body>
 </html>

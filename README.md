@@ -22,7 +22,12 @@ Abre una terminal en este directorio y ejecuta:
 npm run start:hub
 ```
 Verás el mensaje:
-`⚡ Figma WebSocket Hub en ejecución en ws://localhost:8080`
+```
+⚡ Figma WebSocket Hub en ws://127.0.0.1:8080
+🔑 Código de vinculación para el plugin de Figma: ABCD-EFGH
+```
+Guarda ese **código de vinculación**: el plugin lo pide una sola vez (paso 2). Es siempre el mismo
+(queda en `~/.code-to-figma/pairing-code`); para generar uno nuevo, borra ese archivo y reinicia el hub.
 
 ---
 
@@ -33,8 +38,24 @@ Verás el mensaje:
 4. Selecciona el archivo:
    `packages/figma-plugin/manifest.json`
 5. Ejecuta el plugin recién importado (**Code to Figma AI Bridge**).
-6. Verás una ventana flotante con el estado:  
-   `● En línea` (Conectado a `ws://localhost:8080`).
+6. La primera vez aparece **"Vincular con el Hub"**: pega el código del paso 1 y pulsa *Vincular*.
+   Figma lo guarda; las siguientes veces conecta solo.
+7. Verás una ventana flotante con el estado `● En línea`.
+
+#### 🔒 Seguridad del hub
+Cualquier página web puede intentar conectarse a `ws://localhost:8080`, así que el hub:
+- Escucha solo en `127.0.0.1` (no es accesible desde la red).
+- Rechaza conexiones de páginas web; acepta la extensión, procesos locales (CLI/MCP) y el plugin de Figma **vinculado con el código**.
+- Bloquea 1 minuto tras 5 códigos incorrectos.
+- Valida cada render (estructura, tamaños, imágenes, SVG sin scripts) antes de enviarlo a Figma.
+
+Variables opcionales:
+
+| Variable | Efecto |
+|---|---|
+| `CTF_DEBUG_CAPTURE=1` | Guarda el último render en `scratch/captured-last-payload.json` (puede contener datos de la página; desactivado por defecto) |
+| `CTF_EXTENSION_IDS=id1,id2` | Solo acepta esas extensiones (por defecto, cualquier extensión instalada) |
+| `WS_PORT` / `WS_HOST` | Puerto (8080) e interfaz (`127.0.0.1`) |
 
 ---
 

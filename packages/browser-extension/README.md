@@ -27,7 +27,8 @@ Extensión de navegador (Manifest V3) que permite inspeccionar cualquier página
   ```bash
   npm run start:hub
   ```
-- En Figma, abre el plugin (**Code to Figma AI Bridge**). Verás el estado `● En línea`.
+- En Figma, abre el plugin (**Code to Figma AI Bridge**). La primera vez pide el **código de vinculación** que muestra la terminal del hub; después conecta solo. Verás el estado `● En línea`.
+- La extensión no necesita código: el hub la reconoce por su origen (`chrome-extension://…`). Todo el envío pasa por su service worker, nunca por un WebSocket abierto desde la página.
 
 ### 2. Inspecciona cualquier web
 1. Ve a cualquier página web (por ejemplo, una plataforma con login, un dashboard o `http://localhost:3000`).

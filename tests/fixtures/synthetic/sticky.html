@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+  <!-- Sticky (fase 5.7): pegado por el scroll de la página → posición natural;
+       pegado por el scroll de un contenedor → donde se ve -->
+  <body
+    style="
+      margin: 0;
+      font:
+        14px Arial,
+        sans-serif;
+    "
+  >
+    <div style="height: 600px; background: #f1f5f9">Arriba</div>
+    <section id="wrap" style="height: 1500px; background: #fff">
+      <div style="height: 50px">Intro</div>
+      <nav id="nav" style="position: sticky; top: 100px; height: 40px; background: #1e293b; color: #fff">Menú</nav>
+      <div style="height: 1200px">Contenido</div>
+    </section>
+    <div id="box" style="height: 200px; overflow: auto; background: #eef2ff">
+      <div style="height: 100px">Antes</div>
+      <div id="ihead" style="position: sticky; top: 0; height: 30px; background: #4338ca; color: #fff">Cabecera</div>
+      <div style="height: 800px">Lista</div>
+    </div>
+    <div style="height: 1500px"></div>
+  </body>
+</html>

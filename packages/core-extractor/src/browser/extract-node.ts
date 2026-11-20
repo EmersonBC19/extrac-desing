@@ -12,6 +12,8 @@ import {
   bgScaleMode,
   vpRectOf,
   canvasPixels,
+  hasScrolledAncestor,
+  naturalRectOfSticky,
 } from './dom-helpers';
 import { isInlineTextRoot, buildRichText } from './text';
 import { fitAutoLayoutToGeometry, pseudoPosition } from './geometry';
@@ -79,13 +81,18 @@ export function extractNodeTree(
   let relY = parentRect ? Math.round(rect.top - parentRect.top) : 0;
   // Headers/banners fijos: el navegador los pinta respecto a la PANTALLA. Si se extrae con la página
   // desplazada, quedarían a mitad del documento. Se colocan donde estarían con la página arriba.
-  if (parentRect && (style.position === 'fixed' || style.position === 'sticky') && window.scrollY > 0) {
+  if (parentRect && style.position === 'fixed' && window.scrollY > 0) {
     const parentEl = element.parentElement;
     const parentFixed = parentEl && window.getComputedStyle(parentEl).position === 'fixed';
     const parentDocTop = parentRect.top + window.scrollY;
-    if (!parentFixed && (style.position === 'fixed' || parentDocTop <= 1)) {
-      relY = Math.round(rect.top - parentDocTop);
-    }
+    if (!parentFixed) relY = Math.round(rect.top - parentDocTop);
+  }
+  // Sticky "pegado" por el scroll de la PÁGINA (fase 5.7): la exportación muestra el documento desde
+  // arriba, así que va en su posición natural. Si lo pega el scroll de un contenedor interno, ese
+  // desplazamiento se conserva en la exportación y lo fiel es dejarlo donde se ve.
+  if (parentRect && style.position === 'sticky' && window.scrollY > 0 && !hasScrolledAncestor(element)) {
+    const natural = naturalRectOfSticky(element);
+    if (natural) relY = Math.round(natural.top - parentRect.top);
   }
 
   // ── Helper para dividir valores CSS respetando paréntesis ──
@@ -1184,6 +1191,7 @@ export function extractNodeTree(
   let primaryAlign = 'MIN';
   let counterAlign = 'MIN';
   let layoutWrap = 'NO_WRAP';
+  let gridAsWrap = false;
 
   if (style.display.includes('flex')) {
     mode = style.flexDirection.includes('column') ? 'VERTICAL' : 'HORIZONTAL';
@@ -1201,9 +1209,15 @@ export function extractNodeTree(
     const hasAreas = style.gridTemplateAreas && style.gridTemplateAreas !== 'none';
     const rows = (style.gridTemplateRows || '').split(/\s+/).filter(Boolean);
     const cols = (style.gridTemplateColumns || '').split(/\s+/).filter(Boolean);
-    if (hasAreas || (rows.length > 1 && cols.length > 1)) {
-      // 2D Grid multidimensional (ej. aside + header + content): DEBE ser NONE para preservar x, y absolutos
+    if (hasAreas) {
+      // Grid con áreas (ej. aside + header + content): NONE para preservar x, y absolutos
       mode = 'NONE';
+    } else if (rows.length > 1 && cols.length > 1) {
+      // Grid 2D de celdas (tarjetas, galerías) → Auto Layout con wrap de Figma, editable (fase 5.6).
+      // fitWrapToGeometry comprueba que las filas sean regulares; si no, vuelve a posiciones exactas.
+      mode = 'HORIZONTAL';
+      layoutWrap = 'WRAP';
+      gridAsWrap = true;
     } else if (cols.length <= 1) {
       mode = 'VERTICAL';
       itemSpacing = Math.round(parseFloat(style.rowGap || style.gap) || 0);
@@ -1996,10 +2010,18 @@ export function extractNodeTree(
     }
   }
 
+  if (gridAsWrap) node._gridWrap = true;
+
   // ── 20.5 Ajustar el Auto Layout a la GEOMETRÍA real (principio de swarm-rebuild) ──
   // Padding, gap y alineación se deducían de palabras clave CSS; márgenes, place-items,
   // centrados por grid, etc. se perdían. Se recalculan con las posiciones medidas.
   fitAutoLayoutToGeometry(node);
+  // Grid convertido en wrap que no se pudo verificar con la geometría (hijos sin medir, filas
+  // irregulares…): posiciones exactas, como antes (fase 5.6)
+  if (node._gridWrap && !node._gridWrapOk) {
+    node.layout.mode = 'NONE';
+    node.layout.layoutWrap = 'NO_WRAP';
+  }
 
   // ── 21. Flattening de Wrappers Transparentes de Frameworks (Angular/React) ──
   const isFrameworkWrapper =

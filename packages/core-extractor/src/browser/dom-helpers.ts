@@ -128,3 +128,34 @@ export function canvasPixels(el: HTMLCanvasElement) {
     return null;
   }
 }
+
+/** ¿Algún ancestro (no la página) tiene su propio scroll desplazado? */
+export function hasScrolledAncestor(el: Element): boolean {
+  for (let p = el.parentElement; p && p !== document.body && p !== document.documentElement; p = p.parentElement) {
+    if (p.scrollTop > 0 || p.scrollLeft > 0) {
+      const oy = window.getComputedStyle(p).overflowY;
+      if (/(auto|scroll|hidden|overlay)/.test(oy)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Posición de un elemento sticky como si no estuviera pegado: se mide con `position: static`
+ * en una lectura sincrónica y se restaura en el acto (el navegador no llega a pintar el cambio).
+ */
+export function naturalRectOfSticky(el: Element): DOMRect | null {
+  const s = (el as HTMLElement).style;
+  if (!s) return null;
+  const value = s.getPropertyValue('position');
+  const priority = s.getPropertyPriority('position');
+  try {
+    s.setProperty('position', 'static', 'important');
+    return el.getBoundingClientRect();
+  } catch (_e) {
+    return null;
+  } finally {
+    if (value) s.setProperty('position', value, priority);
+    else s.removeProperty('position');
+  }
+}

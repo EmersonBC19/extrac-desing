@@ -217,11 +217,47 @@ export function fitWrapToGeometry(node: RawNode, W: number, H: number) {
   const top = rows[0].y;
   const lastRowBottom = Math.max(...rows[rows.length - 1].items.map(c => c.layout.y + sz(c, false)));
   const maxRight = Math.max(...kids.map(c => c.layout.x + sz(c, true)));
+  const gap = gaps.length ? r(avg(gaps)) : 0;
+
+  // Hijos que sobresalen del contenedor (margen negativo, franjas decorativas): el padding de
+  // Figma no puede ser negativo, se recortaría a 0 y desplazaría todo → posiciones exactas.
+  if (top < -1 || starts[0] < -1 || W - maxRight < -1 || H - lastRowBottom < -1) {
+    L.mode = 'NONE';
+    return;
+  }
+
+  // Figma llena cada fila con todo lo que quepa: si a una fila le sobra sitio para el primer
+  // elemento de la siguiente, lo subiría y movería todo lo demás (filas incompletas, celdas que
+  // ocupan varias columnas). En ese caso no se puede expresar con wrap → posiciones exactas.
+  for (let i = 0; i < rows.length - 1; i++) {
+    const last = rows[i].items[rows[i].items.length - 1];
+    const rowEnd = last.layout.x + sz(last, true)!;
+    const next = rows[i + 1].items[0];
+    if (rowEnd + gap + sz(next, true)! <= maxRight + 0.5) {
+      L.mode = 'NONE';
+      return;
+    }
+  }
+
   L.primaryAxisAlignItems = 'MIN';
   L.counterAxisAlignItems = 'MIN';
-  if (gaps.length) L.itemSpacing = r(avg(gaps));
+  if (gaps.length) L.itemSpacing = gap;
   L.counterAxisSpacing = r(avg(rowGaps));
   L.padding = { left: r(starts[0]), top: r(top), right: r(W - maxRight), bottom: r(H - lastRowBottom) };
+  // Celdas de un grid CSS: tamaño fijo. El ancho de cada celda sale de la posición de la siguiente
+  // (x siguiente − x − gap): las columnas fraccionarias (1fr = 293,33 px) no acumulan error de
+  // redondeo y el ancho disponible queda justo para las columnas de la web, así Figma parte las
+  // filas en el mismo sitio aunque cambie la fuente.
+  if (node._gridWrap) {
+    node._gridWrapOk = true;
+    for (const row of rows) {
+      row.items.forEach((c, i) => {
+        const nextItem = row.items[i + 1];
+        c.layout.width = nextItem ? nextItem.layout.x - c.layout.x - gap : Math.round(sz(c, true)!);
+        c.layout.height = Math.round(sz(c, false)!);
+      });
+    }
+  }
 }
 
 /**

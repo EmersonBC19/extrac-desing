@@ -189,4 +189,27 @@ describe('inspector de la extensión', () => {
     const full = await page.evaluate(() => (window as any).__sent[1]);
     expect(images(full.rootNode)).toBe(1);
   });
+
+  it('la elevación devuelve los estilos en línea que el elemento ya tenía, con su !important', async () => {
+    const page = await openInspector();
+    const before = await page.evaluate(() => {
+      const el = document.getElementById('c1')!;
+      el.style.setProperty('translate', '7px 3px', 'important');
+      el.style.setProperty('scale', '0.9');
+      el.style.setProperty('transition', 'opacity 1s');
+      return el.style.cssText;
+    });
+    await page.evaluate(() => {
+      const i = (window as any).__codeToFigmaInstance;
+      const el = document.getElementById('c1');
+      i.selectedElements = [el];
+      i.elevateElements([el]);
+    });
+    await page.waitForTimeout(100);
+    const lifted = await page.evaluate(() => document.getElementById('c1')!.style.translate);
+    expect(lifted).not.toBe('7px 3px'); // elevado: la mutación existe mientras dura la selección
+    await page.evaluate(() => (window as any).__codeToFigmaInstance.cancelElevation());
+    const after = await page.evaluate(() => document.getElementById('c1')!.style.cssText);
+    expect(after).toBe(before);
+  });
 });

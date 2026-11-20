@@ -102,6 +102,30 @@
       return null;
     }
   }
+  function hasScrolledAncestor(el) {
+    for (let p = el.parentElement; p && p !== document.body && p !== document.documentElement; p = p.parentElement) {
+      if (p.scrollTop > 0 || p.scrollLeft > 0) {
+        const oy = window.getComputedStyle(p).overflowY;
+        if (/(auto|scroll|hidden|overlay)/.test(oy)) return true;
+      }
+    }
+    return false;
+  }
+  function naturalRectOfSticky(el) {
+    const s = el.style;
+    if (!s) return null;
+    const value = s.getPropertyValue("position");
+    const priority = s.getPropertyPriority("position");
+    try {
+      s.setProperty("position", "static", "important");
+      return el.getBoundingClientRect();
+    } catch (_e) {
+      return null;
+    } finally {
+      if (value) s.setProperty("position", value, priority);
+      else s.removeProperty("position");
+    }
+  }
 
   // packages/core-extractor/src/browser/text.ts
   var INLINE_SKIP = /^(script|style|noscript|template)$/;
@@ -569,11 +593,35 @@
     const top = rows[0].y;
     const lastRowBottom = Math.max(...rows[rows.length - 1].items.map((c) => c.layout.y + sz(c, false)));
     const maxRight = Math.max(...kids.map((c) => c.layout.x + sz(c, true)));
+    const gap = gaps.length ? r(avg(gaps)) : 0;
+    if (top < -1 || starts[0] < -1 || W - maxRight < -1 || H - lastRowBottom < -1) {
+      L.mode = "NONE";
+      return;
+    }
+    for (let i = 0; i < rows.length - 1; i++) {
+      const last = rows[i].items[rows[i].items.length - 1];
+      const rowEnd = last.layout.x + sz(last, true);
+      const next = rows[i + 1].items[0];
+      if (rowEnd + gap + sz(next, true) <= maxRight + 0.5) {
+        L.mode = "NONE";
+        return;
+      }
+    }
     L.primaryAxisAlignItems = "MIN";
     L.counterAxisAlignItems = "MIN";
-    if (gaps.length) L.itemSpacing = r(avg(gaps));
+    if (gaps.length) L.itemSpacing = gap;
     L.counterAxisSpacing = r(avg(rowGaps));
     L.padding = { left: r(starts[0]), top: r(top), right: r(W - maxRight), bottom: r(H - lastRowBottom) };
+    if (node._gridWrap) {
+      node._gridWrapOk = true;
+      for (const row of rows) {
+        row.items.forEach((c, i) => {
+          const nextItem = row.items[i + 1];
+          c.layout.width = nextItem ? nextItem.layout.x - c.layout.x - gap : Math.round(sz(c, true));
+          c.layout.height = Math.round(sz(c, false));
+        });
+      }
+    }
   }
   function pseudoPosition(element, ps, w, h) {
     const es = window.getComputedStyle(element);
@@ -725,13 +773,15 @@
     const currentId = "node_" + ++counter.id;
     const relX = parentRect ? Math.round(rect.left - parentRect.left) : 0;
     let relY = parentRect ? Math.round(rect.top - parentRect.top) : 0;
-    if (parentRect && (style.position === "fixed" || style.position === "sticky") && window.scrollY > 0) {
+    if (parentRect && style.position === "fixed" && window.scrollY > 0) {
       const parentEl = element.parentElement;
       const parentFixed = parentEl && window.getComputedStyle(parentEl).position === "fixed";
       const parentDocTop = parentRect.top + window.scrollY;
-      if (!parentFixed && (style.position === "fixed" || parentDocTop <= 1)) {
-        relY = Math.round(rect.top - parentDocTop);
-      }
+      if (!parentFixed) relY = Math.round(rect.top - parentDocTop);
+    }
+    if (parentRect && style.position === "sticky" && window.scrollY > 0 && !hasScrolledAncestor(element)) {
+      const natural = naturalRectOfSticky(element);
+      if (natural) relY = Math.round(natural.top - parentRect.top);
     }
     function splitCssList(str) {
       if (!str) return [];
@@ -1597,6 +1647,7 @@
     let primaryAlign = "MIN";
     let counterAlign = "MIN";
     let layoutWrap = "NO_WRAP";
+    let gridAsWrap = false;
     if (style.display.includes("flex")) {
       mode = style.flexDirection.includes("column") ? "VERTICAL" : "HORIZONTAL";
       itemSpacing = Math.round(parseFloat(style.gap || style.rowGap || style.columnGap) || 0);
@@ -1613,8 +1664,12 @@
       const hasAreas = style.gridTemplateAreas && style.gridTemplateAreas !== "none";
       const rows = (style.gridTemplateRows || "").split(/\s+/).filter(Boolean);
       const cols = (style.gridTemplateColumns || "").split(/\s+/).filter(Boolean);
-      if (hasAreas || rows.length > 1 && cols.length > 1) {
+      if (hasAreas) {
         mode = "NONE";
+      } else if (rows.length > 1 && cols.length > 1) {
+        mode = "HORIZONTAL";
+        layoutWrap = "WRAP";
+        gridAsWrap = true;
       } else if (cols.length <= 1) {
         mode = "VERTICAL";
         itemSpacing = Math.round(parseFloat(style.rowGap || style.gap) || 0);
@@ -2226,7 +2281,12 @@
         node.children.sort((a, b) => (a.layout?.y || 0) - (b.layout?.y || 0));
       }
     }
+    if (gridAsWrap) node._gridWrap = true;
     fitAutoLayoutToGeometry(node);
+    if (node._gridWrap && !node._gridWrapOk) {
+      node.layout.mode = "NONE";
+      node.layout.layoutWrap = "NO_WRAP";
+    }
     const isFrameworkWrapper = !isSearchContainer && (["app-root", "router-outlet", "app-login", "ng-component", "ng-container"].includes(tagName) || tagName.startsWith("app-") && fills.length === 0 && strokes.length === 0 && padding.top === 0 && padding.left === 0 && boxShadow.length === 0 || tagName === "div" && fills.length === 0 && strokes.length === 0 && padding.top === 0 && padding.left === 0 && boxShadow.length === 0 && node.children.length === 1 && node.children[0].type !== "TEXT");
     const hasOwnVisual = !!node.clipsContent || !!node._pendingBgImageSrc;
     if (!isRoot && isFrameworkWrapper && !hasOwnVisual && node.children.length === 1) {
@@ -2544,6 +2604,8 @@
       delete n._needsShot;
       delete n._hadPendingImage;
       delete n._rasterize;
+      delete n._gridWrap;
+      delete n._gridWrapOk;
       (n.children || []).forEach(cleanup);
     })(rootNode);
     return rootNode;

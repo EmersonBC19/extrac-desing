@@ -1,0 +1,51 @@
+<!doctype html>
+<html>
+  <!-- Grids 2D (fase 5.6): regulares → Auto Layout con wrap; con áreas o celdas que ocupan varias filas → NONE -->
+  <head>
+    <style>
+      body {
+        margin: 0;
+        font:
+          14px/18px Arial,
+          sans-serif;
+      }
+      .card {
+        background: #e0e7ff;
+        border-radius: 8px;
+        padding: 12px;
+      }
+      section {
+        margin: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <section id="cards" style="display: grid; grid-template-columns: repeat(3, 200px); gap: 16px 24px">
+      <div class="card">Uno</div>
+      <div class="card">Dos</div>
+      <div class="card">Tres</div>
+      <div class="card">Cuatro</div>
+      <div class="card">Cinco</div>
+      <div class="card">Seis</div>
+    </section>
+    <section id="fr" style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px; width: 610px">
+      <div class="card">A</div>
+      <div class="card">B</div>
+      <div class="card">C</div>
+      <div class="card">D</div>
+    </section>
+    <section
+      id="areas"
+      style="display: grid; grid-template-areas: 'side main' 'side foot'; grid-template-columns: 120px 300px; gap: 8px"
+    >
+      <div class="card" style="grid-area: side">Lateral</div>
+      <div class="card" style="grid-area: main">Principal</div>
+      <div class="card" style="grid-area: foot">Pie</div>
+    </section>
+    <section id="span" style="display: grid; grid-template-columns: repeat(2, 150px); gap: 8px">
+      <div class="card" style="grid-row: span 2">Alta</div>
+      <div class="card">X</div>
+      <div class="card">Y</div>
+    </section>
+  </body>
+</html>

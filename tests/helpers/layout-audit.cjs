@@ -8,11 +8,12 @@ function auditLayout(root, { tolerance = 2, maxExamples = 6, detail = false } = 
     misplaced = 0,
     children = 0;
   const examples = [];
+  // Misma precedencia que el plugin (render.ts): un tamaño fijo explícito manda sobre el medido
   const size = (c, horizontal) => {
-    const m = horizontal ? c.layout.measuredWidth : c.layout.measuredHeight;
-    if (typeof m === 'number') return m;
     const v = horizontal ? c.layout.width : c.layout.height;
-    return typeof v === 'number' ? v : null;
+    if (typeof v === 'number') return v;
+    const m = horizontal ? c.layout.measuredWidth : c.layout.measuredHeight;
+    return typeof m === 'number' ? m : null;
   };
   const report = (n, c, err, L, W, H, P, gap, kids, prefix = '') => {
     misplaced++;

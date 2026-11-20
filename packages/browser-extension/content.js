@@ -56,6 +56,28 @@
     multi: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>`,
   };
 
+  /**
+   * El inspector NO es "cero mutación": la elevación de la selección cambia translate/scale/
+   * transition/will-change en línea del elemento (fase 5.7). Siempre se restaura lo que había,
+   * con su prioridad; la extracción mide con la elevación suspendida (suspendLift).
+   */
+  function saveInlineStyles(el, props) {
+    const out = {};
+    for (const prop of props) {
+      const key = prop.replace(/-([a-z])/g, (_m, c) => c.toUpperCase());
+      out[key] = { prop, value: el.style.getPropertyValue(prop), priority: el.style.getPropertyPriority(prop) };
+    }
+    return out;
+  }
+
+  function restoreInlineStyles(el, saved) {
+    for (const k of Object.keys(saved)) {
+      const { prop, value, priority } = saved[k];
+      if (value) el.style.setProperty(prop, value, priority);
+      else el.style.removeProperty(prop);
+    }
+  }
+
   /** Recorrido previo de páginas largas: pasos de ~0,8 pantallas, 220 ms cada uno (≈ 1 min como máximo) */
   const MAX_PRESCROLL_STEPS = 260;
 
@@ -1159,16 +1181,12 @@
           el,
           s,
           ty,
-          prev: {
-            translate: el.style.translate,
-            scale: el.style.scale,
-            transition: el.style.transition,
-            willChange: el.style.willChange,
-          },
+          // Estilos en línea previos CON su prioridad (!important): se devuelven tal cual estaban
+          prev: saveInlineStyles(el, ['translate', 'scale', 'transition', 'will-change']),
         };
         if (!reduce) {
           el.style.transition =
-            (lift.prev.transition ? lift.prev.transition + ', ' : '') +
+            (lift.prev.transition.value ? lift.prev.transition.value + ', ' : '') +
             'translate 0.38s cubic-bezier(0.16, 1, 0.3, 1), scale 0.38s cubic-bezier(0.16, 1, 0.3, 1)';
         }
         el.style.willChange = 'translate, scale';
@@ -1180,11 +1198,7 @@
 
     unliftElements() {
       for (const lift of this._lifts || []) {
-        const st = lift.el.style;
-        st.translate = lift.prev.translate;
-        st.scale = lift.prev.scale;
-        st.transition = lift.prev.transition;
-        st.willChange = lift.prev.willChange;
+        restoreInlineStyles(lift.el, lift.prev);
       }
       this._lifts = [];
     }
@@ -1197,10 +1211,8 @@
       const lifts = this._lifts || [];
       if (!lifts.length) return () => {};
       for (const lift of lifts) {
-        const st = lift.el.style;
-        st.transition = 'none';
-        st.translate = lift.prev.translate;
-        st.scale = lift.prev.scale;
+        lift.el.style.transition = 'none';
+        restoreInlineStyles(lift.el, { translate: lift.prev.translate, scale: lift.prev.scale });
         lift.suspended = true;
       }
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
@@ -1212,7 +1224,7 @@
           lift.el.style.scale = String(lift.s);
           // restaurar la transición después de aplicar, para que no re-anime
           requestAnimationFrame(() => {
-            lift.el.style.transition = lift.prev.transition;
+            restoreInlineStyles(lift.el, { transition: lift.prev.transition });
           });
         }
       };

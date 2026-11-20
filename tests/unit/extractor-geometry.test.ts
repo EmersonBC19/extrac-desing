@@ -211,6 +211,50 @@ describe('fitWrapToGeometry (vía fitAutoLayoutToGeometry con wrap)', () => {
     // Las filas no tienen el mismo gap/ancho que Figma reproduciría: posiciones exactas o wrap fiel
     if (n.layout.mode !== 'NONE') expect(n.layout.layoutWrap).toBe('WRAP');
   });
+
+  it('fila con hueco donde cabría el primero de la siguiente → NONE (Figma lo subiría)', () => {
+    const n = frame(
+      'HORIZONTAL',
+      410,
+      110,
+      [
+        child({ x: 0, y: 0, w: 100, h: 50 }),
+        child({ x: 0, y: 60, w: 100, h: 50 }),
+        child({ x: 110, y: 60, w: 300, h: 50 }),
+      ],
+      { layoutWrap: 'WRAP' },
+    );
+    X.fitAutoLayoutToGeometry(n);
+    expect(n.layout.mode).toBe('NONE');
+  });
+
+  it('hijo que sobresale del contenedor (y negativo) → NONE', () => {
+    const n = frame(
+      'HORIZONTAL',
+      200,
+      100,
+      [child({ x: 0, y: -8, w: 200, h: 8 }), child({ x: 0, y: 0, w: 200, h: 100 })],
+      { layoutWrap: 'WRAP' },
+    );
+    X.fitAutoLayoutToGeometry(n);
+    expect(n.layout.mode).toBe('NONE');
+  });
+
+  it('grid CSS con columnas fraccionarias: el ancho sale de la posición siguiente (sin error acumulado)', () => {
+    const xs = [0, 47, 95, 142];
+    const kids = [...xs.map(x => child({ x, y: 0, w: 47, h: 23 })), ...xs.map(x => child({ x, y: 23, w: 47, h: 23 }))];
+    const n: any = frame('HORIZONTAL', 189, 46, kids, { layoutWrap: 'WRAP' });
+    n._gridWrap = true;
+    X.fitAutoLayoutToGeometry(n);
+    expect(n.layout).toMatchObject({ layoutWrap: 'WRAP', itemSpacing: 0 });
+    expect(n.children.slice(0, 4).map((c: any) => c.layout.width)).toEqual([47, 48, 47, 47]);
+    // Figma coloca cada celda donde estaba: x = suma de los anchos anteriores
+    let x = 0;
+    for (const c of n.children.slice(0, 4)) {
+      expect(c.layout.x).toBe(x);
+      x += c.layout.width;
+    }
+  });
 });
 
 describe('funciones de imagen y color', () => {

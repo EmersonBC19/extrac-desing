@@ -202,73 +202,117 @@ async function captureRegions(windowId, rects, viewportWidth) {
   return out;
 }
 
-// Connect to WebSocket Hub (ws://localhost:8080) in background environment
-function sendToWebSocketHub(data) {
+// ── Envío al hub (inicio) ─────────────────────────────────────────────────────────────────
+const HUB_URL = 'ws://localhost:8080';
+// Mismos valores que packages/contracts/src/payload-stats.ts (este archivo no se empaqueta)
+const CHUNK_THRESHOLD_BYTES = 1024 * 1024;
+const CHUNK_SIZE_CHARS = 512 * 1024;
+
+/** Parte el texto sin separar un par sustituto UTF-16 (emoji) entre dos partes */
+function splitIntoChunks(text, size) {
+  const chunks = [];
+  let i = 0;
+  while (i < text.length) {
+    let end = Math.min(text.length, i + size);
+    const code = text.charCodeAt(end - 1);
+    if (end < text.length && code >= 0xd800 && code <= 0xdbff) end--;
+    chunks.push(text.slice(i, end));
+    i = end;
+  }
+  return chunks;
+}
+
+function buildRenderMessage(data) {
+  const payload =
+    data && data.rootNode
+      ? {
+          rootNode: data.rootNode,
+          tokens: data.tokens,
+          createAsComponent: data.createAsComponent,
+          board: data.board === true, // landing completa / multi-selección → tablero design system
+          source: data.source, // { url, title } para nombrar la página del tablero
+          clearPage: false,
+        }
+      : { rootNode: data, clearPage: false };
+  return { type: 'RENDER_NODES', payload };
+}
+
+/**
+ * Envía un render al hub. Si el JSON pasa de CHUNK_THRESHOLD_BYTES va por partes (RENDER_CHUNK):
+ * el plugin muestra el progreso y el hub valida el conjunto al completarlo.
+ * El tiempo límite cubre solo la conexión; un envío grande puede tardar lo que necesite.
+ */
+function sendToWebSocketHub(data, hubUrl = HUB_URL) {
   return new Promise((resolve, reject) => {
     let ws;
     try {
-      ws = new WebSocket('ws://localhost:8080');
+      ws = new WebSocket(hubUrl);
     } catch (err) {
       return reject(new Error('No se pudo instanciar WebSocket: ' + err.message));
     }
 
     let settled = false;
-    const timeout = setTimeout(() => {
+    const finish = (err, value) => {
       if (settled) return;
       settled = true;
+      clearTimeout(connectTimeout);
+      if (err) {
+        try {
+          ws.close();
+        } catch (_) {}
+        reject(err);
+      } else {
+        resolve(value);
+      }
+    };
+    const connectTimeout = setTimeout(
+      () => finish(new Error('Tiempo de espera agotado al conectar a ' + hubUrl)),
+      6000,
+    );
+
+    // Esperar a que el socket vacíe su búfer (sin acumular cientos de MB en memoria)
+    const drained = (limit = 0) =>
+      new Promise(r => {
+        const check = () =>
+          ws.readyState !== WebSocket.OPEN || ws.bufferedAmount <= limit ? r() : setTimeout(check, 25);
+        check();
+      });
+
+    ws.onopen = async () => {
+      clearTimeout(connectTimeout);
       try {
-        ws.close();
-      } catch (_) {}
-      reject(new Error('Tiempo de espera agotado al conectar a ws://localhost:8080'));
-    }, 6000);
-
-    ws.onopen = () => {
-      const payload =
-        data && data.rootNode
-          ? {
-              rootNode: data.rootNode,
-              tokens: data.tokens,
-              createAsComponent: data.createAsComponent,
-              board: data.board === true, // landing completa / multi-selección → tablero design system
-              source: data.source, // { url, title } para nombrar la página del tablero
-              clearPage: false,
-            }
-          : {
-              rootNode: data,
-              clearPage: false,
-            };
-
-      const msg = {
-        type: 'RENDER_NODES',
-        payload,
-      };
-      ws.send(JSON.stringify(msg));
-
-      // Wait until bufferedAmount is 0 to ensure full transmission
-      const interval = setInterval(() => {
-        if (!ws || ws.bufferedAmount === 0) {
-          clearInterval(interval);
-          if (settled) return;
-          settled = true;
-          clearTimeout(timeout);
-          setTimeout(() => {
-            try {
-              ws.close();
-            } catch (_) {}
-            resolve(true);
-          }, 150);
+        const text = JSON.stringify(buildRenderMessage(data));
+        let parts = 1;
+        if (text.length > CHUNK_THRESHOLD_BYTES) {
+          const chunks = splitIntoChunks(text, CHUNK_SIZE_CHARS);
+          const transferId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+          parts = chunks.length;
+          for (let index = 0; index < chunks.length; index++) {
+            if (ws.readyState !== WebSocket.OPEN) throw new Error('El hub cerró la conexión durante el envío');
+            ws.send(
+              JSON.stringify({ type: 'RENDER_CHUNK', transferId, index, total: chunks.length, data: chunks[index] }),
+            );
+            await drained(2 * CHUNK_SIZE_CHARS);
+          }
+        } else {
+          ws.send(text);
         }
-      }, 50);
+        await drained(0);
+        setTimeout(() => {
+          try {
+            ws.close();
+          } catch (_) {}
+          finish(null, { bytes: text.length, parts });
+        }, 150);
+      } catch (err) {
+        finish(err);
+      }
     };
 
-    ws.onerror = _err => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      reject(new Error('Hub no detectado en ws://localhost:8080'));
-    };
+    ws.onerror = () => finish(new Error('Hub no detectado en ' + hubUrl));
   });
 }
+// ── Envío al hub (fin) ────────────────────────────────────────────────────────────────────
 
 // Check if WebSocket Hub and Figma plugin are live
 function checkHubStatus() {
@@ -342,7 +386,7 @@ function checkHubStatus() {
 // Mensajes del content script (catálogo: packages/contracts/src/messages.ts, canal "extension").
 // Cada manejador devuelve una promesa; su resultado se fusiona en { success: true, ... }.
 const MESSAGE_HANDLERS = {
-  TRANSMIT_TO_FIGMA: message => sendToWebSocketHub(message.payload).then(() => ({})),
+  TRANSMIT_TO_FIGMA: message => sendToWebSocketHub(message.payload).then(sent => ({ sent })),
 
   CHECK_FIGMA_STATUS: () => checkHubStatus().then(status => ({ status })),
 

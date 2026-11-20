@@ -52,8 +52,19 @@
     drag: `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><circle cx="9" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="5" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="15" cy="19" r="1.5"/></svg>`,
     snowflake: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/><line x1="19.07" y1="4.93" x2="4.93" y2="19.07"/></svg>`,
     component: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>`,
+    info: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`,
     multi: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>`,
   };
+
+  /** Texto de la página o de la extracción → HTML seguro dentro del overlay */
+  function escapeHtml(str) {
+    return String(str == null ? '' : str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
 
   // Leaf and inline tags that usually don't represent a complete component on their own
   const LEAF_TAGS = new Set([
@@ -626,6 +637,58 @@
         .toast-desc {
           color: #94a3b8;
           font-size: 12px;
+        }
+
+        /* Aviso de selección pesada (fase 5.1) */
+        .heavy-backdrop {
+          position: fixed;
+          inset: 0;
+          background: rgba(2, 6, 23, 0.55);
+          z-index: 2147483647;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 16px;
+          pointer-events: auto;
+        }
+        .heavy-dialog {
+          background: ${DARK_BG};
+          border: 1px solid rgba(251, 191, 36, 0.45);
+          box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
+          color: #fff;
+          border-radius: 12px;
+          padding: 18px 20px;
+          width: min(440px, 100%);
+          box-sizing: border-box;
+          font-size: 13px;
+        }
+        .heavy-dialog h3 {
+          margin: 0 0 6px;
+          font-size: 15px;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .heavy-dialog p {
+          margin: 0 0 10px;
+          color: #cbd5e1;
+          line-height: 1.45;
+        }
+        .heavy-dialog ul {
+          margin: 0 0 12px;
+          padding-left: 18px;
+          color: #fbbf24;
+        }
+        .heavy-dialog .heavy-stats {
+          color: #94a3b8;
+          font-size: 11px;
+          margin-bottom: 14px;
+        }
+        .heavy-actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          justify-content: flex-end;
         }
       `;
 
@@ -1453,6 +1516,32 @@
           if (this.isElevated) relift();
         }
 
+        // Peso de la extracción: avisar antes de enviar algo que Figma puede tardar en dibujar
+        const payloadApi = window.__codeToFigmaPayload;
+        let stats = null;
+        if (payloadApi) {
+          stats = payloadApi.measurePayload(rootNode);
+          const reasons = payloadApi.heavyPayloadReasons(stats);
+          if (reasons.length) {
+            const choice = await this.askHeavyPayload(stats, reasons);
+            if (choice === 'cancel' || choice === 'pick') {
+              this.resetSendButton(btn);
+              if (choice === 'pick') {
+                this.showToast(
+                  `${ICONS.info} Elige un bloque más pequeño`,
+                  'Con ↑ y ↓ subes o bajas de nivel en la selección; luego Enter para enviar.',
+                  5000,
+                );
+              }
+              return;
+            }
+            if (choice === 'noimages') {
+              rootNode = payloadApi.withoutImages(rootNode);
+              stats = payloadApi.measurePayload(rootNode);
+            }
+          }
+        }
+
         if (btn) btn.innerHTML = `${ICONS.spinner} Transmitiendo a Figma...`;
 
         await this.transmitToWebSocket({
@@ -1474,9 +1563,13 @@
           btn.style.borderColor = '#059669';
         }
 
+        const sizeNote =
+          stats && payloadApi
+            ? ` (${payloadApi.formatBytes(stats.bytes)}, ${stats.nodes.toLocaleString('es')} capas)`
+            : '';
         this.showToast(
           `${ICONS.check} Enviado a Figma con éxito`,
-          `"${rootNode.name}" transmitido correctamente.`,
+          `"${rootNode.name}" transmitido correctamente${sizeNote}.`,
           4000,
         );
 
@@ -1492,10 +1585,7 @@
         }, 1200);
       } catch (err) {
         console.error('[CodeToFigma] Error enviando a Figma:', err);
-        if (btn) {
-          btn.innerHTML = `${ICONS.figma} Enviar a Figma <span style="opacity:0.75;font-size:10px">[Enter]</span>`;
-          btn.disabled = false;
-        }
+        this.resetSendButton(btn);
         const msg = String(err?.message || err);
         if (msg.includes('Hub') || msg.includes('WebSocket') || msg.includes('8080') || msg.includes('conect')) {
           this.showToast(
@@ -1507,6 +1597,53 @@
           this.showToast(`${ICONS.warning} Error de extracción`, msg, 5500);
         }
       }
+    }
+
+    resetSendButton(btn) {
+      if (!btn) return;
+      btn.innerHTML = `${ICONS.figma} Enviar a Figma <span style="opacity:0.75;font-size:10px">[Enter]</span>`;
+      btn.disabled = false;
+    }
+
+    /**
+     * Aviso de selección pesada (fase 5.1). Resuelve 'full' | 'noimages' | 'pick' | 'cancel'.
+     * Esc = cancelar (lo atiende onKeyDown mientras el aviso está abierto).
+     */
+    askHeavyPayload(stats, reasons) {
+      const fmt = window.__codeToFigmaPayload.formatBytes;
+      return new Promise(resolve => {
+        const backdrop = document.createElement('div');
+        backdrop.className = 'heavy-backdrop';
+        const items = reasons.map(r => `<li>${escapeHtml(r)}</li>`).join('');
+        const canStrip = stats.images > 0;
+        backdrop.innerHTML = `
+          <div class="heavy-dialog" role="dialog" aria-modal="true" aria-labelledby="__heavy_title">
+            <h3 id="__heavy_title">${ICONS.warning} Selección muy pesada</h3>
+            <p>Figma puede tardar bastante en dibujarla o quedarse sin memoria:</p>
+            <ul>${items}</ul>
+            <div class="heavy-stats">${stats.nodes.toLocaleString('es')} capas · ${stats.images} imágenes (${fmt(stats.imageBytes)}) · ${stats.depth} niveles · ${fmt(stats.bytes)} en total</div>
+            <div class="heavy-actions">
+              <button class="btn-secondary" data-choice="cancel">Cancelar</button>
+              <button class="btn-secondary" data-choice="pick">Elegir un bloque</button>
+              ${canStrip ? '<button class="btn-secondary" data-choice="noimages">Enviar sin imágenes</button>' : ''}
+              <button class="btn-figma" data-choice="full">Enviar completo</button>
+            </div>
+          </div>`;
+        const close = choice => {
+          this.activeDialog = null;
+          backdrop.remove();
+          resolve(choice);
+        };
+        backdrop.addEventListener('click', e => {
+          const target = e.target.closest ? e.target.closest('[data-choice]') : null;
+          if (target) close(target.getAttribute('data-choice'));
+          else if (e.target === backdrop) close('cancel');
+        });
+        this.activeDialog = { cancel: () => close('cancel') };
+        this.shadow.appendChild(backdrop);
+        const primary = backdrop.querySelector('[data-choice="full"]');
+        if (primary) primary.focus();
+      });
     }
 
     /**
@@ -1558,6 +1695,14 @@
     }
 
     onKeyDown(e) {
+      // Con el aviso de selección pesada abierto, el teclado solo sirve para cerrarlo
+      if (this.activeDialog) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          this.activeDialog.cancel();
+        }
+        return;
+      }
       // Don't intercept if user is typing in an input or textarea
       const activeTag = (document.activeElement?.tagName || '').toLowerCase();
       const isInput = activeTag === 'input' || activeTag === 'textarea' || document.activeElement?.isContentEditable;
@@ -1633,7 +1778,7 @@
       toast.className = 'toast-msg';
       toast.innerHTML = `
         <div class="toast-title">${title}</div>
-        <div class="toast-desc">${desc}</div>
+        <div class="toast-desc">${escapeHtml(desc)}</div>
       `;
       this.shadow.appendChild(toast);
       setTimeout(() => {

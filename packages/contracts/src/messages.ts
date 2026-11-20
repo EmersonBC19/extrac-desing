@@ -16,6 +16,10 @@
 import * as z from 'zod';
 import type { WSRenderPayload } from './types.js';
 
+/** Envío por partes: tope de partes y de caracteres por parte (64 MB en total como máximo) */
+export const MAX_CHUNKS = 256;
+export const MAX_CHUNK_CHARS = 1024 * 1024;
+
 export type MessageKind = 'command' | 'query' | 'event';
 export type MessageChannel = 'hub' | 'plugin' | 'extension';
 
@@ -92,6 +96,18 @@ export const MESSAGE_CATALOG = {
     kind: 'command',
     route: 'extensión/CLI → hub → plugin',
     description: 'Dibujar un árbol UINode en Figma',
+  },
+  RENDER_CHUNK: {
+    channel: 'hub',
+    kind: 'command',
+    route: 'extensión → hub',
+    description: 'Una parte de un RENDER_NODES grande (el hub las junta y valida el conjunto)',
+  },
+  RENDER_PROGRESS: {
+    channel: 'hub',
+    kind: 'event',
+    route: 'hub → plugin',
+    description: 'Progreso de recepción de un render enviado por partes',
   },
   RENDER_SUCCESS: {
     channel: 'hub',
@@ -214,6 +230,17 @@ const RegisterSchema = z
   })
   .passthrough();
 
+/** Tiempos de dibujo en Figma por etapa (fase 5.1: medir en lugar de suponer) */
+const RenderTimingsSchema = z
+  .object({
+    fontsMs: z.number().finite(),
+    buildMs: z.number().finite(),
+    placeMs: z.number().finite(),
+    totalMs: z.number().finite(),
+  })
+  .partial();
+export type RenderTimings = z.infer<typeof RenderTimingsSchema>;
+
 export const HubInboundSchema = z.discriminatedUnion('type', [
   RegisterSchema,
   z.object({ type: z.literal('GET_STATUS') }).passthrough(),
@@ -221,12 +248,20 @@ export const HubInboundSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('GET_VIEWS_CATALOG') }).passthrough(),
   z.object({ type: z.literal('REQUEST_VIEW_RENDER'), payload: z.object({}).passthrough().optional() }).passthrough(),
   z.object({ type: z.literal('RENDER_NODES'), payload: z.unknown() }).passthrough(),
+  z.object({
+    type: z.literal('RENDER_CHUNK'),
+    transferId: z.string().min(1).max(64),
+    index: z.number().int().min(0),
+    total: z.number().int().min(1).max(MAX_CHUNKS),
+    data: z.string().max(MAX_CHUNK_CHARS),
+  }),
   z
     .object({
       type: z.literal('RENDER_SUCCESS'),
       nodeId: z.string().max(200).optional(),
       name: z.string().max(1000).optional(),
       durationMs: z.number().finite().optional(),
+      timings: RenderTimingsSchema.optional(),
     })
     .passthrough(),
   z.object({ type: z.literal('RENDER_ERROR'), error: z.string().max(5000).optional() }).passthrough(),
@@ -244,7 +279,8 @@ export type HubOutboundMessage =
   | { type: 'VIEWS_CATALOG'; payload: { views: unknown[] } }
   | { type: 'EXTRACT_PROGRESS'; payload: { status: string; viewId: string; message: string } }
   | { type: 'RENDER_NODES'; payload: WSRenderPayload }
-  | { type: 'RENDER_SUCCESS'; nodeId?: string; name?: string; durationMs?: number }
+  | { type: 'RENDER_PROGRESS'; payload: { transferId: string; received: number; total: number; bytes: number } }
+  | { type: 'RENDER_SUCCESS'; nodeId?: string; name?: string; durationMs?: number; timings?: RenderTimings }
   | { type: 'RENDER_ERROR'; error: string };
 
 // ── Plugin: UI → sandbox (code.ts) ───────────────────────────────────────────────────────────

@@ -136,4 +136,57 @@ describe('inspector de la extensión', () => {
     expect(Math.abs(after.left - dragged.left)).toBeLessThanOrEqual(1);
     expect(Math.abs(after.top - dragged.top)).toBeLessThanOrEqual(1);
   });
+
+  it('selección pesada: avisa antes de enviar y respeta la opción elegida', async () => {
+    const page = await openInspector();
+    // Imagen real en la tarjeta y umbral forzado: así cualquier selección cuenta como pesada
+    await page.evaluate(() => {
+      const c = document.createElement('canvas');
+      c.width = c.height = 8;
+      c.getContext('2d')!.fillRect(0, 0, 8, 8);
+      const img = document.createElement('img');
+      img.src = c.toDataURL('image/png');
+      img.style.cssText = 'width:40px;height:40px;display:block';
+      document.getElementById('c1')!.appendChild(img);
+      (window as any).__codeToFigmaPayload.heavyPayloadReasons = () => ['prueba: demasiado grande'];
+    });
+    const choose = async (choice: string) => {
+      const sending = page.evaluate(() => {
+        const i = (window as any).__codeToFigmaInstance;
+        const el = document.getElementById('c1');
+        i.selectedElements = [el];
+        i.isElevated = true;
+        return i.sendToFigma();
+      });
+      await page.waitForFunction(() => (window as any).__codeToFigmaInstance.shadow.querySelector('.heavy-dialog'));
+      const text = await page.evaluate(
+        () => (window as any).__codeToFigmaInstance.shadow.querySelector('.heavy-dialog').textContent,
+      );
+      expect(text).toMatch(/prueba: demasiado grande/);
+      if (choice === 'escape') await page.keyboard.press('Escape');
+      else
+        await page.evaluate(
+          c => (window as any).__codeToFigmaInstance.shadow.querySelector(`[data-choice="${c}"]`).click(),
+          choice,
+        );
+      await sending;
+      return page.evaluate(() => (window as any).__sent.length);
+    };
+    const images = (n: any): number =>
+      (n.imageData ? 1 : 0) + (n.children || []).reduce((a: number, c: any) => a + images(c), 0);
+
+    expect(await choose('cancel')).toBe(0);
+    expect(await choose('escape')).toBe(0);
+    expect(
+      await page.evaluate(() => (window as any).__codeToFigmaInstance.shadow.querySelector('.heavy-dialog')),
+    ).toBeNull();
+
+    expect(await choose('noimages')).toBe(1);
+    const light = await page.evaluate(() => (window as any).__sent[0]);
+    expect(images(light.rootNode)).toBe(0);
+
+    expect(await choose('full')).toBe(2);
+    const full = await page.evaluate(() => (window as any).__sent[1]);
+    expect(images(full.rootNode)).toBe(1);
+  });
 });

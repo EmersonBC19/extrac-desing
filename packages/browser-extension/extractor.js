@@ -2190,6 +2190,70 @@
     return { colors, radii };
   }
 
+  // packages/contracts/src/payload-stats.ts
+  var HEAVY_PAYLOAD = {
+    /** Más de esto: aviso antes de enviar */
+    bytes: 15 * 1024 * 1024,
+    nodes: 25e3,
+    depth: 200
+  };
+  var CHUNK_THRESHOLD_BYTES = 1024 * 1024;
+  var CHUNK_SIZE_CHARS = 512 * 1024;
+  function measurePayload(root) {
+    const stats = { nodes: 0, images: 0, imageBytes: 0, textChars: 0, depth: 0, bytes: 0 };
+    if (!root) return stats;
+    const stack = [[root, 1]];
+    while (stack.length) {
+      const [node, depth] = stack.pop();
+      stats.nodes++;
+      if (depth > stats.depth) stats.depth = depth;
+      if (typeof node.imageData === "string" && node.imageData) {
+        stats.images++;
+        stats.imageBytes += node.imageData.length;
+      }
+      if (node.textData && typeof node.textData.characters === "string")
+        stats.textChars += node.textData.characters.length;
+      if (Array.isArray(node.children)) {
+        for (const c of node.children) if (c) stack.push([c, depth + 1]);
+      }
+    }
+    try {
+      stats.bytes = JSON.stringify(root).length;
+    } catch (_e) {
+      stats.bytes = stats.imageBytes;
+    }
+    return stats;
+  }
+  function heavyPayloadReasons(s, limits = HEAVY_PAYLOAD) {
+    const reasons = [];
+    if (s.bytes > limits.bytes) {
+      const share = s.bytes ? Math.round(s.imageBytes / s.bytes * 100) : 0;
+      reasons.push(`${formatBytes(s.bytes)} de datos` + (share >= 50 ? ` (${share}% en ${s.images} imágenes)` : ""));
+    }
+    if (s.nodes > limits.nodes) reasons.push(`${s.nodes.toLocaleString("es")} capas`);
+    if (s.depth > limits.depth) reasons.push(`${s.depth} niveles de anidamiento`);
+    return reasons;
+  }
+  function withoutImages(root) {
+    const PLACEHOLDER = { r: 0.88, g: 0.89, b: 0.91, a: 1 };
+    const strip = (n) => {
+      const out = { ...n };
+      if (out.imageData) {
+        delete out.imageData;
+        out.styles = { ...out.styles, fills: [...out.styles?.fills || [], PLACEHOLDER] };
+        out.metadata = { ...out.metadata || {}, imageOmitted: true };
+      }
+      if (Array.isArray(n.children)) out.children = n.children.map(strip);
+      return out;
+    };
+    return strip(root);
+  }
+  function formatBytes(bytes) {
+    if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+    return `${bytes} B`;
+  }
+
   // packages/core-extractor/src/browser/entry.ts
   window.__codeToFigmaExtract = async function(rootElement) {
     if (!rootElement || rootElement.nodeType !== Node.ELEMENT_NODE) return null;
@@ -2201,5 +2265,6 @@
     const tokens = extractDesignTokens();
     return { rootNode: resolved, tokens };
   };
+  window.__codeToFigmaPayload = { measurePayload, heavyPayloadReasons, withoutImages, formatBytes };
   console.log("[CodeToFigma] Extractor Engine v2.1 (Geometric Direction & Centered Stacking) ready.");
 })();

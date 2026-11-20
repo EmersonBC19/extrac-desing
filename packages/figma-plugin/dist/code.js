@@ -6126,6 +6126,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
   }).passthrough();
 
   // packages/contracts/src/messages.ts
+  var MAX_CHUNKS = 256;
+  var MAX_CHUNK_CHARS = 1024 * 1024;
   var RegisterSchema = object({
     type: _enum(["REGISTER_CLIENT", "REGISTER"]),
     clientType: string2().max(64).optional(),
@@ -6133,6 +6135,12 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     client: string2().max(200).optional(),
     pairingCode: string2().max(32).optional()
   }).passthrough();
+  var RenderTimingsSchema = object({
+    fontsMs: number2().finite(),
+    buildMs: number2().finite(),
+    placeMs: number2().finite(),
+    totalMs: number2().finite()
+  }).partial();
   var HubInboundSchema = discriminatedUnion("type", [
     RegisterSchema,
     object({ type: literal("GET_STATUS") }).passthrough(),
@@ -6141,10 +6149,18 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     object({ type: literal("REQUEST_VIEW_RENDER"), payload: object({}).passthrough().optional() }).passthrough(),
     object({ type: literal("RENDER_NODES"), payload: unknown() }).passthrough(),
     object({
+      type: literal("RENDER_CHUNK"),
+      transferId: string2().min(1).max(64),
+      index: number2().int().min(0),
+      total: number2().int().min(1).max(MAX_CHUNKS),
+      data: string2().max(MAX_CHUNK_CHARS)
+    }),
+    object({
       type: literal("RENDER_SUCCESS"),
       nodeId: string2().max(200).optional(),
       name: string2().max(1e3).optional(),
-      durationMs: number2().finite().optional()
+      durationMs: number2().finite().optional(),
+      timings: RenderTimingsSchema.optional()
     }).passthrough(),
     object({ type: literal("RENDER_ERROR"), error: string2().max(5e3).optional() }).passthrough()
   ]);
@@ -6175,6 +6191,16 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     const data = r.data && Object.keys(r.data).length ? " " + JSON.stringify(r.data) : "";
     return `[${r.scope}] ${r.message}${data}`;
   }
+
+  // packages/contracts/src/payload-stats.ts
+  var HEAVY_PAYLOAD = {
+    /** Más de esto: aviso antes de enviar */
+    bytes: 15 * 1024 * 1024,
+    nodes: 25e3,
+    depth: 200
+  };
+  var CHUNK_THRESHOLD_BYTES = 1024 * 1024;
+  var CHUNK_SIZE_CHARS = 512 * 1024;
 
   // packages/figma-plugin/src/log.ts
   var figmaConsoleSink = (r) => {
@@ -7408,6 +7434,7 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
   // packages/figma-plugin/src/render-command.ts
   async function renderNodesCommand(rawPayload, post2, log2) {
     const payload = rawPayload;
+    const t0 = Date.now();
     const rootNode = payload?.rootNode || (Array.isArray(payload?.nodes) ? payload.nodes[0] : null);
     if (!payload || !rootNode) {
       throw new Error("Payload vacío o inválido (se esperaba rootNode o nodes[0])");
@@ -7455,6 +7482,7 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     } catch (_e) {
     }
     await prewarmFonts(payload.rootNode);
+    const fontsMs = Date.now() - t0;
     if (payload.board) {
       const boardStart = Date.now();
       const pageBefore = figma.currentPage;
@@ -7514,7 +7542,8 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
           nodeType: board.main.type,
           tokensCount: createdTokensCount,
           rawPayload: payload.rootNode,
-          durationMs: Date.now() - boardStart
+          durationMs: Date.now() - t0,
+          timings: { fontsMs, buildMs: Date.now() - boardStart, totalMs: Date.now() - t0 }
         });
         return;
       }
@@ -7522,7 +7551,7 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     const totalNodeCount = countNodes(payload.rootNode);
     const renderStartTime = Date.now();
     const rootFigmaNode = await buildFigmaNode(payload.rootNode);
-    const durationMs = Date.now() - renderStartTime;
+    const buildMs = Date.now() - renderStartTime;
     if (rootFigmaNode) {
       targetPage.appendChild(rootFigmaNode);
       if (payload.targetCanvasPosition) {
@@ -7601,7 +7630,8 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
         nodeType: rootFigmaNode.type,
         tokensCount: createdTokensCount,
         rawPayload: payload.rootNode,
-        durationMs
+        durationMs: Date.now() - t0,
+        timings: { fontsMs, buildMs, placeMs: Date.now() - renderStartTime - buildMs, totalMs: Date.now() - t0 }
       });
     } else {
       throw new Error("No se pudo generar el nodo raíz");

@@ -15,6 +15,8 @@ export async function renderNodesCommand(
   log: Logger,
 ): Promise<void> {
   const payload: any = rawPayload;
+  // Tiempos por etapa (fase 5.1): se informan a la UI y al CLI/MCP en RENDER_SUCCESS
+  const t0 = Date.now();
   const rootNode = payload?.rootNode || (Array.isArray(payload?.nodes) ? payload.nodes[0] : null);
   if (!payload || !rootNode) {
     throw new Error('Payload vacío o inválido (se esperaba rootNode o nodes[0])');
@@ -72,6 +74,7 @@ export async function renderNodesCommand(
     await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
   } catch (_e) {}
   await prewarmFonts(payload.rootNode);
+  const fontsMs = Date.now() - t0;
 
   // 🗂️ Landing completa / multi-selección → tablero tipo design system
   if (payload.board) {
@@ -131,7 +134,8 @@ export async function renderNodesCommand(
         nodeType: board.main.type,
         tokensCount: createdTokensCount,
         rawPayload: payload.rootNode,
-        durationMs: Date.now() - boardStart,
+        durationMs: Date.now() - t0,
+        timings: { fontsMs, buildMs: Date.now() - boardStart, totalMs: Date.now() - t0 },
       });
       return;
     }
@@ -141,7 +145,7 @@ export async function renderNodesCommand(
 
   const renderStartTime = Date.now();
   const rootFigmaNode = await buildFigmaNode(payload.rootNode);
-  const durationMs = Date.now() - renderStartTime;
+  const buildMs = Date.now() - renderStartTime;
 
   if (rootFigmaNode) {
     targetPage.appendChild(rootFigmaNode);
@@ -236,7 +240,8 @@ export async function renderNodesCommand(
       nodeType: rootFigmaNode.type,
       tokensCount: createdTokensCount,
       rawPayload: payload.rootNode,
-      durationMs,
+      durationMs: Date.now() - t0,
+      timings: { fontsMs, buildMs, placeMs: Date.now() - renderStartTime - buildMs, totalMs: Date.now() - t0 },
     });
   } else {
     throw new Error('No se pudo generar el nodo raíz');

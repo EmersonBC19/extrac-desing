@@ -36,7 +36,11 @@ describe('catálogo de mensajes', () => {
     const inbound = messageTypesOf('hub', /→ hub/);
     expect(inbound.length).toBeGreaterThan(5);
     for (const type of inbound) {
-      const extra = type === 'RENDER_NODES' ? { payload: {} } : {};
+      const samples: Record<string, object> = {
+        RENDER_NODES: { payload: {} },
+        RENDER_CHUNK: { transferId: 't', index: 0, total: 1, data: '{}' },
+      };
+      const extra = samples[type] || {};
       expect(HubInboundSchema.safeParse({ type, ...extra }).success, type).toBe(true);
     }
     expect(HubInboundSchema.safeParse({ type: 'RENDER_COMPLETED' }).success).toBe(false);

@@ -1130,6 +1130,7 @@
 
     // ── WebSocket Handler ──
     // Un manejador por mensaje del hub (catálogo: packages/contracts/src/messages.ts, canal "hub")
+    const progressLines = new Map(); // transferId → renglón del log
     const HUB_HANDLERS = {
       AUTH_REQUIRED() {
         hubAuthRequired = true;
@@ -1193,6 +1194,20 @@
       },
       RENDER_ERROR(msg) {
         log(`Hub: ${msg.error || 'error desconocido'}`, 'error');
+      },
+      // Render grande enviado por partes: un solo renglón del log que avanza
+      RENDER_PROGRESS(msg) {
+        const p = msg.payload || {};
+        if (!p.transferId || !p.total) return;
+        const pct = Math.round((p.received / p.total) * 100);
+        const done = p.received >= p.total;
+        const text = done
+          ? `Diseño grande recibido: ${formatBytes(p.bytes)} en ${p.total} partes. Dibujando…`
+          : `Recibiendo diseño grande… ${pct}% (${formatBytes(p.bytes)})`;
+        const line = progressLines.get(p.transferId);
+        if (line) updateLogLine(line, text, 'info');
+        else progressLines.set(p.transferId, log(text, 'info'));
+        if (done) progressLines.delete(p.transferId);
       },
       STATUS_RESPONSE() {},
       RENDER_SUCCESS() {},
@@ -1297,6 +1312,15 @@
         statLatency.textContent = `${stats.latencyMs} ms`;
 
         log(`Dibujado en Figma: "${msg.name}" (${msg.width}×${msg.height}px, ${msg.nodeCount} capas) en ${stats.latencyMs}ms`, 'success');
+        const t = msg.timings;
+        if (t) {
+          const parts = [
+            t.fontsMs !== undefined ? `fuentes ${t.fontsMs} ms` : '',
+            t.buildMs !== undefined ? `capas ${t.buildMs} ms` : '',
+            t.placeMs !== undefined ? `ubicación ${t.placeMs} ms` : '',
+          ].filter(Boolean);
+          if (parts.length) log(`Tiempo por etapa: ${parts.join(' · ')}`, 'info');
+        }
 
         // Agregar al receptor
         addReceivedItem({
@@ -1317,7 +1341,8 @@
           type: 'RENDER_SUCCESS',
           nodeId: String(msg.nodeId || '').slice(0, 200),
           name: String(msg.name || '').slice(0, 1000),
-          durationMs: stats.latencyMs
+          durationMs: stats.latencyMs,
+          timings: msg.timings
         });
       },
       RENDER_ERROR(msg) {
@@ -1839,6 +1864,20 @@
 
       logsTerminal.appendChild(line);
       logsTerminal.scrollTop = logsTerminal.scrollHeight;
+      return line;
+    }
+
+    /** Cambia el texto de una línea del log ya escrita (progreso que avanza en el mismo renglón) */
+    function updateLogLine(line, message, level = 'info') {
+      const span = line && line.querySelector('span:last-child');
+      if (!span) return;
+      span.className = `log-${level}`;
+      span.textContent = message;
+    }
+
+    function formatBytes(bytes) {
+      if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+      return `${Math.max(1, Math.round(bytes / 1024))} KB`;
     }
 
     function clearLogs() {

@@ -19,6 +19,7 @@ import * as path from 'path';
 import { execFile } from 'child_process';
 import { createRequire } from 'module';
 import { rotatingFileSink } from './log-file.js';
+import { ChunkAssembler } from './chunk-assembler.js';
 import { fileURLToPath } from 'url';
 import {
   classifyOrigin,
@@ -49,6 +50,8 @@ interface ClientState {
   authenticated: boolean;
   isFigma: boolean;
   pairingTimer: NodeJS.Timeout | null;
+  /** Renders grandes que llegan por partes (RENDER_CHUNK) */
+  chunks: ChunkAssembler;
 }
 
 type HandlerOf<K extends HubInboundType> = (
@@ -154,6 +157,7 @@ export class FigmaWsHub {
       authenticated: originClass !== 'needs-pairing',
       isFigma: false,
       pairingTimer: null,
+      chunks: new ChunkAssembler({ maxBytes: MAX_PAYLOAD_BYTES, maxTransfers: 2, ttlMs: 60_000 }),
     };
 
     // Clientes con origen "null" (plugin de Figma) deben vincularse a tiempo
@@ -183,6 +187,7 @@ export class FigmaWsHub {
 
     ws.on('close', () => {
       if (state.pairingTimer) clearTimeout(state.pairingTimer);
+      state.chunks.clear();
       if (state.isFigma) {
         this.figmaSockets.delete(ws);
         this.log.info(`Plugin de Figma desconectado. Restantes: ${this.figmaSockets.size}`);
@@ -223,13 +228,54 @@ export class FigmaWsHub {
       this.broadcastToFigma(renderMsg);
     },
 
+    RENDER_CHUNK: (ws, state, msg) => {
+      const res = state.chunks.accept(msg);
+      if (res.status === 'error') {
+        this.log.warn('Envío por partes rechazado', { error: res.error });
+        this.send(ws, { type: 'RENDER_ERROR', error: res.error });
+        return;
+      }
+      if (res.status === 'progress') {
+        this.broadcastToPlugins({
+          type: 'RENDER_PROGRESS',
+          payload: { transferId: res.transferId, received: res.received, total: res.total, bytes: res.bytes },
+        });
+        return;
+      }
+      // Completo: el conjunto pasa por la misma validación que un RENDER_NODES de una sola pieza
+      let assembled: unknown;
+      try {
+        assembled = JSON.parse(res.text);
+      } catch (_e) {
+        this.send(ws, { type: 'RENDER_ERROR', error: 'Envío por partes corrupto (JSON inválido)' });
+        return;
+      }
+      const parsed = HubInboundSchema.safeParse(assembled);
+      if (!parsed.success || parsed.data.type !== 'RENDER_NODES') {
+        this.send(ws, { type: 'RENDER_ERROR', error: 'El envío por partes no contiene un RENDER_NODES' });
+        return;
+      }
+      this.broadcastToPlugins({
+        type: 'RENDER_PROGRESS',
+        payload: { transferId: res.transferId, received: res.total, total: res.total, bytes: res.bytes },
+      });
+      this.log.info(`Render por partes recibido (${res.total} partes)`, { bytes: res.bytes });
+      this.handlers.RENDER_NODES(ws, state, parsed.data);
+    },
+
     RENDER_SUCCESS: (_ws, _state, msg) => {
-      this.log.info('Render completado en Figma', { nodeId: msg.nodeId, name: msg.name, durationMs: msg.durationMs });
+      this.log.info('Render completado en Figma', {
+        nodeId: msg.nodeId,
+        name: msg.name,
+        durationMs: msg.durationMs,
+        ...(msg.timings ? { etapas: msg.timings } : {}),
+      });
       this.broadcastToClients({
         type: 'RENDER_SUCCESS',
         nodeId: msg.nodeId,
         name: msg.name,
         durationMs: msg.durationMs,
+        timings: msg.timings,
       });
     },
 
@@ -371,6 +417,14 @@ export class FigmaWsHub {
       if (socket.readyState === WebSocket.OPEN) socket.send(payload);
     }
     return true;
+  }
+
+  /** Eventos para los plugins de Figma (progreso de envíos por partes) */
+  private broadcastToPlugins(message: HubOutboundMessage): void {
+    const payload = JSON.stringify(message);
+    for (const socket of this.figmaSockets) {
+      if (socket.readyState === WebSocket.OPEN) socket.send(payload);
+    }
   }
 
   /** Solo a clientes autenticados (únicos que llegan a otherClients) */

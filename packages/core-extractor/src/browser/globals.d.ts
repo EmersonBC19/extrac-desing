@@ -3,6 +3,8 @@ declare const chrome: any;
 
 interface Window {
   __codeToFigmaExtract?: (element: Element) => Promise<{ rootNode: any; tokens: any } | null>;
+  /** Peso de una extracción y versión sin imágenes (contracts/payload-stats) */
+  __codeToFigmaPayload?: Record<string, (...args: any[]) => any>;
   /** Lo define content.js: recorta regiones de una captura de pantalla de la pestaña */
   __codeToFigmaCaptureRegions?: (
     rects: Array<{ left: number; top: number; width: number; height: number }>,

@@ -27,6 +27,8 @@ export declare class FigmaWsHub {
     private handleViewRender;
     private saveDebugCapture;
     broadcastToFigma(message: WSMessage<WSRenderPayload>): boolean;
+    /** Eventos para los plugins de Figma (progreso de envíos por partes) */
+    private broadcastToPlugins;
     /** Solo a clientes autenticados (únicos que llegan a otherClients) */
     broadcastToClients(message: HubOutboundMessage): void;
     getConnectedPluginsCount(): number;

@@ -14,4 +14,17 @@ function loadImageFetchPolicy() {
   return new Function(src.slice(a, b) + '\nreturn { isPrivateHost, siteOf, imageFetchPolicy };')();
 }
 
-module.exports = { loadImageFetchPolicy, read, ROOT };
+/** Envío al hub del service worker (background.js), con el WebSocket de Node (paquete ws) */
+function loadHubSender() {
+  const src = read('packages/browser-extension/background.js');
+  const a = src.indexOf('// ── Envío al hub (inicio)');
+  const b = src.indexOf('// ── Envío al hub (fin)');
+  if (a < 0 || b < 0) throw new Error('background.js sin el bloque de envío al hub');
+  return new Function(
+    'WebSocket',
+    src.slice(a, b) +
+      '\nreturn { sendToWebSocketHub, splitIntoChunks, buildRenderMessage, CHUNK_THRESHOLD_BYTES, CHUNK_SIZE_CHARS };',
+  )(require('ws'));
+}
+
+module.exports = { loadImageFetchPolicy, loadHubSender, read, ROOT };

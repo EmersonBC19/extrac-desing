@@ -37,7 +37,16 @@ describe('render normal', () => {
   it('dibuja la extracción sin errores', async () => {
     const figma = await runPlugin({ rootNode: clone(landing) });
     expect(errorsOf(figma)).toEqual([]);
-    expect(figma.logs.some((m: any) => m.type === 'RENDER_SUCCESS')).toBe(true);
+    const ok = figma.logs.find((m: any) => m.type === 'RENDER_SUCCESS');
+    expect(ok).toBeTruthy();
+    // Tiempos medidos por etapa (fase 5.1), coherentes con el total
+    expect(ok.timings).toMatchObject({
+      fontsMs: expect.any(Number),
+      buildMs: expect.any(Number),
+      placeMs: expect.any(Number),
+    });
+    expect(ok.timings.totalMs).toBeGreaterThanOrEqual(ok.timings.buildMs);
+    expect(ok.durationMs).toBe(ok.timings.totalMs);
     expect(figma.currentPage.children).toHaveLength(1);
     expect(
       countIn(figma.currentPage, (n: any) => (n.fills || []).some((f: any) => f.type === 'IMAGE')),

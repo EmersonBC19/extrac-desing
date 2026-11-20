@@ -15,6 +15,9 @@
  */
 import * as z from 'zod';
 import type { WSRenderPayload } from './types.js';
+/** Envío por partes: tope de partes y de caracteres por parte (64 MB en total como máximo) */
+export declare const MAX_CHUNKS = 256;
+export declare const MAX_CHUNK_CHARS: number;
 export type MessageKind = 'command' | 'query' | 'event';
 export type MessageChannel = 'hub' | 'plugin' | 'extension';
 export interface MessageInfo {
@@ -103,6 +106,18 @@ export declare const MESSAGE_CATALOG: {
         readonly kind: "command";
         readonly route: "extensión/CLI → hub → plugin";
         readonly description: "Dibujar un árbol UINode en Figma";
+    };
+    readonly RENDER_CHUNK: {
+        readonly channel: "hub";
+        readonly kind: "command";
+        readonly route: "extensión → hub";
+        readonly description: "Una parte de un RENDER_NODES grande (el hub las junta y valida el conjunto)";
+    };
+    readonly RENDER_PROGRESS: {
+        readonly channel: "hub";
+        readonly kind: "event";
+        readonly route: "hub → plugin";
+        readonly description: "Progreso de recepción de un render enviado por partes";
     };
     readonly RENDER_SUCCESS: {
         readonly channel: "hub";
@@ -216,6 +231,14 @@ export declare const MESSAGE_CATALOG: {
 export type MessageType = keyof typeof MESSAGE_CATALOG;
 /** Tipos de mensaje de un canal (para comprobar en pruebas que todos tienen manejador) */
 export declare function messageTypesOf(channel: MessageChannel, route?: RegExp): MessageType[];
+/** Tiempos de dibujo en Figma por etapa (fase 5.1: medir en lugar de suponer) */
+declare const RenderTimingsSchema: z.ZodObject<{
+    fontsMs: z.ZodOptional<z.ZodNumber>;
+    buildMs: z.ZodOptional<z.ZodNumber>;
+    placeMs: z.ZodOptional<z.ZodNumber>;
+    totalMs: z.ZodOptional<z.ZodNumber>;
+}, z.core.$strip>;
+export type RenderTimings = z.infer<typeof RenderTimingsSchema>;
 export declare const HubInboundSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodEnum<{
         REGISTER_CLIENT: "REGISTER_CLIENT";
@@ -238,10 +261,22 @@ export declare const HubInboundSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodLiteral<"RENDER_NODES">;
     payload: z.ZodUnknown;
 }, z.core.$loose>, z.ZodObject<{
+    type: z.ZodLiteral<"RENDER_CHUNK">;
+    transferId: z.ZodString;
+    index: z.ZodNumber;
+    total: z.ZodNumber;
+    data: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"RENDER_SUCCESS">;
     nodeId: z.ZodOptional<z.ZodString>;
     name: z.ZodOptional<z.ZodString>;
     durationMs: z.ZodOptional<z.ZodNumber>;
+    timings: z.ZodOptional<z.ZodObject<{
+        fontsMs: z.ZodOptional<z.ZodNumber>;
+        buildMs: z.ZodOptional<z.ZodNumber>;
+        placeMs: z.ZodOptional<z.ZodNumber>;
+        totalMs: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
 }, z.core.$loose>, z.ZodObject<{
     type: z.ZodLiteral<"RENDER_ERROR">;
     error: z.ZodOptional<z.ZodString>;
@@ -279,10 +314,19 @@ export type HubOutboundMessage = {
     type: 'RENDER_NODES';
     payload: WSRenderPayload;
 } | {
+    type: 'RENDER_PROGRESS';
+    payload: {
+        transferId: string;
+        received: number;
+        total: number;
+        bytes: number;
+    };
+} | {
     type: 'RENDER_SUCCESS';
     nodeId?: string;
     name?: string;
     durationMs?: number;
+    timings?: RenderTimings;
 } | {
     type: 'RENDER_ERROR';
     error: string;
@@ -335,4 +379,5 @@ export type PluginSandboxMessage = {
     type: 'RENDER_ERROR';
     error: string;
 };
+export {};
 //# sourceMappingURL=messages.d.ts.map

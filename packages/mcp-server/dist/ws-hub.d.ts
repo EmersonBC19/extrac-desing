@@ -3,6 +3,8 @@ export declare class FigmaWsHub {
     private wss;
     private figmaSockets;
     private otherClients;
+    private lastRenderPayload;
+    private getCatalog;
     start(port?: number): void;
     broadcastToFigma(message: WSMessage<WSRenderPayload>): boolean;
     broadcastToClients(message: any): void;

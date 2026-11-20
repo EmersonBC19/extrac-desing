@@ -15,7 +15,8 @@ function parseArgs() {
         exploreTabs: true,
         exploreModals: true,
         includeDesignSystem: true,
-        contentSelector: 'body'
+        contentSelector: 'body',
+        clear: true
     };
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
@@ -48,6 +49,12 @@ function parseArgs() {
         }
         else if (arg === '--no-ds') {
             options.includeDesignSystem = false;
+        }
+        else if (arg === '--no-clear' || arg === '--append') {
+            options.clear = false;
+        }
+        else if (arg === '--clear') {
+            options.clear = true;
         }
     }
     return options;
@@ -179,19 +186,21 @@ async function main() {
         // ── 5. Fase de transmisión: enviar a Figma módulo por módulo ──
         console.log('🎨 Fase 2: Transmitiendo a Figma módulo por módulo...\n');
         let currentCanvasY = 0;
-        const FRAME_GAP_X = options.gap || 80;
-        const FRAME_GAP_Y = options.rowGap || 100;
-        const MODULE_GAP_Y = 160;
+        const FRAME_GAP_X = options.gap || 120;
+        const FRAME_GAP_Y = options.rowGap || 140;
+        const MODULE_GAP_Y = 240;
         let globalScreenIndex = 0;
+        let isFirstTransmission = true;
         // 5.1 Primero el Design System
         if (dsScreen) {
             console.log('🎨 Transmitiendo Design System & UI Kit...');
             await sendAndWait({
                 rootNode: dsScreen.screen.rootNode,
-                clearPage: false,
+                clearPage: options.clear && isFirstTransmission,
                 targetCanvasPosition: { x: 0, y: 0 },
                 groupName: 'Design System'
             }, 10000);
+            isFirstTransmission = false;
             globalScreenIndex++;
         }
         // 5.2 Luego cada módulo en orden
@@ -200,6 +209,10 @@ async function main() {
             const [moduleName, screens] = moduleList[mi];
             if (screens.length === 0)
                 continue;
+            // Si se exporta por páginas de Figma, reiniciar la coordenada Y en cada página
+            if (options.pages) {
+                currentCanvasY = 0;
+            }
             logModuleStart(moduleName, mi, moduleList.length);
             // Agrupar por routeKey para sub-organización (base → tabs → modales)
             const byRoute = new Map();
@@ -217,7 +230,7 @@ async function main() {
                     const order = { 'BASE': 0, 'TAB': 1, 'MODAL': 2 };
                     return (order[a.screen.variantType || 'BASE'] || 0) - (order[b.screen.variantType || 'BASE'] || 0);
                 });
-                let colX = NAV_ORIGIN_X;
+                let colX = options.pages ? 0 : NAV_ORIGIN_X;
                 for (let si = 0; si < sorted.length; si++) {
                     const { screen } = sorted[si];
                     globalScreenIndex++;
@@ -228,12 +241,15 @@ async function main() {
                         : undefined;
                     const payload = {
                         rootNode: screen.rootNode,
-                        clearPage: false,
+                        clearPage: options.clear && isFirstTransmission,
                         targetCanvasPosition: { x: colX, y: currentCanvasY },
                         pageName: options.pages ? moduleName : undefined,
                         groupName: moduleName,
                         sectionTitle
                     };
+                    if (isFirstTransmission) {
+                        isFirstTransmission = false;
+                    }
                     await sendAndWait(payload, 10000);
                     // Avanzar horizontalmente para la siguiente vista de la misma ruta (tabs y modales a la derecha)
                     colX += options.width + FRAME_GAP_X;

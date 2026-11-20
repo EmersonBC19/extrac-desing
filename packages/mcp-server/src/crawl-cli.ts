@@ -17,7 +17,8 @@ function parseArgs() {
     exploreTabs: true,
     exploreModals: true,
     includeDesignSystem: true,
-    contentSelector: 'body'
+    contentSelector: 'body',
+    clear: true
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -42,6 +43,10 @@ function parseArgs() {
       options.exploreModals = false;
     } else if (arg === '--no-ds') {
       options.includeDesignSystem = false;
+    } else if (arg === '--no-clear' || arg === '--append') {
+      options.clear = false;
+    } else if (arg === '--clear') {
+      options.clear = true;
     }
   }
 
@@ -213,20 +218,22 @@ async function main() {
     console.log('🎨 Fase 2: Transmitiendo a Figma módulo por módulo...\n');
 
     let currentCanvasY = 0;
-    const FRAME_GAP_X = options.gap || 80;
-    const FRAME_GAP_Y = options.rowGap || 100;
-    const MODULE_GAP_Y = 160;
+    const FRAME_GAP_X = options.gap || 120;
+    const FRAME_GAP_Y = options.rowGap || 140;
+    const MODULE_GAP_Y = 240;
     let globalScreenIndex = 0;
+    let isFirstTransmission = true;
 
     // 5.1 Primero el Design System
     if (dsScreen) {
       console.log('🎨 Transmitiendo Design System & UI Kit...');
       await sendAndWait({
         rootNode: dsScreen.screen.rootNode,
-        clearPage: false,
+        clearPage: options.clear && isFirstTransmission,
         targetCanvasPosition: { x: 0, y: 0 },
         groupName: 'Design System'
       }, 10000);
+      isFirstTransmission = false;
       globalScreenIndex++;
     }
 
@@ -236,6 +243,11 @@ async function main() {
     for (let mi = 0; mi < moduleList.length; mi++) {
       const [moduleName, screens] = moduleList[mi];
       if (screens.length === 0) continue;
+
+      // Si se exporta por páginas de Figma, reiniciar la coordenada Y en cada página
+      if (options.pages) {
+        currentCanvasY = 0;
+      }
 
       logModuleStart(moduleName, mi, moduleList.length);
 
@@ -256,7 +268,7 @@ async function main() {
           return (order[a.screen.variantType || 'BASE'] || 0) - (order[b.screen.variantType || 'BASE'] || 0);
         });
 
-        let colX = NAV_ORIGIN_X;
+        let colX = options.pages ? 0 : NAV_ORIGIN_X;
 
         for (let si = 0; si < sorted.length; si++) {
           const { screen } = sorted[si];
@@ -271,12 +283,16 @@ async function main() {
 
           const payload: WSRenderPayload = {
             rootNode: screen.rootNode,
-            clearPage: false,
+            clearPage: options.clear && isFirstTransmission,
             targetCanvasPosition: { x: colX, y: currentCanvasY },
             pageName: options.pages ? moduleName : undefined,
             groupName: moduleName,
             sectionTitle
           };
+
+          if (isFirstTransmission) {
+            isFirstTransmission = false;
+          }
 
           await sendAndWait(payload, 10000);
 

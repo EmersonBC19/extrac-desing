@@ -1,9 +1,29 @@
 import { WebSocketServer, WebSocket } from 'ws';
+import * as fs from 'fs';
+import * as path from 'path';
+import { fileURLToPath } from 'url';
 const PORT = parseInt(process.env.WS_PORT || '8080', 10);
 export class FigmaWsHub {
     wss = null;
     figmaSockets = new Set();
     otherClients = new Set();
+    lastRenderPayload = null;
+    getCatalog() {
+        try {
+            const catalogPath = path.resolve(process.cwd(), 'scratch/views/views-catalog.json');
+            if (fs.existsSync(catalogPath)) {
+                const list = JSON.parse(fs.readFileSync(catalogPath, 'utf-8'));
+                const viewsDir = path.resolve(process.cwd(), 'scratch/views');
+                return list.map((item) => {
+                    const cached = fs.existsSync(path.join(viewsDir, `${item.id}.json`)) ||
+                        (item.id === 'dashboard' && fs.existsSync(path.resolve(process.cwd(), 'scratch/dashboard_tree.json')));
+                    return { ...item, isReady: !!cached };
+                });
+            }
+        }
+        catch (_e) { }
+        return [];
+    }
     start(port = PORT) {
         this.wss = new WebSocketServer({ port });
         console.log(`\n======================================================`);
@@ -12,27 +32,117 @@ export class FigmaWsHub {
         console.log(`======================================================\n`);
         this.wss.on('connection', (ws) => {
             let isFigma = false;
-            ws.on('message', (raw) => {
+            ws.on('message', async (raw) => {
                 try {
                     const msg = JSON.parse(raw.toString());
-                    if (msg.type === 'REGISTER_CLIENT') {
-                        if (msg.clientType === 'FIGMA_PLUGIN') {
+                    if (msg.type === 'REGISTER_CLIENT' || msg.type === 'REGISTER') {
+                        const isFigmaPlugin = msg.clientType === 'FIGMA_PLUGIN' ||
+                            msg.role === 'plugin' ||
+                            (typeof msg.client === 'string' && msg.client.toLowerCase().includes('figma'));
+                        if (isFigmaPlugin) {
                             isFigma = true;
                             this.figmaSockets.add(ws);
                             console.log(`[+] Plugin de Figma conectado con éxito. Total activos: ${this.figmaSockets.size}`);
+                            // Enviar catálogo de vistas al plugin automáticamente
+                            const catalog = this.getCatalog();
+                            ws.send(JSON.stringify({
+                                type: 'VIEWS_CATALOG',
+                                payload: { views: catalog }
+                            }));
+                            if (this.lastRenderPayload) {
+                                console.log(`[->] Reenviando último diseño en caché al plugin de Figma recién conectado...`);
+                                ws.send(JSON.stringify(this.lastRenderPayload));
+                            }
                         }
                         else {
                             this.otherClients.add(ws);
-                            console.log(`[+] Cliente externo conectado (${msg.clientType || 'CLI'}).`);
+                            console.log(`[+] Cliente externo conectado (${msg.clientType || msg.client || 'CLI'}).`);
+                        }
+                    }
+                    else if (msg.type === 'GET_VIEWS_CATALOG') {
+                        const catalog = this.getCatalog();
+                        ws.send(JSON.stringify({
+                            type: 'VIEWS_CATALOG',
+                            payload: { views: catalog }
+                        }));
+                    }
+                    else if (msg.type === 'GET_STATUS' || msg.type === 'PING') {
+                        ws.send(JSON.stringify({
+                            type: 'STATUS_RESPONSE',
+                            payload: {
+                                connected: true,
+                                figmaConnected: this.figmaSockets.size > 0,
+                                figmaCount: this.figmaSockets.size
+                            }
+                        }));
+                    }
+                    else if (msg.type === 'REQUEST_VIEW_RENDER') {
+                        const { viewId, pageName, useSeparatePage } = msg.payload || {};
+                        console.log(`[->] Solicitud de renderizar vista: "${viewId}" (Página: ${pageName || 'Actual'})...`);
+                        const viewsDir = path.resolve(process.cwd(), 'scratch/views');
+                        const targetFile = path.join(viewsDir, `${viewId}.json`);
+                        const fallbackDash = path.resolve(process.cwd(), 'scratch/dashboard_tree.json');
+                        let fileToLoad = fs.existsSync(targetFile) ? targetFile : (viewId === 'dashboard' && fs.existsSync(fallbackDash) ? fallbackDash : null);
+                        if (fileToLoad) {
+                            const rootNode = JSON.parse(fs.readFileSync(fileToLoad, 'utf-8'));
+                            const renderMsg = {
+                                type: 'RENDER_NODES',
+                                payload: {
+                                    rootNode,
+                                    pageName: useSeparatePage ? pageName : undefined,
+                                    clearPage: false
+                                }
+                            };
+                            this.lastRenderPayload = renderMsg;
+                            this.broadcastToFigma(renderMsg);
+                        }
+                        else {
+                            // Si no está en caché, notificar progreso e intentar extraer
+                            console.log(`[!] La vista "${viewId}" no está en caché local. Iniciando extracción automática...`);
+                            ws.send(JSON.stringify({
+                                type: 'EXTRACT_PROGRESS',
+                                payload: { status: 'EXTRACTING', viewId, message: `Extrayendo vista ${viewId} del navegador...` }
+                            }));
+                            try {
+                                const { exec } = await import('child_process');
+                                const scriptPath = path.resolve(process.cwd(), 'scratch/extract-single-view.ts');
+                                const cmd = `npx tsx "${scriptPath}" "${viewId}" "${msg.payload?.route || '/administration/dashboard'}" "${msg.payload?.name || viewId}" "${useSeparatePage ? (pageName || viewId) : ''}"`;
+                                exec(cmd, (err, stdout, stderr) => {
+                                    if (err) {
+                                        console.error(`Error extrayendo vista:`, err.message);
+                                        ws.send(JSON.stringify({
+                                            type: 'RENDER_ERROR',
+                                            error: `Error al extraer vista ${viewId}: ${err.message}`
+                                        }));
+                                    }
+                                    else {
+                                        console.log(`[✓] Vista ${viewId} extraída exitosamente.`);
+                                    }
+                                });
+                            }
+                            catch (extErr) {
+                                console.error(`Error extrayendo vista:`, extErr.message);
+                                ws.send(JSON.stringify({
+                                    type: 'RENDER_ERROR',
+                                    error: `Error al extraer vista ${viewId}: ${extErr.message}`
+                                }));
+                            }
                         }
                     }
                     else if (msg.type === 'RENDER_NODES') {
+                        this.lastRenderPayload = msg;
+                        // Guardar el último payload para diagnóstico (scratch/captured-last-payload.json)
+                        try {
+                            const scratchDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../scratch');
+                            fs.mkdirSync(scratchDir, { recursive: true });
+                            fs.writeFileSync(path.join(scratchDir, 'captured-last-payload.json'), JSON.stringify(msg.payload));
+                        }
+                        catch (_saveErr) { }
                         console.log(`[->] Solicitud de RENDER recibida. Transmitiendo a ${this.figmaSockets.size} plugin(s) de Figma...`);
                         this.broadcastToFigma(msg);
                     }
                     else if (msg.type === 'RENDER_SUCCESS') {
                         console.log(`[✓] Render completado con éxito en Figma! (ID: ${msg.nodeId}, Nombre: ${msg.name})`);
-                        // Retransmitir confirmación a TODOS los clientes CLI/MCP para que puedan continuar
                         this.broadcastToClients(msg);
                     }
                     else if (msg.type === 'RENDER_ERROR') {

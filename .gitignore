@@ -1,1 +1,7 @@
 node_modules/
+
+# Proyecto de referencia de terceros (swarm-rebuild): solo consulta, 21 MB de media
+swarm-cursors-main/
+
+# Captura de diagnóstico del hub: puede contener datos privados de páginas con sesión
+scratch/captured-last-payload.json

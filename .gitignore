@@ -5,3 +5,13 @@ swarm-cursors-main/
 
 # Captura de diagnóstico del hub: puede contener datos privados de páginas con sesión
 scratch/captured-last-payload.json
+
+# scratch/: zona de experimentos locales. Solo se versionan las herramientas de verificación
+# (_*.cjs) y las pruebas que siguen funcionando. Todo lo demás queda local:
+#  - diagnósticos puntuales ya resueltos y salidas generadas (JSON, PNG, JPG)
+#  - test-auth-login.ts y views/: credenciales y volcados de una app privada (NO subir)
+#  - build-extractor.js, build-new-plugin-ui.js, update-content-script.js: sobrescriben
+#    código fuente con versiones antiguas (NO ejecutar)
+scratch/*
+!scratch/_*.cjs
+!scratch/test-drag-inspector.ts

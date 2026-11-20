@@ -2,21 +2,22 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>⚡ Code to Figma Bridge</title>
+  <title>Code to Figma AI — Studio & Receiver</title>
   <style>
     :root {
-      --bg: #0c0d12;
-      --card-bg: rgba(26, 29, 39, 0.7);
+      --bg: #0d1117;
+      --card-bg: #161b22;
       --card-border: rgba(255, 255, 255, 0.08);
-      --card-border-hover: rgba(59, 130, 246, 0.4);
-      --text: #f3f4f6;
-      --text-muted: #9ca3af;
-      --accent: #3b82f6;
-      --accent-glow: rgba(59, 130, 246, 0.25);
+      --card-border-hover: rgba(162, 89, 255, 0.45);
+      --text: #f0f6fc;
+      --text-muted: #8b949e;
+      --accent: #a855f7;
+      --accent-blue: #3b82f6;
+      --accent-glow: rgba(168, 85, 247, 0.25);
       --green: #10b981;
       --green-glow: rgba(16, 185, 129, 0.2);
+      --amber: #f59e0b;
       --red: #ef4444;
-      --red-glow: rgba(239, 68, 68, 0.2);
     }
 
     * {
@@ -24,12 +25,34 @@
       margin: 0;
       padding: 0;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+    }
+
+    ::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+    ::-webkit-scrollbar-button {
+      display: none !important;
+      width: 0 !important;
+      height: 0 !important;
     }
 
     body {
       background: var(--bg);
       color: var(--text);
-      padding: 14px;
+      padding: 10px 12px;
       font-size: 11px;
       user-select: none;
       overflow: hidden;
@@ -38,14 +61,21 @@
       height: 100vh;
     }
 
-    /* Header con glassmorphism */
+    svg {
+      display: inline-block;
+      vertical-align: middle;
+      flex-shrink: 0;
+    }
+
+    /* Header */
     .header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 12px;
-      padding-bottom: 10px;
+      margin-bottom: 8px;
+      padding-bottom: 8px;
       border-bottom: 1px solid var(--card-border);
+      flex-shrink: 0;
     }
 
     .brand {
@@ -58,423 +88,1639 @@
       width: 26px;
       height: 26px;
       border-radius: 7px;
-      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      background: linear-gradient(135deg, #a855f7, #3b82f6);
       display: flex;
       align-items: center;
       justify-content: center;
       box-shadow: 0 2px 10px var(--accent-glow);
+      color: #fff;
     }
 
     .brand-title {
       font-weight: 700;
-      font-size: 12px;
+      font-size: 12.5px;
       letter-spacing: -0.2px;
-      background: linear-gradient(180deg, #ffffff, #cbd5e1);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+      color: #fff;
     }
 
-    .brand-version {
-      font-size: 9px;
+    .brand-sub {
+      font-size: 9.5px;
       color: var(--text-muted);
       font-weight: 500;
     }
 
-    /* Badges de conexión con pulso */
+    /* Badges */
     .badge {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      padding: 4px 9px;
-      border-radius: 9999px;
+      gap: 5px;
+      padding: 3px 8px;
+      border-radius: 12px;
       font-size: 10px;
       font-weight: 600;
-      letter-spacing: 0.2px;
+      cursor: pointer;
       transition: all 0.2s ease;
     }
-
     .badge.connected {
       background: rgba(16, 185, 129, 0.12);
       color: #34d399;
       border: 1px solid rgba(16, 185, 129, 0.3);
-      box-shadow: 0 0 12px var(--green-glow);
     }
-
     .badge.disconnected {
       background: rgba(239, 68, 68, 0.12);
       color: #f87171;
       border: 1px solid rgba(239, 68, 68, 0.3);
-      box-shadow: 0 0 12px var(--red-glow);
     }
-
+    .badge.connecting {
+      background: rgba(245, 158, 11, 0.12);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
     .pulse-dot {
       width: 6px;
       height: 6px;
       border-radius: 50%;
       background: currentColor;
-      box-shadow: 0 0 6px currentColor;
-      animation: pulse 2s infinite ease-in-out;
+    }
+    .badge.connected .pulse-dot {
+      box-shadow: 0 0 6px #10b981;
     }
 
-    @keyframes pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.5; transform: scale(1.2); }
+    /* Pestañas de Navegación — 100% Responsive, Zero Scrollbar */
+    .tabs-nav {
+      display: flex;
+      gap: 3px;
+      margin-bottom: 8px;
+      background: rgba(22, 27, 34, 0.9);
+      padding: 3px;
+      border-radius: 8px;
+      border: 1px solid var(--card-border);
+      flex-shrink: 0;
+      overflow: hidden !important;
+      overflow-x: hidden !important;
+      overflow-y: hidden !important;
+      scrollbar-width: none !important;
+      -ms-overflow-style: none !important;
+    }
+    .tabs-nav::-webkit-scrollbar {
+      display: none !important;
+      width: 0 !important;
+      height: 0 !important;
     }
 
-    /* Métricas Grid */
-    .metrics-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
+    .tab-btn {
+      flex: 1 1 0;
+      min-width: 0;
+      padding: 6px 2px;
+      border-radius: 6px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+
+    .tab-btn span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .tab-btn:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .tab-btn.active {
+      background: linear-gradient(135deg, #a855f7, #3b82f6);
+      color: #fff;
+      box-shadow: 0 2px 8px var(--accent-glow);
+    }
+
+    .tab-badge {
+      font-size: 9px;
+      background: rgba(255, 255, 255, 0.22);
+      padding: 1px 4px;
+      border-radius: 8px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    /* Contenedores de Pestañas */
+    .tab-content {
+      display: none;
+      flex-direction: column;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .tab-content.active {
+      display: flex;
+    }
+
+    /* ── Tab 1: Receptor en Vivo ── */
+    .receiver-banner {
+      background: rgba(168, 85, 247, 0.08);
+      border: 1px solid rgba(168, 85, 247, 0.25);
+      border-radius: 8px;
+      padding: 6px 10px;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .receiver-status-title {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 600;
+      color: #c084fc;
+      font-size: 10.5px;
+    }
+
+    .receiver-shortcuts {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .inbox-list {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding-right: 2px;
+    }
+
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 24px 16px;
+      color: var(--text-muted);
+    }
+
+    .empty-icon-wrap {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: rgba(168, 85, 247, 0.1);
+      border: 1px dashed rgba(168, 85, 247, 0.35);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent);
+      margin-bottom: 12px;
+      animation: pulseGlow 2.5s infinite;
+    }
+
+    @keyframes pulseGlow {
+      0%, 100% { transform: scale(1); opacity: 0.9; }
+      50% { transform: scale(1.06); opacity: 1; }
+    }
+
+    .empty-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+
+    .empty-desc {
+      font-size: 10px;
+      line-height: 1.45;
+      max-width: 280px;
       margin-bottom: 12px;
     }
 
-    .metric-card {
+    /* Tarjetas del Inbox */
+    .inbox-card {
       background: var(--card-bg);
       border: 1px solid var(--card-border);
       border-radius: 8px;
-      padding: 8px 10px;
-      backdrop-filter: blur(8px);
-      transition: border-color 0.2s ease;
-    }
-
-    .metric-card:hover {
-      border-color: var(--card-border-hover);
-    }
-
-    .metric-label {
-      color: var(--text-muted);
-      font-size: 9px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 3px;
-    }
-
-    .metric-value {
-      font-size: 15px;
-      font-weight: 700;
-      color: #fff;
-    }
-
-    .metric-value.highlight {
-      color: #60a5fa;
-    }
-
-    /* Barra de herramientas / Acciones rápidas */
-    .actions-bar {
+      padding: 9px 10px;
       display: flex;
+      flex-direction: column;
       gap: 6px;
-      margin-bottom: 10px;
-    }
-
-    .action-btn {
-      flex: 1;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 5px;
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid var(--card-border);
-      color: var(--text);
-      padding: 6px 10px;
-      border-radius: 6px;
-      font-size: 10px;
-      font-weight: 500;
-      cursor: pointer;
       transition: all 0.15s ease;
     }
 
-    .action-btn:hover {
-      background: rgba(255, 255, 255, 0.1);
-      border-color: rgba(255, 255, 255, 0.2);
+    .inbox-card:hover {
+      border-color: var(--card-border-hover);
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
     }
 
-    .action-btn.danger:hover {
-      background: rgba(239, 68, 68, 0.15);
-      border-color: rgba(239, 68, 68, 0.3);
-      color: #fca5a5;
+    .inbox-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
     }
 
-    /* Terminal de Logs en vivo */
-    .log-panel {
+    .inbox-card-title {
+      font-weight: 600;
+      font-size: 11px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
       flex: 1;
-      background: #07080b;
-      border: 1px solid var(--card-border);
-      border-radius: 8px;
-      padding: 8px 10px;
+    }
+
+    .inbox-card-meta {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      flex-wrap: wrap;
+      font-size: 9.5px;
+      color: var(--text-muted);
+    }
+
+    .meta-tag {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 1.5px 5px;
+      border-radius: 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 9px;
+    }
+
+    .meta-tag.comp {
+      color: #c084fc;
+      border-color: rgba(168, 85, 247, 0.3);
+      background: rgba(168, 85, 247, 0.1);
+    }
+
+    .meta-tag.token {
+      color: #34d399;
+      border-color: rgba(16, 185, 129, 0.3);
+      background: rgba(16, 185, 129, 0.1);
+    }
+
+    .inbox-card-actions {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-top: 2px;
+    }
+
+    .card-btn {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 5px;
+      padding: 3.5px 7px;
+      font-size: 10px;
+      font-weight: 500;
+      color: var(--text);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.15s ease;
+    }
+
+    .card-btn:hover {
+      background: rgba(255, 255, 255, 0.18);
+      color: #fff;
+    }
+
+    .card-btn.primary {
+      background: rgba(168, 85, 247, 0.2);
+      border-color: rgba(168, 85, 247, 0.4);
+      color: #c084fc;
+    }
+    .card-btn.primary:hover {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .card-btn.danger {
+      color: #f87171;
+      border-color: rgba(239, 68, 68, 0.25);
+      background: rgba(239, 68, 68, 0.08);
+    }
+    .card-btn.danger:hover {
+      background: rgba(239, 68, 68, 0.22);
+      border-color: #ef4444;
+      color: #fee2e2;
+    }
+
+    /* ── Tab 2: Importar JSON ── */
+    .import-container {
       display: flex;
       flex-direction: column;
-      overflow: hidden;
-      margin-bottom: 8px;
+      gap: 8px;
+      height: 100%;
     }
 
-    .log-header {
+    .json-textarea {
+      flex: 1;
+      background: #090d13;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 10px;
+      color: #e6edf3;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 10px;
+      resize: none;
+      outline: none;
+      line-height: 1.4;
+    }
+
+    .json-textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-glow);
+    }
+
+    .json-status-bar {
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      font-size: 9px;
+      justify-content: space-between;
+      font-size: 10px;
+      color: var(--text-muted);
+      padding: 0 4px;
+    }
+
+    .btn-gradient {
+      background: linear-gradient(135deg, #a855f7, #3b82f6);
+      color: #fff;
+      border: none;
+      border-radius: 7px;
+      padding: 9px 14px;
+      font-weight: 600;
+      font-size: 11px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      box-shadow: 0 2px 10px var(--accent-glow);
+      transition: all 0.2s ease;
+    }
+
+    .btn-gradient:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 14px rgba(168, 85, 247, 0.4);
+    }
+
+    .btn-gradient:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* ── Tab 3: Ajustes ── */
+    .settings-container {
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding-right: 2px;
+    }
+
+    .settings-group {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .settings-group-title {
+      font-weight: 700;
+      font-size: 11px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      padding-bottom: 6px;
+    }
+
+    .setting-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      cursor: pointer;
+      font-size: 10.5px;
+    }
+
+    .setting-item input[type="radio"],
+    .setting-item input[type="checkbox"] {
+      margin-top: 2px;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .setting-desc {
+      font-size: 9.5px;
+      color: var(--text-muted);
+      margin-top: 2px;
+      line-height: 1.35;
+    }
+
+    /* ── Tab 4: Vistas App ── */
+    .views-catalog-header {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 8px;
+      flex-shrink: 0;
+    }
+
+    .search-input {
+      flex: 1;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      padding: 6px 9px;
+      color: #fff;
+      font-size: 10px;
+      outline: none;
+    }
+
+    .search-input:focus {
+      border-color: var(--accent);
+    }
+
+    .filter-chips {
+      display: flex;
+      gap: 4px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+      scrollbar-width: none;
+    }
+    .filter-chips::-webkit-scrollbar {
+      display: none;
+    }
+
+    .chip {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 3px 8px;
+      font-size: 9.5px;
+      color: var(--text-muted);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s ease;
+    }
+
+    .chip.active {
+      background: rgba(59, 130, 246, 0.2);
+      border-color: rgba(59, 130, 246, 0.4);
+      color: #60a5fa;
+      font-weight: 600;
+    }
+
+    /* ── Tab 5: Monitor & Logs ── */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      margin-bottom: 8px;
+      flex-shrink: 0;
+    }
+
+    .stat-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 8px;
+      text-align: center;
+    }
+
+    .stat-label {
+      font-size: 8.5px;
+      font-weight: 600;
       color: var(--text-muted);
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      margin-bottom: 6px;
-      padding-bottom: 4px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      margin-bottom: 2px;
     }
 
-    .log-content {
+    .stat-value {
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .logs-terminal {
       flex: 1;
+      background: #06090e;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 8px 10px;
       overflow-y: auto;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 9.5px;
       display: flex;
-      flex-direction: column-reverse;
+      flex-direction: column;
       gap: 3px;
     }
 
-    .log-content::-webkit-scrollbar {
-      width: 4px;
-    }
-    .log-content::-webkit-scrollbar-thumb {
-      background: #27272a;
-      border-radius: 4px;
-    }
-
-    .log-item {
-      line-height: 1.3;
+    .log-line {
+      display: flex;
+      gap: 6px;
+      line-height: 1.4;
       word-break: break-all;
     }
-    .log-item.info { color: #94a3b8; }
-    .log-item.success { color: #34d399; }
-    .log-item.warn { color: #facc15; }
-    .log-item.error { color: #f87171; }
-    .log-time { color: #475569; margin-right: 4px; }
+    .log-time { color: #64748b; flex-shrink: 0; }
+    .log-info { color: #94a3b8; }
+    .log-success { color: #34d399; }
+    .log-warn { color: #fbbf24; }
+    .log-error { color: #f87171; }
 
-    /* Footer con info de red */
+    /* Footer */
     .footer {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      color: #64748b;
+      margin-top: 8px;
+      padding-top: 6px;
+      border-top: 1px solid var(--card-border);
       font-size: 9px;
-    }
-
-    .server-status {
-      display: flex;
-      align-items: center;
-      gap: 4px;
+      color: #64748b;
+      flex-shrink: 0;
     }
   </style>
 </head>
 <body>
+
   <!-- Header -->
   <div class="header">
     <div class="brand">
       <div class="brand-icon">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-        </svg>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
       </div>
       <div>
         <div class="brand-title">Code to Figma AI</div>
-        <div class="brand-version">v2.0 Ultra-Lite</div>
+        <div class="brand-sub">Studio & Live Receiver · v3.0</div>
       </div>
     </div>
-    <div id="statusBadge" class="badge disconnected">
+    <div id="statusBadge" class="badge disconnected" onclick="reconnectHub()" title="Clic para reconectar al WebSocket Hub (ws://localhost:8080)">
       <span class="pulse-dot"></span>
       <span id="statusText">Desconectado</span>
     </div>
   </div>
 
-  <!-- Métricas en vivo -->
-  <div class="metrics-grid">
-    <div class="metric-card">
-      <div class="metric-label">Renders</div>
-      <div class="metric-value highlight" id="renderCount">0</div>
-    </div>
-    <div class="metric-card">
-      <div class="metric-label">Nodos Pintados</div>
-      <div class="metric-value" id="nodeCount">0</div>
-    </div>
-    <div class="metric-card">
-      <div class="metric-label">Latencia</div>
-      <div class="metric-value" id="latencyVal">-- ms</div>
-    </div>
-  </div>
-
-  <!-- Barra de Acciones Rápidas -->
-  <div class="actions-bar">
-    <button id="zoomBtn" class="action-btn" title="Enfocar los componentes en el lienzo">
-      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
-      Enfocar
+  <!-- Pestañas (100% compactas y sin scroll horizontal) -->
+  <div class="tabs-nav">
+    <button class="tab-btn active" id="tabBtnReceiver" onclick="switchTab('receiver')" title="Receptor en Vivo">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/></svg>
+      <span>Receptor</span>
+      <span class="tab-badge" id="badgeReceiverCount">0</span>
     </button>
-    <button id="clearBtn" class="action-btn danger" title="Limpiar la página actual de Figma">
-      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-      Limpiar Lienzo
+    <button class="tab-btn" id="tabBtnImport" onclick="switchTab('import')" title="Importar JSON">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      <span>Importar</span>
+    </button>
+    <button class="tab-btn" id="tabBtnSettings" onclick="switchTab('settings')" title="Ajustes de Render">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      <span>Ajustes</span>
+    </button>
+    <button class="tab-btn" id="tabBtnViews" onclick="switchTab('views')" title="Catálogo de Vistas">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+      <span>Vistas</span>
+    </button>
+    <button class="tab-btn" id="tabBtnLogs" onclick="switchTab('logs')" title="Monitor y Consola">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+      <span>Monitor</span>
     </button>
   </div>
 
-  <!-- Panel de logs -->
-  <div class="log-panel">
-    <div class="log-header">
-      <span>Consola de Actividad</span>
-      <span id="activePageName">Página: Inicial</span>
+  <!-- Contenido 1: Receptor en Vivo (DEFAULT) -->
+  <div class="tab-content active" id="tabContentReceiver">
+    <div class="receiver-banner">
+      <div class="receiver-status-title">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"/></svg>
+        Receptor en Tiempo Real
+      </div>
+      <div class="receiver-shortcuts">
+        <button class="card-btn danger" style="padding: 2.5px 7px; font-size: 9.5px;" onclick="clearAllInboxItems()" title="Borrar todos los componentes de esta lista y del lienzo de Figma">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          <span>Borrar Todo</span>
+        </button>
+      </div>
     </div>
-    <div class="log-content" id="logContainer">
-      <div class="log-item info"><span class="log-time">[Init]</span> Esperando conexión a ws://localhost:8080...</div>
+
+    <div class="inbox-list" id="inboxList">
+      <div class="empty-state" id="receiverEmpty">
+        <div class="empty-icon-wrap">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="11"/></svg>
+        </div>
+        <div class="empty-title">Esperando Componentes Web</div>
+        <div class="empty-desc">
+          Abre cualquier página web con la extensión <strong>Code to Figma AI</strong>, selecciona o inspecciona componentes y haz clic en <em>"Enviar a Figma"</em>.
+        </div>
+        <button class="card-btn primary" onclick="renderDemoCard()">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          Probar con Componente Demo
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Contenido 2: Importar JSON -->
+  <div class="tab-content" id="tabContentImport">
+    <div class="import-container">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <span style="font-weight:600;color:#fff;">Pegar JSON desde la Extensión</span>
+        <div style="display:flex;gap:6px;">
+          <button class="card-btn" onclick="pasteFromClipboard()">Pegar Portapapeles</button>
+          <button class="card-btn" onclick="clearJsonInput()">Limpiar</button>
+        </div>
+      </div>
+      <textarea id="jsonInput" class="json-textarea" placeholder="Pega aquí el JSON exportado con el botón 'Copiar JSON' de la extensión web..."></textarea>
+      <div class="json-status-bar">
+        <span id="jsonDetectInfo">Sin datos cargados</span>
+        <span id="jsonBytesInfo">0 bytes</span>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:12px;margin:4px 0;">
+        <label class="setting-item">
+          <input type="checkbox" id="chkImportAsComponent" />
+          <span>Crear como Componente nativo</span>
+        </label>
+        <label class="setting-item">
+          <input type="checkbox" id="chkImportTokens" checked />
+          <span>Extraer Paint Styles de Tokens</span>
+        </label>
+      </div>
+
+      <button id="btnRenderJson" class="btn-gradient" onclick="renderParsedJson()" disabled>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        Renderizar en Lienzo de Figma
+      </button>
+    </div>
+  </div>
+
+  <!-- Contenido 3: Ajustes & Canvas -->
+  <div class="tab-content" id="tabContentSettings">
+    <div class="settings-container">
+      <div class="settings-group">
+        <div class="settings-group-title">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          Estructura de Componente
+        </div>
+        <label class="setting-item">
+          <input type="radio" name="optStructure" value="FRAME" checked onchange="savePluginSettings()" />
+          <div>
+            <strong>Frame estándar (figma.createFrame)</strong>
+            <div class="setting-desc">Crea marcos editables estándar ideales para composición rápida de layouts.</div>
+          </div>
+        </label>
+        <label class="setting-item">
+          <input type="radio" name="optStructure" value="COMPONENT" onchange="savePluginSettings()" />
+          <div>
+            <strong>Componente oficial (figma.createComponent)</strong>
+            <div class="setting-desc">Crea componentes maestros nativos listos para publicar en tu Design System.</div>
+          </div>
+        </label>
+      </div>
+
+      <div class="settings-group">
+        <div class="settings-group-title">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+          Disposición de Nuevos Componentes
+        </div>
+        <label class="setting-item">
+          <input type="radio" name="optPlacement" value="SIDE" checked onchange="savePluginSettings()" />
+          <div>
+            <strong>A su lado — Horizontal (+120px) [Recomendado]</strong>
+            <div class="setting-desc">Organiza cada nuevo componente a la derecha del anterior en fila ordenada sin solaparse jamás.</div>
+          </div>
+        </label>
+        <label class="setting-item">
+          <input type="radio" name="optPlacement" value="BELOW" onchange="savePluginSettings()" />
+          <div>
+            <strong>Debajo — Vertical (+120px)</strong>
+            <div class="setting-desc">Organiza cada nuevo componente justo debajo del anterior en columna limpia.</div>
+          </div>
+        </label>
+        <label class="setting-item">
+          <input type="radio" name="optPlacement" value="CENTER" onchange="savePluginSettings()" />
+          <div>
+            <strong>En el centro de la vista actual</strong>
+            <div class="setting-desc">Coloca el nuevo componente centrado en el viewport actual de Figma.</div>
+          </div>
+        </label>
+      </div>
+
+      <div class="settings-group">
+        <div class="settings-group-title">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          Design Tokens & Estilos
+        </div>
+        <label class="setting-item">
+          <input type="checkbox" id="chkAutoPaintStyles" checked onchange="savePluginSettings()" />
+          <div>
+            <strong>Crear Paint Styles automáticos (Token / ...)</strong>
+            <div class="setting-desc">Convierte variables CSS detectadas (:root) en estilos locales de color en Figma.</div>
+          </div>
+        </label>
+        <label class="setting-item">
+          <input type="checkbox" id="chkPrewarmFonts" checked onchange="savePluginSettings()" />
+          <div>
+            <strong>Pre-calentamiento seguro de fuentes tipográficas</strong>
+            <div class="setting-desc">Verifica y precarga Inter, Roboto, Segoe UI y fuentes de sistema con fallback garantizado.</div>
+          </div>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- Contenido 4: Vistas App (Catálogo Dinámico) -->
+  <div class="tab-content" id="tabContentViews">
+    <div class="views-catalog-header">
+      <input type="text" id="searchInput" class="search-input" placeholder="Filtrar por nombre o ruta..." oninput="filterViews()" />
+    </div>
+    <div class="filter-chips" id="viewFilterChips">
+      <button class="chip active">Todos (0)</button>
+    </div>
+    <div class="inbox-list" id="viewsContainer" style="margin-top:8px;">
+      <div class="empty-state">
+        <div class="empty-icon-wrap" style="color:#38bdf8;background:rgba(56,189,248,0.1);border-color:rgba(56,189,248,0.25);">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+        </div>
+        <div class="empty-title">Sin Catálogo Predefinido</div>
+        <div class="empty-desc">
+          Este modo muestra vistas de proyectos pre-mapeados. Para capturar cualquier componente web, usa la extensión de Chrome y envíalo en vivo.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Contenido 5: Monitor & Logs -->
+  <div class="tab-content" id="tabContentLogs">
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-label">Renders</div>
+        <div class="stat-value" id="statRenders" style="color:#38bdf8;">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Nodos</div>
+        <div class="stat-value" id="statNodes" style="color:#a855f7;">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Latencia</div>
+        <div class="stat-value" id="statLatency" style="color:#34d399;">0 ms</div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:6px;margin-bottom:6px;">
+      <button class="card-btn" onclick="zoomAllCanvas()">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        Enfocar Todo
+      </button>
+      <button class="card-btn danger" onclick="clearCanvas()">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        Limpiar Lienzo
+      </button>
+      <button class="card-btn" onclick="clearLogs()" style="margin-left:auto;">Limpiar Logs</button>
+    </div>
+
+    <div class="logs-terminal" id="logsTerminal">
+      <div class="log-line">
+        <span class="log-time">[Init]</span>
+        <span class="log-info">Studio & Receiver inicializado con borrado bidireccional y posicionamiento continuo.</span>
+      </div>
     </div>
   </div>
 
   <!-- Footer -->
   <div class="footer">
-    <div class="server-status">
-      <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"></circle></svg>
-      <span id="serverUrl">ws://localhost:8080</span>
-    </div>
-    <span>Auto Layout & Fonts Sync</span>
+    <span id="footerWsInfo">ws://localhost:8080 · Auto Layout Nativo</span>
+    <span id="activePageName">Página: Dashboard</span>
   </div>
 
   <script>
-    const WS_URL = 'ws://localhost:8080';
+    // ── Estado Global del Plugin UI ──
+    const HUB_URL = 'ws://localhost:8080';
     let socket = null;
-    let reconnectTimeout = null;
-    let renderCount = 0;
-    let totalNodesDrawn = 0;
+    let reconnectTimer = null;
+    let receivedItems = [];
+    let viewsList = [];
+    let activeModuleFilter = 'ALL';
+    let stats = { renders: 0, nodes: 0, latencyMs: 0 };
     let lastRenderStartTime = 0;
 
+    // Elementos DOM
     const statusBadge = document.getElementById('statusBadge');
     const statusText = document.getElementById('statusText');
-    const logContainer = document.getElementById('logContainer');
-    const renderCountEl = document.getElementById('renderCount');
-    const nodeCountEl = document.getElementById('nodeCount');
-    const latencyEl = document.getElementById('latencyVal');
-    const activePageEl = document.getElementById('activePageName');
-    const clearBtn = document.getElementById('clearBtn');
-    const zoomBtn = document.getElementById('zoomBtn');
+    const inboxList = document.getElementById('inboxList');
+    const receiverEmpty = document.getElementById('receiverEmpty');
+    const badgeReceiverCount = document.getElementById('badgeReceiverCount');
+    const logsTerminal = document.getElementById('logsTerminal');
+    const statRenders = document.getElementById('statRenders');
+    const statNodes = document.getElementById('statNodes');
+    const statLatency = document.getElementById('statLatency');
+    const activePageName = document.getElementById('activePageName');
+    const jsonInput = document.getElementById('jsonInput');
+    const jsonDetectInfo = document.getElementById('jsonDetectInfo');
+    const jsonBytesInfo = document.getElementById('jsonBytesInfo');
+    const btnRenderJson = document.getElementById('btnRenderJson');
 
-    function log(message, type = 'info') {
-      const entry = document.createElement('div');
-      entry.className = `log-item ${type}`;
-      const now = new Date();
-      const time = now.toTimeString().split(' ')[0] + '.' + String(now.getMilliseconds()).padStart(3, '0').slice(0, 2);
-      entry.innerHTML = `<span class="log-time">[${time}]</span> ${message}`;
-      logContainer.prepend(entry);
-    }
+    // ── Navegación entre Pestañas ──
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
 
-    function setStatus(connected, text) {
-      if (connected) {
-        statusBadge.className = 'badge connected';
-        statusText.textContent = text || 'En línea';
-      } else {
-        statusBadge.className = 'badge disconnected';
-        statusText.textContent = text || 'Desconectado';
+      const btnMap = {
+        receiver: 'tabBtnReceiver',
+        import: 'tabBtnImport',
+        settings: 'tabBtnSettings',
+        views: 'tabBtnViews',
+        logs: 'tabBtnLogs'
+      };
+
+      const contentMap = {
+        receiver: 'tabContentReceiver',
+        import: 'tabContentImport',
+        settings: 'tabContentSettings',
+        views: 'tabContentViews',
+        logs: 'tabContentLogs'
+      };
+
+      const targetBtn = document.getElementById(btnMap[tabId]);
+      const targetContent = document.getElementById(contentMap[tabId]);
+
+      if (targetBtn && targetContent) {
+        targetBtn.classList.add('active');
+        targetContent.classList.add('active');
       }
     }
 
+    // ── Conexión WebSocket al Hub ──
     function connect() {
       if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
         return;
       }
 
+      updateStatus('connecting');
+      log('Conectando al Hub WebSocket (ws://localhost:8080)...', 'info');
+
       try {
-        socket = new WebSocket(WS_URL);
+        socket = new WebSocket(HUB_URL);
 
         socket.onopen = () => {
-          setStatus(true, 'En línea');
-          log('Conectado al Hub local (ws://localhost:8080)', 'success');
+          updateStatus('connected');
+          log('Conectado al Hub WebSocket con éxito.', 'success');
           socket.send(JSON.stringify({
             type: 'REGISTER_CLIENT',
-            clientType: 'FIGMA_PLUGIN'
+            clientType: 'FIGMA_PLUGIN',
+            role: 'plugin',
+            client: 'Figma-Studio-Receiver-v3'
           }));
         };
 
         socket.onmessage = (event) => {
           try {
-            const data = JSON.parse(event.data);
-            if (data.type === 'RENDER_NODES') {
-              renderCount++;
-              renderCountEl.textContent = renderCount;
-              lastRenderStartTime = performance.now();
-
-              const name = data.payload?.rootNode?.name || 'Componente';
-              log(`Procesando render: "${name}"`, 'info');
-
-              parent.postMessage({
-                pluginMessage: {
-                  type: 'RENDER_NODES',
-                  payload: data.payload
-                }
-              }, '*');
-            } else if (data.type === 'PING') {
-              socket.send(JSON.stringify({ type: 'PONG' }));
-            }
-          } catch (err) {
-            log('Error parseando payload: ' + err.message, 'error');
+            const msg = JSON.parse(event.data);
+            handleWebSocketMessage(msg);
+          } catch (e) {
+            log('Error al procesar mensaje JSON: ' + e.message, 'error');
           }
         };
 
         socket.onclose = () => {
-          setStatus(false, 'Reconectando...');
-          clearTimeout(reconnectTimeout);
-          reconnectTimeout = setTimeout(connect, 2500);
+          updateStatus('disconnected');
+          log('Conexión con el Hub WebSocket cerrada. Reintentando en 3s...', 'warn');
+          scheduleReconnect();
         };
 
-        socket.onerror = () => {};
+        socket.onerror = () => {
+          updateStatus('disconnected');
+          scheduleReconnect();
+        };
       } catch (err) {
-        setStatus(false, 'Error');
-        clearTimeout(reconnectTimeout);
-        reconnectTimeout = setTimeout(connect, 3000);
+        updateStatus('disconnected');
+        scheduleReconnect();
       }
     }
 
-    // Mensajes recibidos del motor Figma (code.ts)
+    function scheduleReconnect() {
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(() => connect(), 3000);
+    }
+
+    function reconnectHub() {
+      if (socket) {
+        try { socket.close(); } catch (_) {}
+      }
+      connect();
+    }
+
+    function updateStatus(state) {
+      statusBadge.className = 'badge ' + state;
+      if (state === 'connected') {
+        statusText.textContent = 'En línea';
+      } else if (state === 'connecting') {
+        statusText.textContent = 'Conectando...';
+      } else {
+        statusText.textContent = 'Desconectado';
+      }
+    }
+
+    // ── WebSocket Handler ──
+    function handleWebSocketMessage(msg) {
+      if (msg.type === 'VIEWS_CATALOG') {
+        viewsList = msg.payload?.views || [];
+        renderViewsList();
+      } else if (msg.type === 'RENDER_NODES') {
+        lastRenderStartTime = performance.now();
+        log(`Recibido componente desde WebSocket: "${msg.payload?.rootNode?.name || 'Component'}"`, 'info');
+
+        // Leer preferencias de ajustes
+        const settings = loadPluginSettings();
+        const payloadToSend = { ...msg.payload };
+
+        if (settings.structure === 'COMPONENT') {
+          payloadToSend.createAsComponent = true;
+        }
+        if (!settings.autoPaintStyles) {
+          delete payloadToSend.tokens;
+        }
+
+        // Posicionamiento continuo sin solapamiento
+        payloadToSend.placementMode = settings.placement || 'SIDE';
+        payloadToSend.placementGap = 120;
+
+        // Ajustar imágenes a lo que acepta figma.createImage antes de dibujar
+        normalizeTreeImages(payloadToSend.rootNode).then((imgStats) => {
+          if (imgStats.total > 0) {
+            log(`Imágenes: ${imgStats.total} recibidas, ${imgStats.converted} ajustadas a formato/tamaño Figma` + (imgStats.failed ? `, ${imgStats.failed} ilegibles` : ''), imgStats.failed ? 'warn' : 'info');
+          }
+          parent.postMessage({
+            pluginMessage: {
+              type: 'RENDER_NODES',
+              payload: payloadToSend
+            }
+          }, '*');
+        });
+      }
+    }
+
+    // ── Normalización de imágenes para figma.createImage ──
+    // Figma solo acepta PNG / JPEG / GIF y como máximo 4096 px por lado.
+    // Sin esto, las imágenes @2x grandes (ej. 6016px en apple.com) o WebP/AVIF/SVG no se dibujan.
+    const FIGMA_MAX_IMAGE_SIDE = 4096;
+
+    function loadImage(src) {
+      return new Promise((resolve, reject) => {
+        const im = new Image();
+        im.onload = () => resolve(im);
+        im.onerror = () => reject(new Error('decode'));
+        im.src = src;
+      });
+    }
+
+    async function normalizeImageData(dataUrl) {
+      const mimeMatch = /^data:([^;,]+)/i.exec(dataUrl || '');
+      const mime = mimeMatch ? mimeMatch[1].toLowerCase() : '';
+      const im = await loadImage(dataUrl);
+      let w = im.naturalWidth || im.width;
+      let h = im.naturalHeight || im.height;
+      if (!w || !h) { w = 512; h = 512; } // SVG sin dimensiones intrínsecas
+      const supported = mime === 'image/png' || mime === 'image/jpeg' || mime === 'image/jpg' || mime === 'image/gif';
+      const tooBig = Math.max(w, h) > FIGMA_MAX_IMAGE_SIDE;
+      if (supported && !tooBig) return null;
+
+      const k = Math.min(1, FIGMA_MAX_IMAGE_SIDE / Math.max(w, h));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(w * k));
+      canvas.height = Math.max(1, Math.round(h * k));
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(im, 0, 0, canvas.width, canvas.height);
+      return (mime === 'image/jpeg' || mime === 'image/jpg')
+        ? canvas.toDataURL('image/jpeg', 0.92)
+        : canvas.toDataURL('image/png');
+    }
+
+    async function normalizeTreeImages(root) {
+      const stats = { total: 0, converted: 0, failed: 0 };
+      if (!root) return stats;
+      const nodes = [];
+      (function walk(n) {
+        if (!n) return;
+        if (typeof n.imageData === 'string' && n.imageData.startsWith('data:')) nodes.push(n);
+        if (Array.isArray(n.children)) n.children.forEach(walk);
+      })(root);
+      stats.total = nodes.length;
+      for (let i = 0; i < nodes.length; i += 4) {
+        await Promise.all(nodes.slice(i, i + 4).map(async (n) => {
+          try {
+            const out = await normalizeImageData(n.imageData);
+            if (out) { n.imageData = out; stats.converted++; }
+          } catch (_e) {
+            stats.failed++;
+          }
+        }));
+      }
+      return stats;
+    }
+    // ── Fin normalización de imágenes ──
+
+    // ── Recepción de Respuestas desde Figma (code.ts) ──
     window.onmessage = (event) => {
       const msg = event.data.pluginMessage;
       if (!msg) return;
 
-      if (msg.type === 'RENDER_SUCCESS') {
-        const elapsed = Math.round(performance.now() - lastRenderStartTime);
-        latencyEl.textContent = `${elapsed} ms`;
-
-        const drawnCount = msg.nodeCount || 1;
-        totalNodesDrawn += drawnCount;
-        nodeCountEl.textContent = totalNodesDrawn;
-
+      if (msg.type === 'PAGE_INFO') {
         if (msg.pageName) {
-          activePageEl.textContent = `Página: ${msg.pageName}`;
+          activePageName.textContent = `Página: ${msg.pageName}`;
         }
+        return;
+      }
 
-        log(`✓ Dibujado en Figma: "${msg.name}" (${elapsed}ms)`, 'success');
+      if (msg.type === 'RENDER_SUCCESS') {
+        const measuredDuration = (msg.durationMs !== undefined && msg.durationMs >= 0) 
+          ? msg.durationMs 
+          : Math.round(performance.now() - lastRenderStartTime);
 
+        stats.renders++;
+        stats.nodes += (msg.nodeCount || 1);
+        stats.latencyMs = measuredDuration;
+
+        statRenders.textContent = stats.renders;
+        statNodes.textContent = stats.nodes;
+        statLatency.textContent = `${stats.latencyMs} ms`;
+
+        log(`Dibujado en Figma: "${msg.name}" (${msg.width}×${msg.height}px, ${msg.nodeCount} capas) en ${stats.latencyMs}ms`, 'success');
+
+        // Agregar al receptor
+        addReceivedItem({
+          id: msg.nodeId,
+          name: msg.name,
+          nodeType: msg.nodeType,
+          width: msg.width,
+          height: msg.height,
+          nodeCount: msg.nodeCount,
+          tokensCount: msg.tokensCount || 0,
+          pageName: msg.pageName,
+          timestamp: new Date(),
+          rawPayload: msg.rawPayload
+        });
+
+        // Notificar al Hub
         if (socket && socket.readyState === WebSocket.OPEN) {
           socket.send(JSON.stringify({
-            type: 'RENDER_SUCCESS',
+            type: 'RENDER_COMPLETED',
             nodeId: msg.nodeId,
             name: msg.name,
-            durationMs: elapsed
+            durationMs: stats.latencyMs
           }));
         }
       } else if (msg.type === 'RENDER_ERROR') {
-        log(`✗ Error en Figma: ${msg.error}`, 'error');
-        if (socket && socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify({
-            type: 'RENDER_ERROR',
-            error: msg.error
-          }));
-        }
+        log(`Error al renderizar en Figma: ${msg.error}`, 'error');
+      } else if (msg.type === 'LOG') {
+        log(msg.message, msg.level || 'info');
       }
     };
 
-    // Botones de acción
-    clearBtn.addEventListener('click', () => {
-      parent.postMessage({ pluginMessage: { type: 'CLEAR_PAGE' } }, '*');
-      log('Lienzo actual limpiado', 'warn');
+    // ── Gestión del Historial de Componentes Recibidos ──
+    function addReceivedItem(item) {
+      receivedItems.unshift(item);
+      badgeReceiverCount.textContent = receivedItems.length;
+      saveReceivedItemsToStorage();
+      renderInboxFeed();
+    }
+
+    function renderInboxFeed() {
+      if (receivedItems.length === 0) {
+        receiverEmpty.style.display = 'flex';
+        // Remover tarjetas viejas si las hubiera
+        const existingCards = inboxList.querySelectorAll('.inbox-card');
+        existingCards.forEach(c => c.remove());
+        return;
+      }
+      receiverEmpty.style.display = 'none';
+
+      // Limpiar tarjetas existentes (dejando empty state oculto)
+      const existingCards = inboxList.querySelectorAll('.inbox-card');
+      existingCards.forEach(c => c.remove());
+
+      for (const item of receivedItems) {
+        const card = document.createElement('div');
+        card.className = 'inbox-card';
+
+        const isComp = item.nodeType === 'COMPONENT';
+        const typeIcon = isComp 
+          ? `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>`
+          : `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>`;
+
+        card.innerHTML = `
+          <div class="inbox-card-header">
+            <div class="inbox-card-title" title="${escapeHtml(item.name)}">
+              ${typeIcon}
+              ${escapeHtml(item.name)}
+            </div>
+            <span style="font-size:9.5px;color:var(--text-muted);">${formatRelativeTime(item.timestamp)}</span>
+          </div>
+          <div class="inbox-card-meta">
+            <span class="meta-tag ${isComp ? 'comp' : ''}">${item.nodeType}</span>
+            <span class="meta-tag">${item.width} × ${item.height} px</span>
+            <span class="meta-tag">${item.nodeCount} capas</span>
+            ${item.tokensCount > 0 ? `<span class="meta-tag token">${item.tokensCount} tokens</span>` : ''}
+            <span style="color:#64748b;margin-left:auto;">${escapeHtml(item.pageName || 'Actual')}</span>
+          </div>
+          <div class="inbox-card-actions">
+            <button class="card-btn primary" onclick="focusCanvasNode('${item.id}')" title="Centrar y seleccionar en Figma">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="7"/><line x1="12" y1="1" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="1" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="23" y2="12"/></svg>
+              Enfocar
+            </button>
+            ${!isComp ? `
+              <button class="card-btn" onclick="convertToComponent('${item.id}')" title="Convertir a Componente oficial">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                A Componente
+              </button>
+            ` : ''}
+            ${item.rawPayload ? `
+              <button class="card-btn" onclick="reRenderItem('${item.id}')" title="Re-dibujar este componente en el lienzo">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                Re-renderizar
+              </button>
+            ` : ''}
+            <button class="card-btn danger" onclick="deleteInboxItem('${item.id}')" title="Borrar este componente del receptor y del lienzo de Figma">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+              Borrar
+            </button>
+          </div>
+        `;
+        inboxList.appendChild(card);
+      }
+    }
+
+    function formatRelativeTime(date) {
+      if (!date) return 'Ahora';
+      const d = typeof date === 'string' ? new Date(date) : date;
+      const sec = Math.floor((new Date() - d) / 1000);
+      if (sec < 60) return 'Hace un momento';
+      const min = Math.floor(sec / 60);
+      return `Hace ${min}m`;
+    }
+
+    function focusCanvasNode(nodeId) {
+      parent.postMessage({ pluginMessage: { type: 'FOCUS_NODE', nodeId } }, '*');
+    }
+
+    function convertToComponent(nodeId) {
+      parent.postMessage({ pluginMessage: { type: 'CONVERT_TO_COMPONENT', nodeId } }, '*');
+    }
+
+    function reRenderItem(id) {
+      const found = receivedItems.find(i => i.id === id);
+      if (found && found.rawPayload) {
+        lastRenderStartTime = performance.now();
+        const settings = loadPluginSettings();
+        parent.postMessage({
+          pluginMessage: {
+            type: 'RENDER_NODES',
+            payload: {
+              rootNode: found.rawPayload,
+              placementMode: settings.placement || 'SIDE',
+              placementGap: 120
+            }
+          }
+        }, '*');
+      }
+    }
+
+    // ── Eliminación Bidireccional (Receptor + Canvas de Figma) ──
+    function deleteInboxItem(id) {
+      const item = receivedItems.find(i => i.id === id);
+      const name = item ? item.name : 'Componente';
+
+      // 1. Enviar orden a Figma para eliminar el nodo del lienzo
+      parent.postMessage({ pluginMessage: { type: 'DELETE_NODE', nodeId: id } }, '*');
+
+      // 2. Remover del estado local del plugin
+      receivedItems = receivedItems.filter(i => i.id !== id);
+      badgeReceiverCount.textContent = receivedItems.length;
+      saveReceivedItemsToStorage();
+      renderInboxFeed();
+
+      // 3. Registrar en logs
+      log(`"${name}" eliminado del receptor y del lienzo de Figma`, 'info');
+    }
+
+    function clearAllInboxItems() {
+      if (receivedItems.length === 0) return;
+      if (!confirm(`¿Deseas eliminar los ${receivedItems.length} componentes de esta lista y del lienzo de Figma?`)) return;
+
+      const nodeIds = receivedItems.map(i => i.id);
+      parent.postMessage({ pluginMessage: { type: 'DELETE_MULTIPLE_NODES', nodeIds } }, '*');
+
+      receivedItems = [];
+      badgeReceiverCount.textContent = '0';
+      saveReceivedItemsToStorage();
+      renderInboxFeed();
+      log('Todos los componentes eliminados del receptor y del lienzo de Figma', 'info');
+    }
+
+    function saveReceivedItemsToStorage() {
+      try {
+        localStorage.setItem('__codeToFigma_receivedItems', JSON.stringify(receivedItems.slice(0, 50)));
+      } catch (_) {}
+    }
+
+    function loadReceivedItemsFromStorage() {
+      try {
+        const saved = localStorage.getItem('__codeToFigma_receivedItems');
+        if (saved) {
+          receivedItems = JSON.parse(saved);
+          badgeReceiverCount.textContent = receivedItems.length;
+          renderInboxFeed();
+        }
+      } catch (_) {}
+    }
+
+    // ── Importar JSON Manualmente ──
+    let parsedJsonData = null;
+
+    jsonInput.addEventListener('input', () => {
+      validateJsonInput();
     });
 
-    zoomBtn.addEventListener('click', () => {
+    function validateJsonInput() {
+      const raw = jsonInput.value.trim();
+      jsonBytesInfo.textContent = `${raw.length} bytes`;
+
+      if (!raw) {
+        jsonDetectInfo.textContent = 'Sin datos cargados';
+        jsonDetectInfo.style.color = 'var(--text-muted)';
+        btnRenderJson.disabled = true;
+        parsedJsonData = null;
+        return;
+      }
+
+      try {
+        const obj = JSON.parse(raw);
+        const root = obj.rootNode || (Array.isArray(obj) ? obj[0] : obj);
+
+        if (!root || (!root.type && !root.layout)) {
+          throw new Error('Estructura de nodo no reconocida');
+        }
+
+        parsedJsonData = obj;
+        const name = root.name || 'Componente';
+        const w = root.layout?.width || root.layout?.measuredWidth || '?';
+        const h = root.layout?.height || root.layout?.measuredHeight || '?';
+        const childCount = root.children ? root.children.length : 0;
+
+        jsonDetectInfo.textContent = `✓ Válido: "${name}" (${w}×${h}px · ${childCount} hijos)`;
+        jsonDetectInfo.style.color = '#34d399';
+        btnRenderJson.disabled = false;
+      } catch (err) {
+        jsonDetectInfo.textContent = `✗ Error: ${err.message}`;
+        jsonDetectInfo.style.color = '#f87171';
+        btnRenderJson.disabled = true;
+        parsedJsonData = null;
+      }
+    }
+
+    async function pasteFromClipboard() {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text) {
+          jsonInput.value = text;
+          validateJsonInput();
+        }
+      } catch (err) {
+        log('No se pudo acceder al portapapeles directamente. Usa Ctrl+V / Cmd+V.', 'warn');
+      }
+    }
+
+    function clearJsonInput() {
+      jsonInput.value = '';
+      validateJsonInput();
+    }
+
+    function renderParsedJson() {
+      if (!parsedJsonData) return;
+      lastRenderStartTime = performance.now();
+
+      const asComp = document.getElementById('chkImportAsComponent').checked;
+      const withTokens = document.getElementById('chkImportTokens').checked;
+      const settings = loadPluginSettings();
+
+      const payload = {
+        rootNode: parsedJsonData.rootNode || parsedJsonData,
+        tokens: withTokens ? parsedJsonData.tokens : undefined,
+        createAsComponent: asComp,
+        placementMode: settings.placement || 'SIDE',
+        placementGap: 120
+      };
+
+      parent.postMessage({
+        pluginMessage: {
+          type: 'RENDER_NODES',
+          payload
+        }
+      }, '*');
+
+      switchTab('receiver');
+    }
+
+    // ── Ajustes del Plugin ──
+    function loadPluginSettings() {
+      let saved = null;
+      try {
+        saved = JSON.parse(localStorage.getItem('__codeToFigmaPluginSettings') || '{}');
+      } catch (_) {}
+      return {
+        structure: saved?.structure || 'FRAME',
+        placement: saved?.placement || 'SIDE',
+        autoPaintStyles: saved?.autoPaintStyles !== false,
+        prewarmFonts: saved?.prewarmFonts !== false
+      };
+    }
+
+    function savePluginSettings() {
+      const struct = document.querySelector('input[name="optStructure"]:checked')?.value || 'FRAME';
+      const place = document.querySelector('input[name="optPlacement"]:checked')?.value || 'SIDE';
+      const autoPaint = document.getElementById('chkAutoPaintStyles').checked;
+      const prewarm = document.getElementById('chkPrewarmFonts').checked;
+
+      const settings = {
+        structure: struct,
+        placement: place,
+        autoPaintStyles: autoPaint,
+        prewarmFonts: prewarm
+      };
+
+      try {
+        localStorage.setItem('__codeToFigmaPluginSettings', JSON.stringify(settings));
+        log('Ajustes de render guardados.', 'info');
+      } catch (_) {}
+    }
+
+    function applyPluginSettingsToUI() {
+      const s = loadPluginSettings();
+      const rStruct = document.querySelector(`input[name="optStructure"][value="${s.structure}"]`);
+      if (rStruct) rStruct.checked = true;
+
+      const rPlace = document.querySelector(`input[name="optPlacement"][value="${s.placement}"]`);
+      if (rPlace) rPlace.checked = true;
+
+      document.getElementById('chkAutoPaintStyles').checked = s.autoPaintStyles;
+      document.getElementById('chkPrewarmFonts').checked = s.prewarmFonts;
+    }
+
+    // ── Vistas de la App (Catálogo Dinámico) ──
+    function renderViewsList() {
+      const container = document.getElementById('viewsContainer');
+      const chipsContainer = document.getElementById('viewFilterChips');
+
+      if (!viewsList || viewsList.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon-wrap" style="color:#38bdf8;background:rgba(56,189,248,0.1);border-color:rgba(56,189,248,0.25);">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>
+              </svg>
+            </div>
+            <div class="empty-title">Sin Catálogo Predefinido</div>
+            <div class="empty-desc">
+              Este modo muestra vistas de proyectos pre-mapeados. Para capturar cualquier componente web, usa la extensión de Chrome y envíalo en vivo.
+            </div>
+          </div>
+        `;
+        chipsContainer.innerHTML = '<button class="chip active">Todos (0)</button>';
+        return;
+      }
+
+      const modules = new Set(['ALL']);
+      viewsList.forEach(v => {
+        if (v.module) modules.add(v.module);
+      });
+
+      chipsContainer.innerHTML = '';
+      for (const m of modules) {
+        const btn = document.createElement('button');
+        btn.className = `chip ${m === activeModuleFilter ? 'active' : ''}`;
+        btn.textContent = m === 'ALL' ? `Todos (${viewsList.length})` : m;
+        btn.onclick = () => setModuleFilter(m, btn);
+        chipsContainer.appendChild(btn);
+      }
+
+      container.innerHTML = '';
+      const filtered = viewsList.filter(v => {
+        const matchModule = activeModuleFilter === 'ALL' || v.module === activeModuleFilter;
+        const q = (document.getElementById('searchInput')?.value || '').toLowerCase();
+        const matchQuery = !q || v.name.toLowerCase().includes(q) || (v.route && v.route.toLowerCase().includes(q));
+        return matchModule && matchQuery;
+      });
+
+      for (const v of filtered) {
+        const card = document.createElement('div');
+        card.className = 'inbox-card';
+        card.innerHTML = `
+          <div class="inbox-card-header">
+            <div class="inbox-card-title">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+              ${escapeHtml(v.name)}
+            </div>
+            <span class="meta-tag">${escapeHtml(v.module || 'Vista')}</span>
+          </div>
+          <div class="inbox-card-meta">
+            <span>${escapeHtml(v.route || '/')}</span>
+          </div>
+          <div class="inbox-card-actions">
+            <button class="card-btn primary" onclick="requestViewRender('${v.id}', '${escapeHtml(v.name)}')">
+              Renderizar en Figma
+            </button>
+          </div>
+        `;
+        container.appendChild(card);
+      }
+    }
+
+    function setModuleFilter(mod, btn) {
+      activeModuleFilter = mod;
+      document.querySelectorAll('#viewFilterChips .chip').forEach(c => c.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      renderViewsList();
+    }
+
+    function filterViews() {
+      renderViewsList();
+    }
+
+    function requestViewRender(viewId, name) {
+      lastRenderStartTime = performance.now();
+      log(`Solicitando renderizado de vista "${name}" al Hub...`, 'info');
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({
+          type: 'REQUEST_VIEW_RENDER',
+          payload: { viewId, name, useSeparatePage: false }
+        }));
+      }
+    }
+
+    // ── Demo Card para Pruebas Instantáneas ──
+    function renderDemoCard() {
+      lastRenderStartTime = performance.now();
+      const settings = loadPluginSettings();
+      const demoNode = {
+        id: 'demo_card_' + Date.now(),
+        name: 'Card / Demo Test',
+        type: 'FRAME',
+        layout: {
+          mode: 'VERTICAL',
+          width: 340,
+          height: 180,
+          padding: { top: 20, right: 20, bottom: 20, left: 20 },
+          itemSpacing: 12
+        },
+        styles: {
+          fills: [{ r: 0.08, g: 0.1, b: 0.15, a: 1 }],
+          strokes: [{ r: 0.65, g: 0.35, b: 0.98, a: 0.6, width: 1.5 }],
+          cornerRadius: 12,
+          boxShadow: [{
+            color: { r: 0.65, g: 0.35, b: 0.98, a: 0.25 },
+            offset: { x: 0, y: 8 },
+            radius: 24,
+            spread: 0
+          }]
+        },
+        children: [
+          {
+            id: 'demo_tag',
+            name: 'Badge / Status',
+            type: 'FRAME',
+            layout: {
+              mode: 'HORIZONTAL',
+              width: 'HUG',
+              height: 24,
+              padding: { top: 2, right: 8, bottom: 2, left: 8 },
+              itemSpacing: 4
+            },
+            styles: {
+              fills: [{ r: 0.06, g: 0.72, b: 0.51, a: 0.15 }],
+              cornerRadius: 12
+            },
+            children: [{
+              id: 'demo_tag_txt',
+              name: 'Tag Text',
+              type: 'TEXT',
+              textData: {
+                characters: 'Studio Activo',
+                fontSize: 11,
+                fontWeight: 700,
+                fontFamily: 'Inter'
+              },
+              styles: { fills: [{ r: 0.2, g: 0.85, b: 0.6, a: 1 }] }
+            }]
+          },
+          {
+            id: 'demo_title',
+            name: 'Heading / Card',
+            type: 'TEXT',
+            textData: {
+              characters: 'Componente Conectado con Éxito',
+              fontSize: 16,
+              fontWeight: 700,
+              fontFamily: 'Inter'
+            },
+            styles: { fills: [{ r: 1, g: 1, b: 1, a: 1 }] }
+          },
+          {
+            id: 'demo_desc',
+            name: 'Paragraph / Description',
+            type: 'TEXT',
+            textData: {
+              characters: 'El receptor de Figma está listo para recibir componentes reales transmitidos desde la extensión web.',
+              fontSize: 12,
+              fontWeight: 400,
+              fontFamily: 'Inter'
+            },
+            styles: { fills: [{ r: 0.7, g: 0.75, b: 0.82, a: 1 }] }
+          }
+        ]
+      };
+
+      parent.postMessage({
+        pluginMessage: {
+          type: 'RENDER_NODES',
+          payload: {
+            rootNode: demoNode,
+            placementMode: settings.placement || 'SIDE',
+            placementGap: 120
+          }
+        }
+      }, '*');
+    }
+
+    // ── Herramientas Rápidas de Lienzo ──
+    function zoomAllCanvas() {
       parent.postMessage({ pluginMessage: { type: 'ZOOM_ALL' } }, '*');
-    });
+      log('Lienzo enfocado en los componentes.');
+    }
 
-    // Iniciar conexión automática
+    function clearCanvas() {
+      parent.postMessage({ pluginMessage: { type: 'CLEAR_PAGE' } }, '*');
+      log('Lienzo actual limpiado.', 'warn');
+    }
+
+    // ── Sistema de Logs ──
+    function log(message, level = 'info') {
+      const line = document.createElement('div');
+      line.className = 'log-line';
+      const now = new Date();
+      const timeStr = `[${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}]`;
+
+      line.innerHTML = `
+        <span class="log-time">${timeStr}</span>
+        <span class="log-${level}">${escapeHtml(message)}</span>
+      `;
+
+      logsTerminal.appendChild(line);
+      logsTerminal.scrollTop = logsTerminal.scrollHeight;
+    }
+
+    function clearLogs() {
+      logsTerminal.innerHTML = '';
+      log('Logs limpiados.', 'info');
+    }
+
+    // ── Utilidades ──
+    function pad2(n) { return n < 10 ? '0' + n : n; }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    // ── Inicialización ──
+    applyPluginSettingsToUI();
+    loadReceivedItemsFromStorage();
+    parent.postMessage({ pluginMessage: { type: 'GET_PAGE_INFO' } }, '*');
     connect();
   </script>
 </body>

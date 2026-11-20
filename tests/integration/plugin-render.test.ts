@@ -397,6 +397,54 @@ describe('tablero design system', () => {
     ).toEqual([ok.nodeId]);
   });
 
+  it('QA-7: si no se puede poner la instancia de una sección, no queda nada suelto en la página', async () => {
+    const figma = await runPlugin({ rootNode: clone(landing), board: true }, { failInsertInstance: true });
+    expect(figma.currentPage.children.every((c: any) => c.type === 'SECTION')).toBe(true);
+    // las secciones siguen como componentes en 02 y la vista completa conserva su contenido
+    const sub = sectionsOf(figma).find((x: any) => x.name === '02 · Secciones');
+    expect(sub.children.some((c: any) => c.type === 'COMPONENT')).toBe(true);
+    const full = sectionsOf(figma).find((x: any) => x.name === '01 · Página completa');
+    expect(full.findAll((n: any) => n.type === 'TEXT').length).toBeGreaterThan(0);
+    expect(figma.logs.some((m: any) => m.level === 'warn' && /conserva la copia original/.test(m.message))).toBe(true);
+  });
+
+  it('QA-8: un overlay de pantalla completa sin contenido no se toma como sección', async () => {
+    const block = (name: string, y: number, h: number, withText: boolean) => ({
+      type: 'FRAME',
+      name,
+      layout: { mode: 'VERTICAL', x: 0, y, width: 1920, height: h, measuredWidth: 1920, measuredHeight: h },
+      styles: { fills: [{ r: 0.04, g: 0.07, b: 0.13, a: 1 }] },
+      children: withText
+        ? [
+            {
+              type: 'TEXT',
+              name: 'Título',
+              layout: { x: 0, y: 0, width: 'HUG', height: 'HUG' },
+              styles: { fills: [{ r: 1, g: 1, b: 1, a: 1 }] },
+              textData: { characters: name + ' contenido', fontSize: 32, fontFamily: 'Inter', fontWeight: 700 },
+            },
+          ]
+        : [],
+    });
+    const root = {
+      type: 'FRAME',
+      name: 'Body',
+      layout: { mode: 'NONE', width: 1920, height: 2000, measuredWidth: 1920, measuredHeight: 2000 },
+      styles: { fills: [] },
+      children: [
+        block('Fondo', 0, 945, false),
+        block('Header', 0, 69, true),
+        block('Hero', 69, 897, true),
+        block('Más', 966, 1034, true),
+      ],
+    };
+    const figma = await runPlugin({ rootNode: root, board: true });
+    const sub = sectionsOf(figma).find((x: any) => x.name === '02 · Secciones');
+    const names = sub.children.filter((c: any) => c.type !== 'TEXT').map((c: any) => c.name);
+    expect(names.some((n: string) => /Fondo/.test(n))).toBe(false);
+    expect(names.length).toBe(3);
+  });
+
   it('si el tablero falla, limpia lo creado y dibuja en modo normal', async () => {
     const figma = await runPlugin({ rootNode: clone(hero), board: true }, { failSection: true });
     expect(

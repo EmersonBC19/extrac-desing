@@ -47,6 +47,8 @@ function createFigma(opts = {}) {
       c.parent = this;
     }
     insertChild(i, c) {
+      // opts.failInsertInstance: simula un fallo de Figma al colocar una instancia (QA-7)
+      if (opts.failInsertInstance && c.type === 'INSTANCE') throw new Error('fallo simulado en insertChild');
       this.appendChild(c);
       // Como Figma: queda en la posición pedida dentro de children
       this.children.splice(this.children.indexOf(c), 1);

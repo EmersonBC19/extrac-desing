@@ -99,10 +99,61 @@ export function boardPickSections(root: SceneNode): SceneNode[] {
     return [n];
   }
 
-  let top = bigKids(root);
+  let top = withoutOverlays(bigKids(root));
   // La raíz es solo un envoltorio (body > #app > …): descender
-  for (let depth = 0; top.length === 1 && depth < 5; depth++) top = bigKids(top[0]);
-  return top.flatMap(k => expand(k, 0));
+  for (let depth = 0; top.length === 1 && depth < 5; depth++) top = withoutOverlays(bigKids(top[0]));
+  return withoutOverlays(top.flatMap(k => expand(k, 0)));
+}
+
+/** Contenido visible de un bloque: textos + imágenes (un fondo decorativo no tiene) */
+function contentScore(n: SceneNode): number {
+  if (!('findAll' in n)) return n.type === 'TEXT' ? 1 : 0;
+  return (n as ChildrenMixin).findAll(
+    c =>
+      c.type === 'TEXT' ||
+      ('fills' in c && Array.isArray((c as any).fills) && (c as any).fills.some((f: Paint) => f.type === 'IMAGE')),
+  ).length;
+}
+
+/**
+ * Las secciones de una página se apilan, no se pisan. Un bloque que se superpone con otro (fondo
+ * fijo de pantalla completa, overlay, preloader) no es una sección: entre dos que se pisan se
+ * queda el que tiene contenido (QA-8: un fondo de 1920×945 salía como "Sección / Div" vacía).
+ */
+function withoutOverlays(list: SceneNode[]): SceneNode[] {
+  // Posición absoluta: los candidatos pueden venir de niveles distintos (secciones de <main> y el
+  // header del body), cada uno con x/y relativos a su propio padre
+  const abs = (n: SceneNode) => {
+    let x = n.x,
+      y = n.y;
+    for (let p = n.parent; p && p.type !== 'PAGE' && p.type !== 'SECTION' && p.type !== 'DOCUMENT'; p = p.parent) {
+      x += (p as SceneNode).x;
+      y += (p as SceneNode).y;
+    }
+    return { x, y, w: n.width, h: n.height };
+  };
+  const overlap = (na: SceneNode, nb: SceneNode) => {
+    const a = abs(na),
+      b = abs(nb);
+    const w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+    const h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+    return w > 0 && h > 0 ? w * h : 0;
+  };
+  const score = new Map(list.map(n => [n, contentScore(n)]));
+  // Dos hermanos en flujo dentro de un Auto Layout no pueden pisarse: ni se comparan
+  const inFlowSiblings = (a: SceneNode, b: SceneNode) =>
+    a.parent === b.parent &&
+    !!(a.parent as any)?.layoutMode &&
+    (a.parent as any).layoutMode !== 'NONE' &&
+    (a as any).layoutPositioning !== 'ABSOLUTE' &&
+    (b as any).layoutPositioning !== 'ABSOLUTE';
+  return list.filter(
+    a =>
+      !list.some(
+        b =>
+          b !== a && !inFlowSiblings(a, b) && overlap(a, b) > 0.3 * a.width * a.height && score.get(b)! > score.get(a)!,
+      ),
+  );
 }
 
 /** Titular de un bloque: el texto de mayor tamaño entre los primeros textos (para titular la sub-vista) */
@@ -400,6 +451,9 @@ function sectionToComponent(original: SceneNode, copy: SceneNode, title: string)
   if (original.type !== 'FRAME' || copy.type !== 'FRAME' || insideInstance(original)) return null;
   const parent = original.parent as (BaseNode & ChildrenMixin) | null;
   if (!parent || !('children' in parent)) return null;
+
+  // 1) La copia de 02 pasa a ser componente. Si falla, queda la copia tal cual.
+  let comp: ComponentNode;
   try {
     // QA-2: sin fondo propio, la sección se veía transparente fuera de la página → fondo heredado
     const own = (copy as FrameNode).fills;
@@ -407,10 +461,21 @@ function sectionToComponent(original: SceneNode, copy: SceneNode, title: string)
       const bg = inheritedBackground(original);
       if (bg) (copy as FrameNode).fills = bg;
     }
-    const comp = figma.createComponentFromNode(copy);
+    comp = figma.createComponentFromNode(copy);
     comp.name = `Sección / ${title}`.slice(0, 120);
-    const inst = comp.createInstance();
-    parent.insertChild(parent.children.indexOf(original), inst);
+  } catch (_e) {
+    return null;
+  }
+
+  // 2) En la vista completa, una instancia en lugar del original. Si algo falla, la instancia se
+  //    borra (QA-7: antes quedaba suelta en la página, un frame vacío fuera de las Sections) y el
+  //    original se queda donde estaba: la sección no se sincroniza, pero nada se rompe.
+  let inst: InstanceNode | null = null;
+  try {
+    inst = comp.createInstance();
+    const index = parent.children.indexOf(original);
+    parent.insertChild(index, inst);
+    if (inst.parent !== parent) throw new Error('la instancia no quedó en su sitio');
     const o = original as FrameNode;
     inst.x = o.x;
     inst.y = o.y;
@@ -426,10 +491,19 @@ function sectionToComponent(original: SceneNode, copy: SceneNode, title: string)
       }
     } catch (_e) {}
     original.remove();
-    return comp;
-  } catch (_e) {
-    return null;
+  } catch (err: any) {
+    if (inst && !inst.removed) {
+      try {
+        inst.remove();
+      } catch (_e) {}
+    }
+    figma.ui.postMessage({
+      type: 'LOG',
+      level: 'warn',
+      message: `Sección "${title}": quedó como componente en 02, pero la vista completa conserva la copia original (${err?.message || err}).`,
+    });
   }
+  return comp;
 }
 
 /**

@@ -1487,7 +1487,9 @@ export function extractNodeTree(
       },
     };
     // Líneas con márgenes distintos (texto que rodea un float): un texto por grupo de líneas
-    return splitTextAroundFloats(textLeaf, rich, measuredW);
+    const textOut = splitTextAroundFloats(textLeaf, rich, measuredW);
+    textOut._paint = paintLayerOf(element, style);
+    return textOut;
   }
 
   // ── 16. Dimensiones y Sizing (FILL vs HUG vs FIXED) ──
@@ -1650,6 +1652,9 @@ export function extractNodeTree(
         ? true
         : undefined,
   };
+  // ── 16a. Capa de pintado (QA-8): z-index de posicionados y de hijos flex/grid ──
+  node._paint = paintLayerOf(element, style);
+
   // ── 16b. Efectos CSS (fase 5.4): nativos en Figma o, si no hay equivalente, rasterizar ──
   const filterInfo = parseCssFilter(style.filter);
   if (filterInfo.layerBlur) node.styles.layerBlur = Math.round(filterInfo.layerBlur * 10) / 10;
@@ -2010,6 +2015,10 @@ export function extractNodeTree(
     }
   }
 
+  // ── 20.1 Orden de capas de CSS (QA-8): sin esto, un fondo `position: fixed; z-index: -1` que va
+  // al final del DOM quedaba ENCIMA de todo en Figma (bloque oscuro tapando el header y el hero).
+  if (node.children.length > 1) sortByPaintOrder(node.children, mode);
+
   if (gridAsWrap) node._gridWrap = true;
 
   // ── 20.5 Ajustar el Auto Layout a la GEOMETRÍA real (principio de swarm-rebuild) ──
@@ -2165,4 +2174,50 @@ export function extractNodeTree(
   }
 
   return node;
+}
+
+/**
+ * Capa de pintado de un elemento entre sus hermanos (orden de pintado de CSS, simplificado a un
+ * mismo contexto de apilamiento):
+ *   null → en flujo, no posicionado · número → posicionado (o hijo flex/grid con z-index)
+ */
+export function paintLayerOf(element: Element, style: CSSStyleDeclaration): number | null {
+  const z = parseInt(style.zIndex, 10);
+  const positioned = style.position !== 'static';
+  let flexItemWithZ = false;
+  if (!positioned && !isNaN(z) && element.parentElement) {
+    flexItemWithZ = /flex|grid/.test(window.getComputedStyle(element.parentElement).display);
+  }
+  if (!positioned && !flexItemWithZ) return null;
+  return isNaN(z) ? 0 : z;
+}
+
+/** Clave de orden: z negativo → en flujo → posicionado (z auto/0) → z positivo */
+function paintKey(n: RawNode): [number, number] {
+  const z = n._paint;
+  if (z === null || z === undefined) return [1, 0];
+  if (z < 0) return [0, z];
+  if (z === 0) return [2, 0];
+  return [3, z];
+}
+
+/**
+ * Ordena los hijos como los pinta el navegador (los primeros quedan debajo en Figma).
+ * Con Auto Layout el orden de los hijos en flujo ES el layout: solo se mueven los absolutos.
+ * Orden estable: a igual capa se conserva el orden previo (DOM / geométrico).
+ */
+export function sortByPaintOrder(children: RawNode[], mode: string): void {
+  const indexed = children.map((c, i) => ({ c, i, k: paintKey(c) }));
+  const byPaint = (a: (typeof indexed)[number], b: (typeof indexed)[number]) =>
+    a.k[0] - b.k[0] || a.k[1] - b.k[1] || a.i - b.i;
+  if (mode === 'NONE') {
+    indexed.sort(byPaint);
+    indexed.forEach((x, i) => (children[i] = x.c));
+    return;
+  }
+  const isAbs = (c: RawNode) => c.layout?.positioning === 'ABSOLUTE';
+  const flow = indexed.filter(x => !isAbs(x.c));
+  const below = indexed.filter(x => isAbs(x.c) && x.k[0] === 0).sort(byPaint);
+  const above = indexed.filter(x => isAbs(x.c) && x.k[0] !== 0).sort(byPaint);
+  [...below, ...flow, ...above].forEach((x, i) => (children[i] = x.c));
 }

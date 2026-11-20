@@ -7283,9 +7283,38 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       }
       return [n];
     }
-    let top = bigKids(root);
-    for (let depth = 0; top.length === 1 && depth < 5; depth++) top = bigKids(top[0]);
-    return top.flatMap((k) => expand(k, 0));
+    let top = withoutOverlays(bigKids(root));
+    for (let depth = 0; top.length === 1 && depth < 5; depth++) top = withoutOverlays(bigKids(top[0]));
+    return withoutOverlays(top.flatMap((k) => expand(k, 0)));
+  }
+  function contentScore(n) {
+    if (!("findAll" in n)) return n.type === "TEXT" ? 1 : 0;
+    return n.findAll(
+      (c) => c.type === "TEXT" || "fills" in c && Array.isArray(c.fills) && c.fills.some((f) => f.type === "IMAGE")
+    ).length;
+  }
+  function withoutOverlays(list) {
+    const abs = (n) => {
+      let x = n.x, y = n.y;
+      for (let p = n.parent; p && p.type !== "PAGE" && p.type !== "SECTION" && p.type !== "DOCUMENT"; p = p.parent) {
+        x += p.x;
+        y += p.y;
+      }
+      return { x, y, w: n.width, h: n.height };
+    };
+    const overlap = (na, nb) => {
+      const a = abs(na), b = abs(nb);
+      const w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+      const h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+      return w > 0 && h > 0 ? w * h : 0;
+    };
+    const score = new Map(list.map((n) => [n, contentScore(n)]));
+    const inFlowSiblings = (a, b) => a.parent === b.parent && !!a.parent?.layoutMode && a.parent.layoutMode !== "NONE" && a.layoutPositioning !== "ABSOLUTE" && b.layoutPositioning !== "ABSOLUTE";
+    return list.filter(
+      (a) => !list.some(
+        (b) => b !== a && !inFlowSiblings(a, b) && overlap(a, b) > 0.3 * a.width * a.height && score.get(b) > score.get(a)
+      )
+    );
   }
   function boardHeadingOf(n) {
     if (!("findAll" in n)) return "";
@@ -7551,16 +7580,24 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     if (original.type !== "FRAME" || copy.type !== "FRAME" || insideInstance(original)) return null;
     const parent = original.parent;
     if (!parent || !("children" in parent)) return null;
+    let comp;
     try {
       const own2 = copy.fills;
       if (Array.isArray(own2) && !own2.some((f) => f.visible !== false)) {
         const bg = inheritedBackground(original);
         if (bg) copy.fills = bg;
       }
-      const comp = figma.createComponentFromNode(copy);
+      comp = figma.createComponentFromNode(copy);
       comp.name = `Sección / ${title}`.slice(0, 120);
-      const inst = comp.createInstance();
-      parent.insertChild(parent.children.indexOf(original), inst);
+    } catch (_e) {
+      return null;
+    }
+    let inst = null;
+    try {
+      inst = comp.createInstance();
+      const index = parent.children.indexOf(original);
+      parent.insertChild(index, inst);
+      if (inst.parent !== parent) throw new Error("la instancia no quedó en su sitio");
       const o = original;
       inst.x = o.x;
       inst.y = o.y;
@@ -7578,10 +7615,20 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
       } catch (_e) {
       }
       original.remove();
-      return comp;
-    } catch (_e) {
-      return null;
+    } catch (err) {
+      if (inst && !inst.removed) {
+        try {
+          inst.remove();
+        } catch (_e) {
+        }
+      }
+      figma.ui.postMessage({
+        type: "LOG",
+        level: "warn",
+        message: `Sección "${title}": quedó como componente en 02, pero la vista completa conserva la copia original (${err?.message || err}).`
+      });
     }
+    return comp;
   }
   async function buildDesignBoard(payload) {
     const root = payload.rootNode;

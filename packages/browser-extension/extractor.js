@@ -1858,7 +1858,9 @@
           segments: rich.segments || void 0
         }
       };
-      return splitTextAroundFloats(textLeaf, rich, measuredW2);
+      const textOut = splitTextAroundFloats(textLeaf, rich, measuredW2);
+      textOut._paint = paintLayerOf(element, style);
+      return textOut;
     }
     const measuredW = Math.round(rect.width);
     const measuredH = Math.round(rect.height);
@@ -1975,6 +1977,7 @@
       children: [],
       clipsContent: isWholePage || CLIPPING_OVERFLOW.test(style.overflowX) || CLIPPING_OVERFLOW.test(style.overflowY) ? true : void 0
     };
+    node._paint = paintLayerOf(element, style);
     const filterInfo = parseCssFilter(style.filter);
     if (filterInfo.layerBlur) node.styles.layerBlur = Math.round(filterInfo.layerBlur * 10) / 10;
     if (filterInfo.dropShadows.length) node.styles.dropShadows = filterInfo.dropShadows;
@@ -2281,6 +2284,7 @@
         node.children.sort((a, b) => (a.layout?.y || 0) - (b.layout?.y || 0));
       }
     }
+    if (node.children.length > 1) sortByPaintOrder(node.children, mode);
     if (gridAsWrap) node._gridWrap = true;
     fitAutoLayoutToGeometry(node);
     if (node._gridWrap && !node._gridWrapOk) {
@@ -2394,6 +2398,37 @@
       node.styles.strokes = [{ r: 1, g: 1, b: 1, a: 0.12, width: 1, align: "INSIDE" }];
     }
     return node;
+  }
+  function paintLayerOf(element, style) {
+    const z = parseInt(style.zIndex, 10);
+    const positioned = style.position !== "static";
+    let flexItemWithZ = false;
+    if (!positioned && !isNaN(z) && element.parentElement) {
+      flexItemWithZ = /flex|grid/.test(window.getComputedStyle(element.parentElement).display);
+    }
+    if (!positioned && !flexItemWithZ) return null;
+    return isNaN(z) ? 0 : z;
+  }
+  function paintKey(n) {
+    const z = n._paint;
+    if (z === null || z === void 0) return [1, 0];
+    if (z < 0) return [0, z];
+    if (z === 0) return [2, 0];
+    return [3, z];
+  }
+  function sortByPaintOrder(children, mode) {
+    const indexed = children.map((c, i) => ({ c, i, k: paintKey(c) }));
+    const byPaint = (a, b) => a.k[0] - b.k[0] || a.k[1] - b.k[1] || a.i - b.i;
+    if (mode === "NONE") {
+      indexed.sort(byPaint);
+      indexed.forEach((x, i) => children[i] = x.c);
+      return;
+    }
+    const isAbs = (c) => c.layout?.positioning === "ABSOLUTE";
+    const flow = indexed.filter((x) => !isAbs(x.c));
+    const below = indexed.filter((x) => isAbs(x.c) && x.k[0] === 0).sort(byPaint);
+    const above = indexed.filter((x) => isAbs(x.c) && x.k[0] !== 0).sort(byPaint);
+    [...below, ...flow, ...above].forEach((x, i) => children[i] = x.c);
   }
 
   // packages/core-extractor/src/browser/capture.ts
@@ -2606,6 +2641,7 @@
       delete n._rasterize;
       delete n._gridWrap;
       delete n._gridWrapOk;
+      delete n._paint;
       (n.children || []).forEach(cleanup);
     })(rootNode);
     return rootNode;

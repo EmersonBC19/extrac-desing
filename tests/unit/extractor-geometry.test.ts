@@ -321,3 +321,24 @@ describe('isImageDataUri (respuestas del service worker, fetch y captura)', asyn
     expect(isImageDataUri(v)).toBe(ok);
   });
 });
+
+describe('sortByPaintOrder (QA-8)', () => {
+  const n = (name: string, paint: number | null, positioning = 'AUTO') => ({
+    name,
+    _paint: paint,
+    layout: { positioning },
+  });
+  const names = (arr: any[]) => arr.map(x => x.name);
+  it('NONE: z negativo → en flujo → posicionado → z positivo, estable', async () => {
+    const { sortByPaintOrder } = await import('../../packages/core-extractor/src/browser/extract-node');
+    const kids: any[] = [n('aviso', 5), n('a', null), n('fondo', -1), n('b', null), n('pos', 0), n('top', 9)];
+    sortByPaintOrder(kids, 'NONE');
+    expect(names(kids)).toEqual(['fondo', 'a', 'b', 'pos', 'aviso', 'top']);
+  });
+  it('Auto Layout: el flujo no se reordena; solo los absolutos van debajo/encima', async () => {
+    const { sortByPaintOrder } = await import('../../packages/core-extractor/src/browser/extract-node');
+    const kids: any[] = [n('uno', null), n('flotante', 3, 'ABSOLUTE'), n('dos', 1), n('deco', -1, 'ABSOLUTE')];
+    sortByPaintOrder(kids, 'VERTICAL');
+    expect(names(kids)).toEqual(['deco', 'uno', 'dos', 'flotante']);
+  });
+});

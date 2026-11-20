@@ -43,7 +43,12 @@ Fecha de corte: 2026-11-20.
 
 ## Fase 0 — Inmediato
 
-### 0.1 Versionar el trabajo  `[REV]`
+### 0.1 Versionar el trabajo  `[REV]` — ✅ hecho (2026-11-20)
+> Rama `feat/extractor-fidelity`, 7 commits: `.gitignore`, extensión, contratos, plugin, crawler/hub, docs, herramientas de prueba.
+> Commits **por paquete**, no por tema: varios archivos mezclaban cambios previos del usuario con los de la sesión y no había staging interactivo para separarlos.
+> Sin versionar a propósito: `swarm-cursors-main/` (ignorado), `scratch/captured-last-payload.json` (ignorado), `scratch/page_screenshot.png` (modificado) y 76 archivos sueltos de `scratch/` del usuario.
+> Pendiente: la rama solo existe en local. Hay remoto (`origin` en GitHub) pero falta hacer push para que quede respaldada.
+
 - Crear rama (`feat/extractor-fidelity`) y commits por tema: imágenes/carruseles, texto, layout por geometría, tablero, atajos/efecto lift.
 - Añadir `packages/browser-extension/` al repo.
 - Revisar `.gitignore`: excluir `scratch/captured-last-payload.json` (puede contener datos privados, ver 1.2), PNG/JSON de pruebas en `scratch/`.
@@ -94,6 +99,7 @@ Ya existen y funcionan; hay que formalizarlas en `tests/` con un runner (**Vites
 | Página sintética (`scratchpad/site`) | Fixture local: carrusel con transform, scroll-snap, fade, WebP/SVG, `image-set`, `::before` con imagen, video con póster, iframe, WebGL. |
 
 - **Fixtures congeladas**: guardar HTML+CSS estáticos de las páginas de referencia (no depender de que apple.com cambie).
+- **Traer al repo la página sintética** (`index.html`, `hero.html`, `shot.html`, generador de imágenes y servidor). Hoy vive en la carpeta temporal de la sesión y se pierde al limpiarla.
 - **Pruebas unitarias** puras: `boardDetectComponents`, `boardCleanName`, `fitAutoLayoutToGeometry`, `fitWrapToGeometry`, `buildRichText`, `extractBgUrl`, `parseColor`, `parseGradient`.
 - **Snapshot del contrato**: forma del JSON exportado, para detectar cambios accidentales.
 - CI (GitHub Actions) ejecutando la suite en cada push.

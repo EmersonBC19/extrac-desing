@@ -165,7 +165,8 @@ Ya existen y funcionan; hay que formalizarlas en `tests/` con un runner (**Vites
 > - **Archivos generados:** se versionan (la extensión y el plugin se cargan sin compilar); `npm run check:generated` y el CI fallan si no están al día. Build determinista (`absWorkingDir`).
 > - Pruebas: 166 (unit + integración, +4 del crawler) y 9/9 live.
 >
-> **Pendiente:** el extractor de navegador usa tipado flexible (`strict: false`, migrado de JavaScript) → se endurece en 4.3. Probar el plugin empaquetado en Figma real (Zod corre en el sandbox de Figma; verificado solo en el simulador).
+> **Pendiente:** el extractor de navegador usa tipado flexible (`strict: false`, migrado de JavaScript) → se endurece en 4.3.
+> ✅ Verificado en Figma real (2026-11-20): el plugin empaquetado con Zod corre en el sandbox y arma el tablero. Bugs visuales → backlog QA.
 
 ### 3.1 Fuente única en TypeScript
 - Mover la lógica de `browser-extension/extractor.js` (la versión más avanzada) a `packages/core-extractor/src/` como módulos TS: `layout/`, `text/`, `images/`, `carousel/`, `pseudo/`, `tokens/`.
@@ -277,6 +278,26 @@ Hoy se pierden o se aproximan:
   - Verificar las reglas actuales sobre conexiones a `localhost` en plugins publicados.
   - Verificar si se exige `documentAccess: "dynamic-page"`; de ser así, migrar a APIs asíncronas: `figma.currentPage =` → `setCurrentPageAsync`, `getNodeById` → `getNodeByIdAsync`, `getLocalPaintStyles` → `getLocalPaintStylesAsync`, `textStyleId =` → `setTextStyleIdAsync`, `fillStyleId =` → `setFillStyleIdAsync`.
 - Instalador único / guía de instalación para usuarios no técnicos.
+
+---
+
+## Backlog de bugs observados — se atacan DESPUÉS de terminar las fases  `[QA]`
+
+Decisión del usuario (2026-11-20): primero terminar las fases 4–7; luego una ronda dedicada a estos bugs.
+Origen: prueba en Figma real del tablero con el `body` de indudesk.online (fase 3) + consola del navegador.
+
+**Lo que funciona en Figma real:** la extracción llega, el tablero se arma con sus 4 Sections en orden (01 → 04), la sección 02 separa las secciones de la landing, se crean estilos de color y texto, y el plugin empaquetado con Zod corre en el sandbox de Figma.
+
+| ID | Síntoma observado | Hipótesis (a confirmar) | Prioridad |
+|---|---|---|---|
+| **QA-1** | "No se ven bien": el resultado general en Figma no se parece lo suficiente a la web. | Síntoma general: hay que desglosarlo comparando cada sección lado a lado (web vs Figma). Las auditorías automáticas miden posiciones, no apariencia. | Alta |
+| **QA-2** | En **02 · Secciones** varias sub-vistas salen claras/grises y sin el fondo oscuro de la web (ej. "Preguntas frecuentes"). | La sección no tiene fondo propio: lo hereda del `body`/`main`. Al copiarla como sub-vista pierde ese fondo heredado. Arreglo probable: aplicar al clon el fondo efectivo del ancestro más cercano. | Alta |
+| **QA-3** | Títulos de las sub-vistas y etiquetas de componentes casi ilegibles. | Texto oscuro (`#1A1A1F` / morado) sobre el fondo de Section de Figma, que es oscuro con la UI en modo oscuro. Arreglo: fondo explícito claro en las Sections o colores de texto con contraste suficiente en ambos modos. | Media |
+| **QA-4** | En **04 · Estilos** las muestras tipográficas se cortan a la derecha ("74 · Outfit ExtraBold — Aa B…"). | El ancho de la Section se calcula antes de que el texto tome su ancho final, o las muestras grandes (hasta 72 px) desbordan. Arreglo: ajustar la Section después de crear las muestras o limitar su ancho con salto de línea. | Media |
+| **QA-5** | **03 · Componentes** se ve pequeño y poco claro a la escala del tablero. | Pocos componentes detectados en esa landing y sin agrupación visual por tipo. Revisar al hacer QA-1 (posible mejora: variantes y grilla por categoría, fase 6.1). | Baja |
+| **QA-6** | Consola de la página: decenas de `WebSocket connection to 'ws://localhost:8080/' failed` y varios `Extractor Engine … ready` repetidos. | Copias **viejas** de `content.js` siguen vivas en la pestaña tras recargar la extensión (líneas `extractor.js:2307/2352` = versiones anteriores; `:2056` = la nueva). Sin conexión con la extensión, recurren a su WebSocket directo, que el hub nuevo rechaza (correcto, fase 1). Arreglo: detectar "extension context invalidated" y desactivar el inspector viejo con aviso "recarga la página"; evitar reinyectar el extractor si ya está cargado. Mientras tanto: F5 en la pestaña. | Baja |
+
+**Cómo reproducir:** `node scratch/_board_sim.cjs https://indudesk.online/ "document.body"` (simulador) o la extensión real sobre `https://indudesk.online/`. Para QA-1 conviene activar `CTF_DEBUG_CAPTURE=1` en el hub y guardar capturas de la web y de Figma por sección.
 
 ---
 

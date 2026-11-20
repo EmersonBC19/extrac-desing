@@ -13,9 +13,17 @@
     "watch:plugin": "npm run watch --workspace=@code-to-figma/plugin",
     "test:send": "npm run test:send --workspace=@code-to-figma/mcp-server",
     "crawl": "npm run crawl --workspace=@code-to-figma/mcp-server --",
-    "start:hub": "npm run start:hub --workspace=@code-to-figma/mcp-server"
+    "start:hub": "npm run start:hub --workspace=@code-to-figma/mcp-server",
+    "test": "vitest run --project unit --project integration",
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:live": "vitest run --project live",
+    "test:watch": "vitest --project unit"
   },
   "devDependencies": {
-    "typescript": "^5.7.3"
+    "playwright": "^1.63.0",
+    "typescript": "^5.7.3",
+    "vitest": "^5.1.1",
+    "ws": "^8.23.0"
   }
 }

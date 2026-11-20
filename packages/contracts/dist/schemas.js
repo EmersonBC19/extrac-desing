@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.WSMessageEnvelopeSchema = exports.WSRenderPayloadSchema = exports.UINodeShallowSchema = exports.UITextDataSchema = exports.UITextSegmentSchema = exports.UILayoutSchema = exports.PAYLOAD_LIMITS = void 0;
 exports.validateUINodeTree = validateUINodeTree;
@@ -11,7 +44,7 @@ exports.validateRenderPayload = validateRenderPayload;
  * de Figma (tipos, tamaños, profundidad, imágenes, SVG) y permisivos en el resto
  * (`passthrough`), para no rechazar extracciones válidas por campos nuevos.
  */
-const zod_1 = require("zod");
+const z = __importStar(require("zod"));
 exports.PAYLOAD_LIMITS = {
     /** Profundidad máxima del árbol (evita desbordar la pila del plugin) */
     maxDepth: 400,
@@ -23,11 +56,11 @@ exports.PAYLOAD_LIMITS = {
     maxTextChars: 200_000,
     maxNameChars: 1_000,
 };
-const finite = zod_1.z.number().finite();
-const sizing = zod_1.z.union([finite, zod_1.z.literal('FILL'), zod_1.z.literal('HUG')]);
-const spacing = zod_1.z.object({ top: finite, right: finite, bottom: finite, left: finite }).partial().passthrough();
-exports.UILayoutSchema = zod_1.z.object({
-    mode: zod_1.z.enum(['NONE', 'HORIZONTAL', 'VERTICAL']).optional(),
+const finite = z.number().finite();
+const sizing = z.union([finite, z.literal('FILL'), z.literal('HUG')]);
+const spacing = z.object({ top: finite, right: finite, bottom: finite, left: finite }).partial().passthrough();
+exports.UILayoutSchema = z.object({
+    mode: z.enum(['NONE', 'HORIZONTAL', 'VERTICAL']).optional(),
     width: sizing.optional(),
     height: sizing.optional(),
     measuredWidth: finite.optional(),
@@ -36,38 +69,38 @@ exports.UILayoutSchema = zod_1.z.object({
     y: finite.optional(),
     itemSpacing: finite.optional(),
     padding: spacing.optional(),
-    positioning: zod_1.z.enum(['AUTO', 'ABSOLUTE']).optional(),
+    positioning: z.enum(['AUTO', 'ABSOLUTE']).optional(),
 }).passthrough();
-exports.UITextSegmentSchema = zod_1.z.object({
-    start: zod_1.z.number().int().nonnegative(),
-    end: zod_1.z.number().int().nonnegative(),
+exports.UITextSegmentSchema = z.object({
+    start: z.number().int().nonnegative(),
+    end: z.number().int().nonnegative(),
 }).passthrough();
-exports.UITextDataSchema = zod_1.z.object({
-    characters: zod_1.z.string().max(exports.PAYLOAD_LIMITS.maxTextChars),
+exports.UITextDataSchema = z.object({
+    characters: z.string().max(exports.PAYLOAD_LIMITS.maxTextChars),
     fontSize: finite.optional(),
-    fontFamily: zod_1.z.string().max(200).optional(),
-    segments: zod_1.z.array(exports.UITextSegmentSchema).max(10_000).optional(),
+    fontFamily: z.string().max(200).optional(),
+    segments: z.array(exports.UITextSegmentSchema).max(10_000).optional(),
 }).passthrough();
 /** SVG que Figma va a interpretar: sin scripts ni URLs javascript: */
-const svgContent = zod_1.z.string()
+const svgContent = z.string()
     .max(exports.PAYLOAD_LIMITS.maxSvgChars)
     .refine(s => !/<script[\s>]/i.test(s), 'SVG con <script>')
     .refine(s => !/javascript:/i.test(s), 'SVG con URL javascript:');
 /** Imagen embebida: solo data URI de imagen en base64 */
-const imageData = zod_1.z.string()
+const imageData = z.string()
     .max(exports.PAYLOAD_LIMITS.maxImageChars)
     .regex(/^data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=\s]*$/i, 'imageData debe ser data:image/...;base64');
 /** Un nodo SIN validar sus hijos (el árbol se recorre de forma iterativa, ver validateUINodeTree) */
-exports.UINodeShallowSchema = zod_1.z.object({
-    id: zod_1.z.string().max(200).optional(),
-    type: zod_1.z.enum(['FRAME', 'TEXT', 'SVG', 'COMPONENT', 'INSTANCE']),
-    name: zod_1.z.string().max(exports.PAYLOAD_LIMITS.maxNameChars).optional(),
+exports.UINodeShallowSchema = z.object({
+    id: z.string().max(200).optional(),
+    type: z.enum(['FRAME', 'TEXT', 'SVG', 'COMPONENT', 'INSTANCE']),
+    name: z.string().max(exports.PAYLOAD_LIMITS.maxNameChars).optional(),
     layout: exports.UILayoutSchema.optional(),
-    styles: zod_1.z.object({}).passthrough().optional(),
+    styles: z.object({}).passthrough().optional(),
     textData: exports.UITextDataSchema.optional(),
     svgContent: svgContent.optional(),
     imageData: imageData.optional(),
-    children: zod_1.z.array(zod_1.z.unknown()).optional(),
+    children: z.array(z.unknown()).optional(),
 }).passthrough();
 /** Ruta legible en errores: en árboles profundos se conserva solo el tramo final */
 function shortPath(path) {
@@ -100,17 +133,17 @@ function validateUINodeTree(root) {
     }
     return { ok: true, nodeCount: count, maxDepth };
 }
-exports.WSRenderPayloadSchema = zod_1.z.object({
-    rootNode: zod_1.z.unknown(),
-    tokens: zod_1.z.object({}).passthrough().optional(),
-    createAsComponent: zod_1.z.boolean().optional(),
-    board: zod_1.z.boolean().optional(),
-    clearPage: zod_1.z.boolean().optional(),
-    pageName: zod_1.z.string().max(200).optional(),
-    sectionTitle: zod_1.z.string().max(500).optional(),
-    source: zod_1.z.object({
-        url: zod_1.z.string().max(4096).optional(),
-        title: zod_1.z.string().max(1000).optional(),
+exports.WSRenderPayloadSchema = z.object({
+    rootNode: z.unknown(),
+    tokens: z.object({}).passthrough().optional(),
+    createAsComponent: z.boolean().optional(),
+    board: z.boolean().optional(),
+    clearPage: z.boolean().optional(),
+    pageName: z.string().max(200).optional(),
+    sectionTitle: z.string().max(500).optional(),
+    source: z.object({
+        url: z.string().max(4096).optional(),
+        title: z.string().max(1000).optional(),
     }).passthrough().optional(),
 }).passthrough();
 /** Payload de RENDER_NODES completo: forma del sobre + árbol de nodos */
@@ -123,7 +156,7 @@ function validateRenderPayload(payload) {
     return validateUINodeTree(env.data.rootNode);
 }
 /** Sobre mínimo de cualquier mensaje del bus */
-exports.WSMessageEnvelopeSchema = zod_1.z.object({
-    type: zod_1.z.string().min(1).max(64),
+exports.WSMessageEnvelopeSchema = z.object({
+    type: z.string().min(1).max(64),
 }).passthrough();
 //# sourceMappingURL=schemas.js.map

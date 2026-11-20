@@ -3,11 +3,14 @@
   "version": "1.0.0",
   "description": "Figma local plugin that receives UINode trees over WebSocket and renders native Auto Layout components",
   "scripts": {
-    "build": "tsc",
-    "watch": "tsc -w"
+    "build": "tsc --noEmit && node ../../scripts/build-plugin.mjs",
+    "watch": "node ../../scripts/build-plugin.mjs"
   },
   "devDependencies": {
     "@figma/plugin-typings": "^1.106.0",
     "typescript": "^5.7.3"
+  },
+  "dependencies": {
+    "@code-to-figma/contracts": "*"
   }
 }

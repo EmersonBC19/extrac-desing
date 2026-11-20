@@ -6,7 +6,7 @@
  * de Figma (tipos, tamaños, profundidad, imágenes, SVG) y permisivos en el resto
  * (`passthrough`), para no rechazar extracciones válidas por campos nuevos.
  */
-import { z } from 'zod';
+import * as z from 'zod';
 
 export const PAYLOAD_LIMITS = {
   /** Profundidad máxima del árbol (evita desbordar la pila del plugin) */

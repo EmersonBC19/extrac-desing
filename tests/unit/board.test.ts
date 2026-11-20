@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createRequire } from 'module';
-
-const require = createRequire(import.meta.url);
-const { loadBoardPure } = require('../helpers/code-loaders.cjs');
-const B = loadBoardPure();
+import * as B from '../../packages/figma-plugin/src/board/pure';
 
 const text = (characters: string, fontSize = 16) => ({ type: 'TEXT', name: 'Label', layout: {}, styles: { fills: [{ r: 0, g: 0, b: 0, a: 1 }] }, textData: { characters, fontSize, fontFamily: 'Inter', fontWeight: 400 } });
 const button = (label: string, color = { r: 0, g: 0.44, b: 0.89, a: 1 }, width = 171) => ({

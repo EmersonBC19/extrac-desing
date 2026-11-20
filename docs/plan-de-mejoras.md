@@ -220,7 +220,19 @@ Recomendación: **adoptar los nombres y la separación de A2, sin montar un CQRS
 
 ---
 
-## Fase 5 — Robustez de extracción
+## Fase 5 — Robustez de extracción — ✅ hecha (2026-11-20)
+
+> **Resultado:**
+> - **5.1 Selecciones pesadas:** `contracts/payload-stats.ts` mide nodos, imágenes, MB y profundidad. Si pasa de 15 MB / 25 000 capas / 200 niveles, la extensión avisa con opciones: enviar completo, sin imágenes (recuadro gris del mismo tamaño), elegir un bloque o cancelar. Más de 1 MB viaja por partes (`RENDER_CHUNK`, 512 KB). El hub las junta con límites (`ChunkAssembler`) y valida el conjunto. El plugin muestra el progreso en un renglón y los tiempos de dibujo por etapa (fuentes, capas, ubicación), que llegan también al CLI/MCP. Corregido: el límite de 6 s del service worker daba por fallido un envío grande que seguía en curso.
+> - **5.2 Páginas largas:** recorrido previo proporcional al largo (antes máx. 40 pasos) con progreso. Lo que solo sale por captura (iframes, WebGL, video) se captura aunque quede fuera de la pantalla: `capture.ts` recorre la página por franjas (2 capturas/s, límite de Chrome) y oculta headers fixed/sticky mientras tanto. Eliminado el corte de 12 000 px. *Nota:* en lugar de capturar "durante el recorrido previo" se captura después, franja por franja; el efecto es el mismo y no depende del orden de carga.
+> - **5.3 Fuentes:** se prueba la pila `font-family` completa (`fontStack`), con genéricas expandidas y equivalencias por defecto (Circular → Inter, Proxima Nova → Montserrat…). Tabla de equivalencias en Ajustes del plugin. Aviso en el registro con lo sustituido (también en `RENDER_SUCCESS`). La lista de fuentes se refresca en cada render. Los ajustes del plugin ahora se guardan en `figma.clientStorage` (en el iframe `localStorage` no persistía).
+> - **5.4 Efectos CSS:** degradados con geometría real (`gradient-geometry.ts`): antes la matriz era fija, los radiales salían centrados en la esquina y los verticales cubrían la mitad. También radiales con forma/tamaño/posición, cónicos → angular, "to esquina" y paradas en px. Nativos: `mix-blend-mode`, `filter` blur/drop-shadow/opacity y `text-shadow`. Sin equivalente (rotación, filtros de color, `clip-path`, máscaras, degradados repetidos): rasterizado con captura; si es enorme o no hay captura, queda editable y anotado. Corregido: `parseColor` devolvía el último color válido ante palabras como `circle`.
+> - **5.5 swarm-rebuild:** texto alrededor de floats (líneas agrupadas por margen medido), `vertical-align`/`text-align` en celdas de tabla. Rotados/volteados: 5.4.
+> - **5.6 Grids 2D:** grid de celdas → Auto Layout con **wrap** (en lugar de "columna de filas": es la forma nativa de Figma y sigue siendo editable). `fitWrapToGeometry` detecta filas que Figma reacomodaría y hijos que sobresalen. La auditoría de layout usa la misma precedencia de tamaños que el plugin.
+> - **5.7:** sticky en su posición natural si lo pega el scroll de la página. La elevación del inspector restaura los estilos previos con su `!important`.
+> - Pruebas: 234 (unit + integración; páginas sintéticas `long`, `effects`, `flow`, `grid`, `sticky`) y 9/9 live.
+>
+> ⚠️ **Verificar en Figma real:** degradados (sobre todo radiales y cónicos) y efectos. La matriz de degradados se ancló a la documentación de Figma (identidad = izquierda → derecha) y las pruebas comprueban las manijas, pero el sentido de giro del angular no se pudo confirmar sin Figma.
 
 ### 5.1 Selecciones pesadas ("DOM monster")  `[A1-E]` `[REV]`
 - Aviso antes de enviar, medido por **peso** y no solo por nodos (el umbral de 600 nodos de A1 es bajo: el `body` de indudesk lo supera y funciona bien).

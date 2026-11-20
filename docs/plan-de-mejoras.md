@@ -47,7 +47,11 @@ Fecha de corte: 2026-11-20.
 > Rama `feat/extractor-fidelity`, 7 commits: `.gitignore`, extensión, contratos, plugin, crawler/hub, docs, herramientas de prueba.
 > Commits **por paquete**, no por tema: varios archivos mezclaban cambios previos del usuario con los de la sesión y no había staging interactivo para separarlos.
 > Sin versionar a propósito: `swarm-cursors-main/` (ignorado), `scratch/captured-last-payload.json` (ignorado), `scratch/page_screenshot.png` (modificado) y 76 archivos sueltos de `scratch/` del usuario.
-> Pendiente: la rama solo existe en local. Hay remoto (`origin` en GitHub) pero falta hacer push para que quede respaldada.
+> ✅ Subida a `origin` (github.com/EmersonBC19/extrac-desing), rama `feat/extractor-fidelity`. `main` intacto; fusionar vía Pull Request.
+> Revisión de `scratch/`: solo se versionan las herramientas `_*.cjs` y `test-drag-inspector.ts` (la única prueba previa que sigue pasando). El resto queda local e ignorado:
+> - `test-auth-login.ts` (credenciales en texto plano) y `views/` (volcados de una app privada): **nunca subir**.
+> - `build-extractor.js`, `build-new-plugin-ui.js`, `update-content-script.js`: **sobrescriben código fuente con versiones antiguas** (probable causa de la pérdida del normalizador de imágenes en `ui.html`). No ejecutarlos; con la fase 3 (bundler) dejan de tener sentido.
+> - `verify-extractor.ts`, `test-different-viewports.js`, `test-responsive-inspector.ts`: rotos por el cambio de formato del extractor (`{ rootNode, tokens }`); reemplazados por `_harness.cjs`.
 
 - Crear rama (`feat/extractor-fidelity`) y commits por tema: imágenes/carruseles, texto, layout por geometría, tablero, atajos/efecto lift.
 - Añadir `packages/browser-extension/` al repo.

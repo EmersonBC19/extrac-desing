@@ -6,7 +6,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc"
+    "build": "node ../../scripts/build-extractor.mjs && tsc -p src/browser && tsc"
   },
   "dependencies": {
     "@code-to-figma/contracts": "*",

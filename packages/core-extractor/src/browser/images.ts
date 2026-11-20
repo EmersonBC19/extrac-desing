@@ -1,0 +1,142 @@
+/**
+ * Resolución de imágenes pendientes: descarga vía service worker, data URI y recorte por captura.
+ * Fuente única del extractor: se empaqueta en packages/browser-extension/extractor.js (scripts/build-extractor.mjs).
+ */
+/**
+ * Recorre el árbol UINode y resuelve imágenes CORS / background-image de forma asíncrona
+ * Utiliza el background service worker de la extensión para esquivar bloqueos de CSP y CORS
+ */
+/**
+ * Toda imagen que entra al árbol debe ser data:image/...;base64 (mismo criterio que el esquema de
+ * @code-to-figma/contracts). Valida lo que devuelven el service worker, el fetch de la página y la
+ * captura de pantalla: una respuesta inesperada se descarta en lugar de llegar a Figma.
+ */
+export function isImageDataUri(value: unknown): value is string {
+  return typeof value === 'string' && /^data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=\s]*$/i.test(value);
+}
+
+/**
+ * Normaliza un data URI de imagen a base64. Los iconos en CSS suelen venir codificados como
+ * URL (data:image/svg+xml,%3Csvg…); el contrato exige data:image/...;base64 en imageData.
+ * Devuelve null si no es una imagen.
+ */
+export function dataUriToBase64(uri) {
+  const m = /^data:([^,]*),([\s\S]*)$/.exec(uri);
+  if (!m) return null;
+  const meta = m[1];
+  const mime = (meta.split(';')[0] || '').toLowerCase();
+  if (!mime.startsWith('image/')) return null;
+  if (/;base64$/i.test(meta)) return uri;
+  let raw;
+  try { raw = decodeURIComponent(m[2]); } catch (_e) { raw = m[2]; }
+  const bytes = new TextEncoder().encode(raw);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+  return `data:${mime};base64,${btoa(bin)}`;
+}
+
+export async function resolvePendingImages(rootNode) {
+  const pendingNodes = [];
+  function collect(n) {
+    if (n._pendingImageSrc || n._pendingBgImageSrc) {
+      n._hadPendingImage = true;
+      pendingNodes.push(n);
+    }
+    if (n.children && n.children.length > 0) {
+      for (const ch of n.children) collect(ch);
+    }
+  }
+  collect(rootNode);
+
+  await Promise.all(pendingNodes.map(async (n) => {
+    try {
+      let url = n._pendingImageSrc || n._pendingBgImageSrc;
+      if (!url) return;
+      if (!url.startsWith('data:')) {
+        try { url = new URL(url, document.baseURI).href; } catch (_u) {}
+      }
+
+      let base64 = null;
+      if (url.startsWith('data:')) base64 = dataUriToBase64(url); // data URI embebido (SVG inline, etc.)
+
+      // 1. Intento vía background service worker (inmune a CSP y CORS de la página)
+      if (!base64 && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+        try {
+          const resp: any = await new Promise((resolve) => {
+            chrome.runtime.sendMessage({ type: "FETCH_IMAGE_AS_BASE64", url }, (res) => {
+              if (chrome.runtime.lastError) {
+                resolve(null);
+              } else {
+                resolve(res);
+              }
+            });
+          });
+          if (resp && resp.success && isImageDataUri(resp.base64)) {
+            base64 = resp.base64;
+          }
+        } catch (_bgErr) {
+          base64 = null;
+        }
+      }
+
+      // 2. Fallback directo en el contexto de la página
+      if (!base64) {
+        try {
+          const res = await fetch(url);
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const blob = await res.blob();
+          if (blob.type && !blob.type.startsWith('image/')) throw new Error('No es imagen: ' + blob.type);
+          base64 = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result);
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(blob);
+          });
+        } catch (_fetchErr) {
+          console.warn('[CodeToFigma] No se pudo obtener imagen directa:', url);
+        }
+      }
+
+      if (base64) {
+        if (isImageDataUri(base64)) n.imageData = base64;
+      }
+    } catch (_err) {
+      console.warn('[CodeToFigma] Error resolviendo imagen:', n._pendingImageSrc || n._pendingBgImageSrc);
+    } finally {
+      delete n._pendingImageSrc;
+      delete n._pendingBgImageSrc;
+    }
+  }));
+
+  // 3. Fallback estilo swarm-rebuild: lo que el DOM no puede devolver (video cross-origin,
+  //    WebGL, iframes, imágenes con hotlink-protection) se recorta de una captura de pantalla.
+  //    Solo nodos hoja visibles: si tuvieran hijos, la captura duplicaría el texto encima.
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const shotNodes = [];
+  (function collectShot(n) {
+    const r = n._vpRect;
+    if (!n.imageData && r && (n._needsShot || n._hadPendingImage) && (!n.children || n.children.length === 0) &&
+        r.width > 2 && r.height > 2 && r.left < vw && r.top < vh && r.left + r.width > 0 && r.top + r.height > 0) {
+      shotNodes.push(n);
+    }
+    (n.children || []).forEach(collectShot);
+  })(rootNode);
+
+  if (shotNodes.length > 0 && typeof window.__codeToFigmaCaptureRegions === 'function') {
+    try {
+      const crops = await window.__codeToFigmaCaptureRegions(shotNodes.map(n => n._vpRect));
+      (crops || []).forEach((c, i) => { if (isImageDataUri(c)) shotNodes[i].imageData = c; });
+    } catch (_shotErr) {
+      console.warn('[CodeToFigma] Captura de pantalla no disponible:', _shotErr);
+    }
+  }
+
+  (function cleanup(n) {
+    delete n._vpRect;
+    delete n._needsShot;
+    delete n._hadPendingImage;
+    (n.children || []).forEach(cleanup);
+  })(rootNode);
+
+  return rootNode;
+}

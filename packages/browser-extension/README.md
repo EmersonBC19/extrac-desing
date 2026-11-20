@@ -2,6 +2,8 @@
 
 Extensión de navegador (Manifest V3) que permite inspeccionar cualquier página web (incluyendo plataformas con autenticación o entornos locales), seleccionar componentes con un efecto **3D Pop-out / Spotlight** y enviarlos directamente a **Figma con Auto Layout nativo**.
 
+> **`extractor.js` es un archivo generado**: su fuente está en `packages/core-extractor/src/browser/` (TypeScript) y se regenera con `npm run build:extractor`. El crawler usa exactamente el mismo archivo. `content.js` y `background.js` sí se editan aquí.
+
 ---
 
 ## Instalación en Chrome / Edge / Brave (1 minuto)

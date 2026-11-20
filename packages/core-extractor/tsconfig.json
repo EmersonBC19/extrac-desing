@@ -4,5 +4,8 @@
     "outDir": "./dist",
     "rootDir": "./src"
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  // src/browser corre en el navegador: lo empaqueta esbuild (scripts/build-extractor.mjs)
+  // y tiene su propio tsconfig para verificar tipos
+  "exclude": ["src/browser"]
 }

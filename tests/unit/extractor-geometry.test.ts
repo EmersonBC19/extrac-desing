@@ -1,9 +1,14 @@
-import { describe, expect, it } from 'vitest';
-import { createRequire } from 'module';
+import { beforeAll, describe, expect, it } from 'vitest';
+// Módulos fuente del extractor (la integración prueba el bundle generado)
+import { fitAutoLayoutToGeometry, fitWrapToGeometry } from '../../packages/core-extractor/src/browser/geometry';
+import { extractBgUrl, bgScaleMode, isVisuallyHidden } from '../../packages/core-extractor/src/browser/dom-helpers';
+import { cssColorToRgba } from '../../packages/core-extractor/src/browser/text';
+import { dataUriToBase64 } from '../../packages/core-extractor/src/browser/images';
 
-const require = createRequire(import.meta.url);
-const { loadExtractorInternals } = require('../helpers/code-loaders.cjs');
-const X = loadExtractorInternals();
+const X = { fitAutoLayoutToGeometry, fitWrapToGeometry, extractBgUrl, bgScaleMode, isVisuallyHidden, cssColorToRgba, dataUriToBase64 } as any;
+
+// isVisuallyHidden consulta el scroll de la ventana
+beforeAll(() => { (globalThis as any).window = { scrollX: 0, scrollY: 0, innerWidth: 1440, innerHeight: 900 }; });
 
 type Box = { name?: string; x: number; y: number; w: number; h: number; width?: number | string; positioning?: string };
 const child = (b: Box) => ({
@@ -164,4 +169,17 @@ describe('funciones de imagen y color', () => {
     expect(X.isVisuallyHidden(abs, { width: 171, height: 46, bottom: 100, right: 187 })).toBe(false);
     expect(X.isVisuallyHidden({ position: 'static' }, { width: 1, height: 1, bottom: 1, right: 1 })).toBe(false);
   });
+});
+
+describe('isImageDataUri (respuestas del service worker, fetch y captura)', async () => {
+  const { isImageDataUri } = await import('../../packages/core-extractor/src/browser/images');
+  it.each([
+    ['data:image/png;base64,iVBORw0KGgo=', true],
+    ['data:image/jpeg;base64,/9j/4AAQ', true],
+    ['data:text/html;base64,PHNjcmlwdD4=', false],
+    ['data:image/svg+xml,%3Csvg%3E', false],
+    ['https://evil.example/x.png', false],
+    [null, false],
+    [{ base64: 'x' }, false],
+  ])('%s → %s', (v, ok) => { expect(isImageDataUri(v)).toBe(ok); });
 });

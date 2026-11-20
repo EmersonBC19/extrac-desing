@@ -1,6 +1,6 @@
 import { chromium, type Browser, type Page } from 'playwright';
 import type { UINode } from '@code-to-figma/contracts';
-import { browserDomExtractorScript } from './dom-to-node.js';
+import { getBrowserExtractorScript } from './browser-script.js';
 import { createDesignSystemFrame } from './design-system-extractor.js';
 
 export interface CrawlScreenResult {
@@ -392,11 +392,11 @@ export class SiteCrawler {
 
           // Extraer la vista base de la pantalla
           const uiNode = await page.evaluate(
-            ({ scriptCode, sel, screenName }) => {
-              const evalFn = new Function(`${scriptCode}; return extractNodeTree;`)();
+            async ({ scriptCode, sel, screenName }) => {
+              if (!(window as any).__codeToFigmaExtract) (0, eval)(scriptCode); // mismo extractor que la extensión
               const targetEl = document.querySelector(sel);
               if (!targetEl) return null;
-              const node = evalFn(targetEl);
+              const node = (await (window as any).__codeToFigmaExtract(targetEl))?.rootNode;
               if (node) {
                 node.name = 'Screen / ' + screenName;
                 node.layout = node.layout || {};
@@ -404,7 +404,7 @@ export class SiteCrawler {
               }
               return node;
             },
-            { scriptCode: browserDomExtractorScript, sel: contentSelector, screenName: screenTitle }
+            { scriptCode: getBrowserExtractorScript(), sel: contentSelector, screenName: screenTitle }
           );
 
           function countTreeNodes(n: any): number {
@@ -449,11 +449,11 @@ export class SiteCrawler {
 
                   const tabScreenTitle = `${target.group} / ${target.title} [Pestaña: ${tabText}]`;
                   const tabNode = await page.evaluate(
-                    ({ scriptCode, sel, screenName }) => {
-                      const evalFn = new Function(`${scriptCode}; return extractNodeTree;`)();
+                    async ({ scriptCode, sel, screenName }) => {
+                      if (!(window as any).__codeToFigmaExtract) (0, eval)(scriptCode); // mismo extractor que la extensión
                       const targetEl = document.querySelector(sel);
                       if (!targetEl) return null;
-                      const node = evalFn(targetEl);
+                      const node = (await (window as any).__codeToFigmaExtract(targetEl))?.rootNode;
                       if (node) {
                         node.name = 'Screen / ' + screenName;
                         node.layout = node.layout || {};
@@ -461,7 +461,7 @@ export class SiteCrawler {
                       }
                       return node;
                     },
-                    { scriptCode: browserDomExtractorScript, sel: contentSelector, screenName: tabScreenTitle }
+                    { scriptCode: getBrowserExtractorScript(), sel: contentSelector, screenName: tabScreenTitle }
                   );
 
                   if (tabNode) {
@@ -555,11 +555,11 @@ export class SiteCrawler {
 
                     // Extrae el árbol completo con el fondo oscurecido y el diálogo encima
                     const modalNode = await page.evaluate(
-                      ({ scriptCode, sel, screenName }) => {
-                        const evalFn = new Function(`${scriptCode}; return extractNodeTree;`)();
+                      async ({ scriptCode, sel, screenName }) => {
+                        if (!(window as any).__codeToFigmaExtract) (0, eval)(scriptCode); // mismo extractor que la extensión
                         const targetEl = document.querySelector(sel);
                         if (!targetEl) return null;
-                        const node = evalFn(targetEl);
+                        const node = (await (window as any).__codeToFigmaExtract(targetEl))?.rootNode;
                         if (node) {
                           node.name = 'Screen / ' + screenName;
                           node.layout = node.layout || {};
@@ -567,7 +567,7 @@ export class SiteCrawler {
                         }
                         return node;
                       },
-                      { scriptCode: browserDomExtractorScript, sel: contentSelector, screenName: modalScreenTitle }
+                      { scriptCode: getBrowserExtractorScript(), sel: contentSelector, screenName: modalScreenTitle }
                     );
 
                     if (modalNode) {

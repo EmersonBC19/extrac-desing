@@ -1,79 +1,12 @@
-import type {
-  UINode,
-  RGBAColor,
-  BoxShadow,
-  StrokeStyle,
-  BorderSides,
-  LayoutMode,
-  PrimaryAxisAlign,
-  CounterAxisAlign,
-  GradientPaint,
-  GradientStop
-} from '@code-to-figma/contracts';
-
 /**
- * Función auxiliar para parsear colores CSS en Node.js
+ * Conversión recursiva de un elemento del DOM a UINode.
+ * Fuente única del extractor: se empaqueta en packages/browser-extension/extractor.js (scripts/build-extractor.mjs).
  */
-export function parseCssColor(colorStr: string): RGBAColor | null {
-  if (!colorStr || colorStr === 'transparent' || colorStr === 'inherit' || colorStr === 'initial') {
-    return null;
-  }
+import { CLIPPING_OVERFLOW, isCarouselSlide, isCarouselTrack, extractBgUrl, isVisuallyHidden, pseudoHasImage, bgScaleMode, vpRectOf, canvasPixels } from './dom-helpers';
+import { isInlineTextRoot, buildRichText } from './text';
+import { fitAutoLayoutToGeometry, pseudoPosition } from './geometry';
 
-  const rgbaMatch = colorStr.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/i);
-  if (rgbaMatch) {
-    return {
-      r: parseInt(rgbaMatch[1], 10) / 255,
-      g: parseInt(rgbaMatch[2], 10) / 255,
-      b: parseInt(rgbaMatch[3], 10) / 255,
-      a: rgbaMatch[4] !== undefined ? parseFloat(rgbaMatch[4]) : 1
-    };
-  }
-
-  const hexMatch = colorStr.match(/^#([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
-  if (hexMatch) {
-    return {
-      r: parseInt(hexMatch[1], 16) / 255,
-      g: parseInt(hexMatch[2], 16) / 255,
-      b: parseInt(hexMatch[3], 16) / 255,
-      a: 1
-    };
-  }
-
-  return null;
-}
-
-/**
- * Parsea box-shadow computado de CSS
- */
-export function parseBoxShadow(shadowStr: string): BoxShadow[] {
-  if (!shadowStr || shadowStr === 'none') return [];
-  const shadows: BoxShadow[] = [];
-  const parts = shadowStr.split(/,(?![^(]*\))/);
-  for (const part of parts) {
-    const trimmed = part.trim();
-    if (!trimmed) continue;
-    const colorMatch = trimmed.match(/(rgba?\([^)]+\)|#[a-f0-9]+)/i);
-    const color = colorMatch ? parseCssColor(colorMatch[1]) : { r: 0, g: 0, b: 0, a: 0.15 };
-    const cleanLength = trimmed.replace(/(rgba?\([^)]+\)|#[a-f0-9]+)/i, '').trim();
-    const lengths = cleanLength.split(/\s+/).map(l => parseFloat(l) || 0);
-    if (lengths.length >= 2 && color) {
-      shadows.push({ color, offset: { x: lengths[0], y: lengths[1] }, radius: lengths[2] || 0, spread: lengths[3] || 0 });
-    }
-  }
-  return shadows;
-}
-
-/**
- * Script serializable para inyectar en Chromium mediante page.evaluate().
- * Diseñado con precisión milimétrica para generar mockups nativos en Figma:
- * - Auto Layout automático en bloques, flex y grids
- * - Nomenclatura semántica profesional de capas y componentes
- * - Gradientes lineales nativos, sombras (box-shadow) y bordes direccionales
- * - Inputs, selects, botones y badges con fidelidad de diseño artesanal
- * - Eliminación de wrappers redundantes de frameworks (Angular, React, Vue)
- */
-export const browserDomExtractorScript = `
-function extractNodeTree(element, counter = { id: 0 }, parentRect = null, parentLayout = null) {
+export function extractNodeTree(element, counter: any = { id: 0 }, parentRect = null, parentLayout = null) {
   if (!element || element.nodeType !== Node.ELEMENT_NODE) return null;
 
   const tagName = element.tagName.toLowerCase();
@@ -87,6 +20,8 @@ function extractNodeTree(element, counter = { id: 0 }, parentRect = null, parent
   }
 
   const rect = element.getBoundingClientRect();
+  // Texto solo para lectores de pantalla (.sr-only / .visuallyhidden): no es visible, no va a Figma
+  if (parentRect !== null && isVisuallyHidden(style, rect)) return null;
   const vpW = window.innerWidth || 1440;
   const vpH = window.innerHeight || 900;
   const isRoot = parentRect === null;
@@ -98,18 +33,40 @@ function extractNodeTree(element, counter = { id: 0 }, parentRect = null, parent
     (style.maxHeight === '0px' || style.height === '0px');
   if (isZeroClipped) return null;
 
-  // Filtrado de elementos fuera de pantalla
+  // Filtrado de elementos fuera de pantalla.
+  // Excepción: slides de carruseles / galerías (dentro de un contenedor que recorta o hace scroll
+  // horizontal). Se conservan para que en Figma estén todas las slides, recortadas como en la web.
+  const margin = element.children.length === 0 ? 150 : 300;
+  const isOffscreenX = rect.left >= vpW + margin || rect.right <= -margin;
+  if (parentRect !== null && isOffscreenX) {
+    if (!isCarouselSlide(element, rect, vpW)) return null;
+    counter.hasCarouselSlides = true; // el frame raíz debe recortar como lo hace la web
+  }
   if (element.children.length === 0) {
-    if (rect.width <= 0 && rect.height <= 0 && (!element.textContent || !element.textContent.trim())) return null;
-    if (parentRect !== null && (rect.left >= vpW + 150 || rect.right <= -150)) return null;
-    if (parentRect !== null && rect.top >= 4500) return null;
-  } else {
-    if (parentRect !== null && (rect.left >= vpW + 300 || rect.right < -400)) return null;
+    // Elemento vacío colapsado (ej. <p> sin contenido con alto 0): no ocupa espacio en la web
+    const hasText = !!(element.textContent && element.textContent.trim());
+    const isReplaced = /^(img|picture|svg|video|canvas|iframe|input|textarea|select|hr)$/.test(tagName);
+    const hasPseudo = ['::before', '::after'].some(p => {
+      const c = window.getComputedStyle(element, p).content;
+      return c && c !== 'none' && c !== 'normal';
+    });
+    if (!hasText && !isReplaced && !hasPseudo && (rect.width <= 0.5 || rect.height <= 0.5)) return null;
+    if (parentRect !== null && (rect.top - parentRect.top >= 12000)) return null;
   }
 
   const currentId = 'node_' + (++counter.id);
   const relX = parentRect ? Math.round(rect.left - parentRect.left) : 0;
-  const relY = parentRect ? Math.round(rect.top - parentRect.top) : 0;
+  let relY = parentRect ? Math.round(rect.top - parentRect.top) : 0;
+  // Headers/banners fijos: el navegador los pinta respecto a la PANTALLA. Si se extrae con la página
+  // desplazada, quedarían a mitad del documento. Se colocan donde estarían con la página arriba.
+  if (parentRect && (style.position === 'fixed' || style.position === 'sticky') && window.scrollY > 0) {
+    const parentEl = element.parentElement;
+    const parentFixed = parentEl && window.getComputedStyle(parentEl).position === 'fixed';
+    const parentDocTop = parentRect.top + window.scrollY;
+    if (!parentFixed && (style.position === 'fixed' || parentDocTop <= 1)) {
+      relY = Math.round(rect.top - parentDocTop);
+    }
+  }
 
   // ── Helper para dividir valores CSS respetando paréntesis ──
   function splitCssList(str) {
@@ -293,12 +250,44 @@ function extractNodeTree(element, counter = { id: 0 }, parentRect = null, parent
       const style = window.getComputedStyle(element, pseudo);
       const content = style.content;
       const hasContent = content && content !== 'none' && content !== 'normal' && content !== '""' && content !== "''";
+      if (style.display === 'none') return null;
       const bg = parseColor(style.backgroundColor);
       const w = parseFloat(style.width) || 0;
       const h = parseFloat(style.height) || 0;
+      const bgUrl = extractBgUrl(style.backgroundImage);
+      const hasBgGrad = !!parseGradient(style.backgroundImage);
+
+      // Pseudo-elemento con imagen de fondo (iconos, logos, decoraciones)
+      const isRendered = content && content !== 'none' && content !== 'normal';
+      if (bgUrl && isRendered && w > 0 && h > 0) {
+        const isAbs = style.position === 'absolute' || style.position === 'fixed';
+        const pNode: any = {
+          id: 'pseudo_' + (++counter.id),
+          name: pseudo === '::before' ? 'Image / Before' : 'Image / After',
+          type: 'FRAME',
+          layout: {
+            mode: 'NONE',
+            padding: { top: 0, right: 0, bottom: 0, left: 0 },
+            itemSpacing: 0,
+            width: Math.round(w),
+            height: Math.round(h),
+            positioning: isAbs ? 'ABSOLUTE' : 'AUTO',
+            ...(isAbs ? (pseudoPosition(element, style, w, h) || {}) : {})
+          },
+          styles: {
+            fills: bg && bg.a > 0.01 ? [bg] : [],
+            cornerRadius: parseFloat(style.borderRadius) || 0,
+            imageScaleMode: bgScaleMode(style)
+          },
+          children: []
+        };
+        pNode._pendingBgImageSrc = bgUrl;
+        return pNode;
+      }
 
       if (!hasContent) {
-        if (!bg || bg.a <= 0.05 || w <= 0 || h <= 0) return null;
+        if ((!bg || bg.a <= 0.05) && !hasBgGrad) return null;
+        if (w <= 0 || h <= 0) return null;
       }
 
       let rawText = (content || '').replace(/^['"]|['"]$/g, '').trim();
@@ -327,7 +316,8 @@ function extractNodeTree(element, counter = { id: 0 }, parentRect = null, parent
             fontFamily: style.fontFamily ? style.fontFamily.split(',')[0].replace(/['"]/g, '').trim() : 'Inter'
           }
         };
-      } else if (w > 0 && h > 0 && bg && bg.a > 0.05) {
+      } else if (w > 0 && h > 0 && ((bg && bg.a > 0.05) || hasBgGrad)) {
+        const decoFills = hasBgGrad ? [parseGradient(style.backgroundImage)] : [bg];
         return {
           id: 'pseudo_' + (++counter.id),
           name: pseudo === '::before' ? 'Decorator / Before' : 'Decorator / After',
@@ -338,10 +328,11 @@ function extractNodeTree(element, counter = { id: 0 }, parentRect = null, parent
             itemSpacing: 0,
             width: Math.round(w),
             height: Math.round(h),
-            positioning: isPosAbs ? 'ABSOLUTE' : 'AUTO'
+            positioning: isPosAbs ? 'ABSOLUTE' : 'AUTO',
+            ...(isPosAbs ? (pseudoPosition(element, style, w, h) || {}) : {})
           },
           styles: {
-            fills: [bg],
+            fills: decoFills,
             cornerRadius: br > 0 ? br : 0
           },
           children: []
@@ -404,7 +395,7 @@ function extractNodeTree(element, counter = { id: 0 }, parentRect = null, parent
     if (tag === 'label') return 'Label / ' + (el.textContent?.trim().slice(0, 15) || 'Text');
 
     // Detectar contenedores directos de formulario (Input Group)
-    const childrenList = Array.from(el.children);
+    const childrenList = (Array.from(el.children) as any[]);
     const hasDirectLabel = childrenList.some(c => c.tagName.toLowerCase() === 'label');
     const hasDirectInput = childrenList.some(c => ['input', 'select', 'textarea'].includes(c.tagName.toLowerCase()) || c.querySelector('input, select, textarea'));
     if (hasDirectLabel && hasDirectInput && childrenList.length <= 4) {
@@ -549,50 +540,231 @@ function extractNodeTree(element, counter = { id: 0 }, parentRect = null, parent
     };
   }
 
-  // ── 6. Canvas ──
-  if (tagName === 'canvas') {
-    try {
-      const cd = element.toDataURL('image/png');
-      if (cd) return {
-        id: currentId, name: 'Chart / Canvas', type: 'FRAME',
-        layout: { mode: 'NONE', padding:{top:0,right:0,bottom:0,left:0}, itemSpacing:0, width: Math.round(rect.width)||300, height: Math.round(rect.height)||150, x: relX, y: relY },
-        styles: { fills: [] }, imageData: cd, children: []
-      };
-    } catch(_e){}
+  // ── 6. Canvas, Video e Iframes (medios que el DOM no devuelve como URL de imagen) ──
+  if (tagName === 'canvas' || tagName === 'video' || tagName === 'iframe' || tagName === 'embed' || tagName === 'object') {
+    const mediaNode: any = {
+      id: currentId,
+      name: tagName === 'canvas' ? 'Chart / Canvas' : tagName === 'video' ? 'Video / ' + (element.getAttribute('aria-label') || element.getAttribute('title') || 'Media') : 'Embed / ' + (element.getAttribute('title') || tagName),
+      type: 'FRAME',
+      layout: { mode: 'NONE', padding:{top:0,right:0,bottom:0,left:0}, itemSpacing:0, width: Math.round(rect.width)||300, height: Math.round(rect.height)||150, x: relX, y: relY,
+        positioning: (style.position === 'absolute' || style.position === 'fixed') ? 'ABSOLUTE' : 'AUTO' },
+      styles: { fills: [], cornerRadius: parseFloat(style.borderRadius) || 0,
+        imageScaleMode: style.objectFit === 'contain' ? 'FIT' : 'FILL' },
+      children: []
+    };
+    mediaNode._vpRect = vpRectOf(rect);
+
+    if (tagName === 'canvas') {
+      const px = canvasPixels(element);
+      if (px) mediaNode.imageData = px;
+      else mediaNode._needsShot = true; // WebGL / tainted → captura de pantalla
+    } else if (tagName === 'video') {
+      // 1) fotograma actual (si el video es same-origin y ya tiene datos)
+      let frame = null;
+      if (element.readyState >= 2 && element.videoWidth) {
+        try {
+          const c = document.createElement('canvas');
+          c.width = element.videoWidth;
+          c.height = element.videoHeight;
+          c.getContext('2d').drawImage(element, 0, 0);
+          frame = c.toDataURL('image/jpeg', 0.88);
+        } catch (_e) { frame = null; }
+      }
+      if (frame) mediaNode.imageData = frame;
+      else {
+        // 2) póster declarado; 3) captura de pantalla como último recurso
+        const poster = element.getAttribute('poster') || element.getAttribute('data-poster');
+        if (poster) mediaNode._pendingImageSrc = new URL(poster, location.href).href;
+        mediaNode._needsShot = true;
+      }
+    } else {
+      mediaNode._needsShot = true;
+      mediaNode.styles.fills = [{ r: 0.945, g: 0.949, b: 0.957, a: 1 }];
+    }
+    return mediaNode;
   }
 
-  // ── 7. IMG ──
-  if (tagName === 'img') {
-    try {
-      if (element.complete && element.naturalWidth > 0) {
-        const c = document.createElement('canvas');
-        c.width = Math.min(element.naturalWidth, 400);
-        c.height = Math.min(element.naturalHeight, 400);
-        const ctx = c.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(element, 0, 0, c.width, c.height);
-          const d = c.toDataURL('image/png');
-          return {
-            id: currentId, name: 'Image / ' + (element.getAttribute('alt') || 'Img'), type: 'FRAME',
-            layout: { mode: 'NONE', padding:{top:0,right:0,bottom:0,left:0}, itemSpacing:0, width: Math.round(rect.width)||40, height: Math.round(rect.height)||40, x: relX, y: relY },
-            styles: { fills: [], cornerRadius: parseFloat(style.borderRadius)||0 }, imageData: d, children: []
-          };
+  // ── 7. IMG & PICTURE: Extracción en Alta Resolución Nativa (Sin Pérdida de Calidad) ──
+  if (tagName === 'img' || tagName === 'picture') {
+    let pendingSrc = null;
+    let altText = '';
+
+    const imgEl = tagName === 'img' ? element : element.querySelector('img');
+    const picEl = tagName === 'picture' ? element : element.closest('picture');
+
+    if (imgEl) {
+      altText = imgEl.getAttribute('alt') || '';
+    }
+
+    // 1. Recolectar todas las fuentes candidatas en orden de máxima resolución
+    const candidates = [];
+
+    function addSrcset(srcsetString) {
+      if (!srcsetString || srcsetString.includes('data:image/gif')) return;
+      const parts = srcsetString.split(',').map(s => s.trim());
+      for (const p of parts) {
+        const [u, desc] = p.split(/\s+/);
+        if (!u || u.startsWith('data:image/gif')) continue;
+        let density = 1;
+        let width = 0;
+        if (desc) {
+          if (desc.endsWith('x')) density = parseFloat(desc) || 1;
+          if (desc.endsWith('w')) width = parseInt(desc, 10) || 0;
+        }
+        candidates.push({ url: u, density, width });
+      }
+    }
+
+    // A. Analizar <source> dentro de <picture> respetando media queries
+    if (picEl) {
+      const sources = (Array.from(picEl.querySelectorAll('source')) as any[]);
+      // Encontrar sources que coincidan con el viewport actual
+      const matchingSources = sources.filter(s => {
+        const media = s.getAttribute('media');
+        if (!media) return true;
+        try {
+          return window.matchMedia(media).matches;
+        } catch (_e) {
+          return false;
+        }
+      });
+
+      const activeSource = matchingSources.length > 0 ? matchingSources[0] : null;
+      if (activeSource) {
+        addSrcset(activeSource.getAttribute('srcset') || activeSource.srcset);
+      } else {
+        // Fallback: si ninguno coincide por matchMedia, buscar fuente para desktop (min-width)
+        const desktopSource = sources.find(s => {
+          const m = (s.getAttribute('media') || '').toLowerCase();
+          return m.includes('min-width') || (!m.includes('max-width: 734') && !m.includes('max-width: 640') && !m.includes('small'));
+        });
+        if (desktopSource) {
+          addSrcset(desktopSource.getAttribute('srcset') || desktopSource.srcset);
+        } else {
+          for (const s of sources) {
+            addSrcset(s.getAttribute('srcset') || s.srcset);
+          }
         }
       }
-    } catch(_e){}
+    }
+
+    // B. Analizar srcset en <img>
+    if (imgEl) {
+      addSrcset(imgEl.getAttribute('srcset') || imgEl.srcset);
+    }
+
+    // C. Atributos de alta resolución comunes en la web (lazyloading, retina)
+    if (imgEl) {
+      const hiResAttrs = [
+        'data-highres', 'data-original', 'data-src-retina', 'data-retina', 
+        'data-large', 'data-desktop-src', 'data-src-desktop', 'data-full-src',
+        'data-src', 'data-lazy-src'
+      ];
+      for (const attr of hiResAttrs) {
+        const val = imgEl.getAttribute(attr);
+        if (val && !val.startsWith('data:image/gif')) {
+          candidates.push({ url: val, density: 2, width: 2500 });
+        }
+      }
+    }
+
+    // D. currentSrc y src nativos
+    if (imgEl) {
+      if (imgEl.currentSrc && !imgEl.currentSrc.startsWith('data:image/gif')) {
+        candidates.push({ url: imgEl.currentSrc, density: 1.5, width: imgEl.naturalWidth || 1000 });
+      }
+      if (imgEl.src && !imgEl.src.startsWith('data:image/gif')) {
+        candidates.push({ url: imgEl.src, density: 1, width: imgEl.naturalWidth || 800 });
+      }
+    }
+
+    // Elegir la URL de mayor resolución (preferir Retina @2x / mayor ancho en píxeles y descartar recortes pequeños de móvil)
+    if (candidates.length > 0) {
+      candidates.sort((a, b) => {
+        const aIs2x = /(@2x|_2x|_large|_largetall|retina|highres)/i.test(a.url) ? 1 : 0;
+        const bIs2x = /(@2x|_2x|_large|_largetall|retina|highres)/i.test(b.url) ? 1 : 0;
+        const aIsSmall = /(_small|_thumb|mobile)/i.test(a.url) ? -1 : 0;
+        const bIsSmall = /(_small|_thumb|mobile)/i.test(b.url) ? -1 : 0;
+
+        const aScore = (a.density * 10) + aIs2x * 5 + aIsSmall * 10;
+        const bScore = (b.density * 10) + bIs2x * 5 + bIsSmall * 10;
+
+        if (bScore !== aScore) return bScore - aScore;
+        if (b.width !== a.width) return b.width - a.width;
+        return 0;
+      });
+      pendingSrc = candidates[0].url;
+    }
+
+    if (pendingSrc) {
+      if (pendingSrc.startsWith('//')) pendingSrc = window.location.protocol + pendingSrc;
+      else if (pendingSrc.startsWith('/')) pendingSrc = window.location.origin + pendingSrc;
+    }
+
+    // Dimensiones precisas: la caja visible de la imagen.
+    //  - <img> más grande que su <picture> (hero recortado) → caja del <picture>, escala FILL.
+    //  - <img> más chico que su <picture> (picture inline con espacio extra, logos) → caja del <img>,
+    //    si no, FILL recortaría el logo para llenar una caja con otra proporción.
+    let boxRect = rect;
+    if (imgEl && picEl) {
+      const pRect = picEl.getBoundingClientRect();
+      const iRect = imgEl.getBoundingClientRect();
+      const fitsInside = iRect.width <= pRect.width + 1 && iRect.height <= pRect.height + 1;
+      boxRect = (fitsInside && iRect.width > 0 && iRect.height > 0) ? iRect : pRect;
+    }
+    let imgW = Math.round(boxRect.width);
+    let imgH = Math.round(boxRect.height);
+    const boxRelX = parentRect ? Math.round(boxRect.left - parentRect.left) : 0;
+    const boxRelY = parentRect ? Math.round(boxRect.top - parentRect.top) : 0;
+    const imgFitStyle = imgEl ? window.getComputedStyle(imgEl) : style;
+
+    // Fallbacks si las dimensiones medidas son 0 o 1
+    if (imgW <= 1 && imgEl && imgEl.naturalWidth > 1) imgW = imgEl.naturalWidth;
+    if (imgH <= 1 && imgEl && imgEl.naturalHeight > 1) imgH = imgEl.naturalHeight;
+    if (imgW <= 0) imgW = 40;
+    if (imgH <= 0) imgH = 40;
+
+    const imgNode: any = {
+      id: currentId,
+      name: 'Image / ' + (altText || (tagName === 'picture' ? 'Picture' : 'Img')),
+      type: 'FRAME',
+      layout: {
+        mode: 'NONE',
+        padding: { top: 0, right: 0, bottom: 0, left: 0 },
+        itemSpacing: 0,
+        width: imgW,
+        height: imgH,
+        measuredWidth: imgW,
+        measuredHeight: imgH,
+        x: boxRelX,
+        y: boxRelY,
+        positioning: (style.position === 'absolute' || style.position === 'fixed') ? 'ABSOLUTE' : 'AUTO'
+      },
+      styles: {
+        fills: [],
+        cornerRadius: parseFloat(imgFitStyle.borderRadius) || parseFloat(style.borderRadius) || 0,
+        imageScaleMode: (imgFitStyle.objectFit === 'contain' || imgFitStyle.objectFit === 'scale-down') ? 'FIT' : 'FILL'
+      },
+      children: []
+    };
+
+    if (pendingSrc) {
+      imgNode._pendingImageSrc = pendingSrc;
+    }
+    imgNode._vpRect = vpRectOf(boxRect);
+
+    return imgNode;
   }
 
   // ── 8. Fills & Gradients ──
+  // Capas CSS: background-color (abajo) + url() + degradados. Se conservan todas;
+  // el plugin coloca la imagen entre el color base y los degradados (overlays).
   const fills = [];
   const grad = parseGradient(style.backgroundImage);
-  if (grad) {
-    fills.push(grad);
-  } else {
-    const bgColor = parseColor(style.backgroundColor);
-    if (bgColor && bgColor.a > 0.01) {
-      fills.push(bgColor);
-    }
-  }
+  const pendingBgSrc = extractBgUrl(style.backgroundImage);
+  const bgColor = parseColor(style.backgroundColor);
+  if (bgColor && bgColor.a > 0.01) fills.push(bgColor);
+  if (grad) fills.push(grad);
 
   // ── 9. Strokes & Borders en Cualquier Lado ──
   const topW = Math.round(parseFloat(style.borderTopWidth)||0);
@@ -629,7 +801,7 @@ function extractNodeTree(element, counter = { id: 0 }, parentRect = null, parent
   // ── 11. Box Shadows & Glassmorphism Backdrop Blur ──
   const boxShadow = parseBoxShadow(style.boxShadow);
   let backdropBlur = undefined;
-  const bFilter = style.backdropFilter || style.webkitBackdropFilter || '';
+  const bFilter = style.backdropFilter || (style as any).webkitBackdropFilter || '';
   if (bFilter && bFilter.includes('blur(')) {
     const m = bFilter.match(/blur\(([^)]+)\)/);
     if (m && m[1]) {
@@ -704,34 +876,91 @@ function extractNodeTree(element, counter = { id: 0 }, parentRect = null, parent
   // ── Inferencia Geométrica Real basada en posición de hijos en el DOM ──
   // Si los hijos están uno al lado del otro en el mismo eje Y -> ES HORIZONTAL (ej. KPI cards, grids de Tailwind)
   // Si los hijos están uno debajo del otro y el CSS gap es 0 (porque usaron margin) -> descubrir itemSpacing real
-  const visibleChildren = Array.from(element.children).filter(ch => {
+  const visibleChildren = (Array.from(element.children) as any[]).filter(ch => {
     const cs = window.getComputedStyle(ch);
     return cs.display !== 'none' && cs.visibility !== 'hidden' && parseFloat(cs.opacity) > 0;
   });
 
   if (visibleChildren.length >= 2 && !isWholePage) {
-    const r0 = visibleChildren[0].getBoundingClientRect();
-    const r1 = visibleChildren[1].getBoundingClientRect();
-    const isHorizAligned = Math.abs(r0.top - r1.top) <= 12 && r1.left > (r0.left + 5);
-    const isVertAligned = Math.abs(r0.left - r1.left) <= 12 && r1.top > (r0.top + 5);
-
-    if (style.display.includes('grid')) {
-      if (isHorizAligned) {
-        mode = 'HORIZONTAL';
-        layoutWrap = 'NO_WRAP';
-        const measuredGap = Math.round(r1.left - (r0.left + r0.width));
-        if (measuredGap >= 0 && measuredGap < 100) itemSpacing = measuredGap;
-      } else if (isVertAligned) {
-        mode = 'VERTICAL';
-        const measuredGap = Math.round(r1.top - (r0.top + r0.height));
-        if (measuredGap >= 0 && measuredGap < 100) itemSpacing = measuredGap;
+    // 0. Comprobar si los hijos visibles se solapan físicamente en 2D (ej. capa de fondo y contenido encima)
+    let hasSignificantOverlap = false;
+    for (let i = 0; i < visibleChildren.length; i++) {
+      for (let j = i + 1; j < visibleChildren.length; j++) {
+        const ra = visibleChildren[i].getBoundingClientRect();
+        const rb = visibleChildren[j].getBoundingClientRect();
+        const ox = Math.max(0, Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left));
+        const oy = Math.max(0, Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top));
+        const overlapArea = ox * oy;
+        const minArea = Math.min(ra.width * ra.height, rb.width * rb.height);
+        if (minArea > 0 && (overlapArea / minArea) > 0.35) {
+          hasSignificantOverlap = true;
+          break;
+        }
       }
-    } else if (mode === 'VERTICAL' && isVertAligned) {
-      const dy = Math.round(r1.top - (r0.top + r0.height));
-      if (dy > 0 && dy < 60 && (itemSpacing === 0 || dy > itemSpacing)) itemSpacing = dy;
-    } else if (mode === 'HORIZONTAL' && isHorizAligned) {
-      const dx = Math.round(r1.left - (r0.left + r0.width));
-      if (dx > 0 && dx < 60 && (itemSpacing === 0 || dx > itemSpacing)) itemSpacing = dx;
+      if (hasSignificantOverlap) break;
+    }
+
+    // Pista de carrusel: slides desplazadas (transform/scroll) fuera del contenedor.
+    // Modo NONE conserva su x real, así el frame recortado muestra la misma slide activa que la web.
+    const isTrack = !hasSignificantOverlap && isCarouselTrack(element, rect, visibleChildren);
+    if (isTrack) {
+      mode = 'NONE';
+    } else if (hasSignificantOverlap) {
+      // Contenedor tipo Hero Banner / Stack con capas superpuestas:
+      // Debe ser modo NONE para que las capas de fondo y overlays queden en sus posiciones exactas relX, relY
+      // sin empujar el contenido hacia los lados.
+      mode = 'NONE';
+    } else {
+      // 1. Separar hijos en flujo normal vs hijos absolutos / fixed
+      const inFlowChildren = visibleChildren.filter(ch => {
+        const cs = window.getComputedStyle(ch);
+        return cs.position !== 'absolute' && cs.position !== 'fixed';
+      });
+
+      // 2. Si hay múltiples hijos en flujo normal, determinar si apilan vertical u horizontalmente
+      if (inFlowChildren.length >= 2) {
+        // Geometría en ORDEN VISUAL (no en orden DOM): CSS `order`, `flex-direction: *-reverse`
+        // o grid pueden pintar los hijos en otro orden. Los hijos luego se ordenan por x/y.
+        const rects = inFlowChildren.map(ch => ch.getBoundingClientRect()).filter(r => r.width > 0 || r.height > 0);
+        const TOL = 4;
+        const byTop = [...rects].sort((a, b) => a.top - b.top);
+        const byLeft = [...rects].sort((a, b) => a.left - b.left);
+        let isVerticalStack = rects.length >= 2;
+        let isHorizontalStack = rects.length >= 2;
+        for (let i = 0; i < rects.length - 1; i++) {
+          // Columna: cada hijo (en orden visual) empieza más abajo que el anterior
+          if (byTop[i + 1].top < byTop[i].top + 8) isVerticalStack = false;
+          // Fila: cada hijo empieza más a la derecha que el anterior Y comparten franja vertical
+          const a = byLeft[i], b = byLeft[i + 1];
+          const shareRow = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > TOL;
+          if (b.left < a.left + 8 || !shareRow) isHorizontalStack = false;
+        }
+
+        if (isVerticalStack && !isHorizontalStack) {
+          mode = 'VERTICAL';
+          const measuredGap = Math.round(byTop[1].top - byTop[0].bottom);
+          if (measuredGap >= 0 && measuredGap < 150) itemSpacing = measuredGap;
+        } else if (isHorizontalStack && !isVerticalStack) {
+          mode = 'HORIZONTAL';
+          const measuredGap = Math.round(byLeft[1].left - byLeft[0].right);
+          if (measuredGap >= 0 && measuredGap < 150) itemSpacing = measuredGap;
+        } else if (!isVerticalStack && !isHorizontalStack && layoutWrap !== 'WRAP' && rects.length >= 2) {
+          // Ni fila ni columna (ej. barra de puntos debajo de un carrusel pero primera en el DOM):
+          // Auto Layout los reacomodaría mal y empujaría contenido fuera del frame → posiciones exactas.
+          mode = 'NONE';
+        }
+      } else if (inFlowChildren.length === 1) {
+        // Contenedor con 1 solo hijo en flujo (los demás son fondos o overlays absolutos)
+        if (style.justifyContent.includes('center') || style.alignItems.includes('center') || style.textAlign.includes('center')) {
+          primaryAlign = 'CENTER';
+          counterAlign = 'CENTER';
+        }
+      }
+    }
+
+    // Centrado de elementos: si el texto o el contenedor está centrado, alinear al centro
+    if (style.textAlign.includes('center') || style.alignItems.includes('center') || style.justifyContent.includes('center')) {
+      counterAlign = 'CENTER';
     }
   }
 
@@ -750,12 +979,14 @@ function extractNodeTree(element, counter = { id: 0 }, parentRect = null, parent
   const semanticName = getSemanticName(element, tagName, style, rect);
 
   // ── 15. Texto Terminal Puro ──
-  const isDirectText = element.children.length === 0 && element.textContent && element.textContent.trim().length > 0;
-  if (isDirectText && !fills.length && !strokes.length && padding.top === 0 && padding.bottom === 0 && tagName !== 'input' && tagName !== 'textarea' && tagName !== 'select') {
+  // Hoja de texto, o raíz "todo inline" (<p>texto <a>link</a><sup>1</sup></p>) → UN solo TEXT
+  const isDirectText = element.textContent && element.textContent.trim().length > 0 &&
+    (element.children.length === 0 || isInlineTextRoot(element));
+  const rich = (isDirectText && !['input', 'textarea', 'select'].includes(tagName)) ? buildRichText(element, style) : null;
+  if (isDirectText && rich && rich.characters && !fills.length && !strokes.length && !pendingBgSrc && padding.top === 0 && padding.bottom === 0 && tagName !== 'input' && tagName !== 'textarea' && tagName !== 'select' &&
+      !pseudoHasImage(element, '::before') && !pseudoHasImage(element, '::after')) {
     const tc = parseColor(style.color) || { r: 0.1, g: 0.1, b: 0.1, a: 1 };
-    let rawText = element.textContent.trim();
-    if (style.textTransform === 'uppercase') rawText = rawText.toUpperCase();
-    else if (style.textTransform === 'lowercase') rawText = rawText.toLowerCase();
+    const rawText = rich.characters;
 
     let textAlign = 'LEFT';
     if (style.textAlign.includes('center')) textAlign = 'CENTER';
@@ -776,7 +1007,7 @@ function extractNodeTree(element, counter = { id: 0 }, parentRect = null, parent
     const effLineHeight = parsedLineHeight || Math.round(fontSize * 1.3);
 
     // Detección precisa de multilínea
-    const isMultiline = measuredH > (effLineHeight * 1.35) || rawText.includes('\n');
+    const isMultiline = rich.lines > 1 || measuredH > (effLineHeight * 1.35) || rawText.includes('\n');
 
     // Letter-spacing con precisión decimal (ej. 0.231px o -0.374px)
     let parsedLetterSpacing = undefined;
@@ -788,7 +1019,7 @@ function extractNodeTree(element, counter = { id: 0 }, parentRect = null, parent
     }
 
     // Determinar dimensionamiento inteligente (FILL vs HUG vs FIXED):
-    let textWidth = 'HUG';
+    let textWidth: any = 'HUG';
     const isBlockTag = ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'li', 'div', 'section', 'article'].includes(tagName);
     const isParentVertical = parentLayout && parentLayout.mode === 'VERTICAL';
     const isParentHorizontal = parentLayout && parentLayout.mode === 'HORIZONTAL';
@@ -827,7 +1058,11 @@ function extractNodeTree(element, counter = { id: 0 }, parentRect = null, parent
         lineHeight: parsedLineHeight,
         letterSpacing: parsedLetterSpacing,
         textAlign,
-        isMultiline
+        isMultiline,
+        // Saltos de línea medidos en el navegador: Figma no debe re-acomodar el texto
+        noWrap: rich.linesPreserved || undefined,
+        lineCount: rich.lines,
+        segments: rich.segments || undefined
       }
     };
   }
@@ -840,8 +1075,11 @@ function extractNodeTree(element, counter = { id: 0 }, parentRect = null, parent
   let initialHeight;
 
   if (isWholePage) {
-    initialWidth = vpW || 1440;
-    initialHeight = vpH || 900;
+    // Página completa: TODO el documento, no solo la primera pantalla (antes se usaba el alto de
+    // la ventana y, con clipsContent, en Figma solo se veía el hero).
+    const docH = Math.max(measuredH, document.documentElement.scrollHeight || 0, document.body ? document.body.scrollHeight : 0);
+    initialWidth = measuredW > 0 ? measuredW : (vpW || 1440);
+    initialHeight = docH > 0 ? Math.round(docH) : (vpH || 900);
   } else if (isRoot) {
     initialWidth = measuredW > 0 ? measuredW : 'HUG';
     initialHeight = (mode !== 'NONE' && element.children.length > 0) ? 'HUG' : (measuredH > 0 ? measuredH : 'HUG');
@@ -934,20 +1172,25 @@ function extractNodeTree(element, counter = { id: 0 }, parentRect = null, parent
     mode, primaryAxisAlignItems: primaryAlign, counterAxisAlignItems: counterAlign,
     padding, itemSpacing, width: initialWidth, height: initialHeight,
     measuredWidth: Math.round(rect.width),
-    measuredHeight: Math.round(rect.height),
+    measuredHeight: isWholePage && typeof initialHeight === 'number' ? initialHeight : Math.round(rect.height),
     positioning: (style.position === 'absolute' || style.position === 'fixed') ? 'ABSOLUTE' : 'AUTO',
     layoutWrap, x: relX, y: relY
   };
 
-  const node = {
+  const node: any = {
     id: currentId,
     name: semanticName,
     type: 'FRAME',
     layout: currentLayout,
     styles: { fills, strokes, borderSides, cornerRadius, opacity: parseFloat(style.opacity)||1, boxShadow, backdropBlur },
     children: [],
-    clipsContent: isWholePage || style.overflow === 'hidden' ? true : undefined
+    clipsContent: isWholePage || CLIPPING_OVERFLOW.test(style.overflowX) || CLIPPING_OVERFLOW.test(style.overflowY) ? true : undefined
   };
+  if (pendingBgSrc) {
+    node._pendingBgImageSrc = pendingBgSrc;
+    node.styles.imageScaleMode = bgScaleMode(style);
+    node._vpRect = vpRectOf(rect);
+  }
 
   // ── 17. Form Elements: Inputs & Selects con Contenido Real ──
   if (element.children.length === 0) {
@@ -1016,7 +1259,7 @@ function extractNodeTree(element, counter = { id: 0 }, parentRect = null, parent
       const tc = parseColor(style.color) || { r: 0.1, g: 0.1, b: 0.1, a: 1 };
 
       // Asegurar Auto Layout en frames contenedores de texto (badges, pills, botones, versión)
-      if (node.layout.mode === 'NONE' && (padding.top > 0 || padding.left > 0 || fills.length > 0 || strokes.length > 0 || isBadge || style.textAlign.includes('center'))) {
+      if (node.layout.mode === 'NONE' && (padding.top > 0 || padding.left > 0 || fills.length > 0 || strokes.length > 0 || isBadge)) {
         node.layout.mode = 'HORIZONTAL';
         node.layout.counterAxisAlignItems = 'CENTER';
         if (style.textAlign.includes('center') || isBadge) {
@@ -1027,6 +1270,20 @@ function extractNodeTree(element, counter = { id: 0 }, parentRect = null, parent
       let textAlignment = 'LEFT';
       if (style.textAlign.includes('center')) textAlignment = 'CENTER';
       else if (style.textAlign.includes('right')) textAlignment = 'RIGHT';
+
+      // Iconos en ::before / ::after de un elemento de solo texto (ej. <p class="ico">)
+      const leafBefore = pseudoHasImage(element, '::before') ? extractPseudoElement(element, '::before', rect, currentLayout, counter) : null;
+      const leafAfter = pseudoHasImage(element, '::after') ? extractPseudoElement(element, '::after', rect, currentLayout, counter) : null;
+      if (leafBefore || leafAfter) {
+        node.layout.mode = 'HORIZONTAL';
+        node.layout.counterAxisAlignItems = 'CENTER';
+        const ps = window.getComputedStyle(element, leafBefore ? '::before' : '::after');
+        node.layout.itemSpacing = Math.round(parseFloat(leafBefore ? ps.marginRight : ps.marginLeft) || 6);
+      }
+      if (leafBefore) node.children.push(leafBefore);
+
+      const labelRich = buildRichText(element, style);
+      if (labelRich.characters) txt = labelRich.characters;
 
       node.children.push({
         id: currentId+'_text',
@@ -1039,9 +1296,22 @@ function extractNodeTree(element, counter = { id: 0 }, parentRect = null, parent
           fontSize: Math.round(parseFloat(style.fontSize)||14),
           fontWeight: style.fontWeight || 500,
           fontFamily: style.fontFamily ? style.fontFamily.split(',')[0].replace(/['"]/g, '').trim() : 'Inter',
-          textAlign: textAlignment
+          textAlign: textAlignment,
+          lineHeight: (style.lineHeight && style.lineHeight.endsWith('px')) ? Math.round(parseFloat(style.lineHeight)) : undefined,
+          isMultiline: labelRich.lines > 1,
+          noWrap: labelRich.linesPreserved || undefined,
+          lineCount: labelRich.lines,
+          segments: labelRich.segments || undefined
         }
       });
+      if (leafAfter) node.children.push(leafAfter);
+    } else {
+      // Caja vacía con decoración en ::before/::after (brillos, formas de fondo, iconos):
+      // antes solo se extraían los pseudo-elementos de elementos con hijos y se perdían
+      const decoBefore = extractPseudoElement(element, '::before', rect, currentLayout, counter);
+      if (decoBefore) node.children.push(decoBefore);
+      const decoAfter = extractPseudoElement(element, '::after', rect, currentLayout, counter);
+      if (decoAfter) node.children.push(decoAfter);
     }
   } else {
     // ── 17.5 Pseudo-elemento ::before ──
@@ -1049,7 +1319,15 @@ function extractNodeTree(element, counter = { id: 0 }, parentRect = null, parent
     if (beforeNode) node.children.push(beforeNode);
 
     // ── 18. Hijos Recursivos ──
-    for (const child of element.childNodes) {
+    const __kids = (function(el) {
+      if (el.shadowRoot) return [...el.shadowRoot.childNodes];
+      if (el.localName === 'slot') {
+        const a = el.assignedNodes({ flatten: true });
+        return a.length ? a : [...el.childNodes];
+      }
+      return [...el.childNodes];
+    })(element);
+    for (const child of __kids) {
       if (child.nodeType === Node.ELEMENT_NODE) {
         const cn = extractNodeTree(child, counter, rect, currentLayout);
         if (cn) node.children.push(cn);
@@ -1087,7 +1365,7 @@ function extractNodeTree(element, counter = { id: 0 }, parentRect = null, parent
             if (!isNaN(lsV) && Math.abs(lsV) > 0.005) nodeLs = Math.round(lsV * 1000) / 1000;
           }
 
-          let childWidth = 'HUG';
+          let childWidth: any = 'HUG';
           if (currentLayout && currentLayout.mode === 'VERTICAL') {
             if (isNodeMulti || (rect.width > 0 && Math.abs(tw - rect.width) <= 24)) {
               childWidth = 'FILL';
@@ -1158,10 +1436,24 @@ function extractNodeTree(element, counter = { id: 0 }, parentRect = null, parent
   // Garantiza que en Auto Layout horizontal los elementos aparezcan estrictamente de izquierda a derecha,
   // y en Auto Layout vertical de arriba a abajo, evitando inversiones por orden del DOM o CSS order/reverse.
   if (node.children.length > 1) {
-    if (mode === 'HORIZONTAL') {
+    if (mode === 'NONE') {
+      node.children.sort((a, b) => {
+        const pW = (typeof node.layout?.width === 'number' ? node.layout.width : node.layout?.measuredWidth) || 200;
+        const pH = (typeof node.layout?.height === 'number' ? node.layout.height : node.layout?.measuredHeight) || 200;
+        const aW = (typeof a.layout?.width === 'number' ? a.layout.width : a.layout?.measuredWidth) || 0;
+        const aH = (typeof a.layout?.height === 'number' ? a.layout.height : a.layout?.measuredHeight) || 0;
+        const bW = (typeof b.layout?.width === 'number' ? b.layout.width : b.layout?.measuredWidth) || 0;
+        const bH = (typeof b.layout?.height === 'number' ? b.layout.height : b.layout?.measuredHeight) || 0;
+        const aIsBg = aW >= pW * 0.85 && aH >= pH * 0.85;
+        const bIsBg = bW >= pW * 0.85 && bH >= pH * 0.85;
+        if (aIsBg && !bIsBg) return -1;
+        if (!aIsBg && bIsBg) return 1;
+        return 0;
+      });
+    } else if (mode === 'HORIZONTAL') {
       node.children.sort((a, b) => (a.layout?.x || 0) - (b.layout?.x || 0));
       // Si el último hijo está empujado hacia la derecha (ej. chevron o botón de acción o shortcut CTRL K), el elemento central debe ser FILL
-      if (node.children.length === 3) {
+      if (node.children.length === 3 && cName.includes('search')) {
         const c1 = node.children[1];
         const c2 = node.children[2];
         const pW = typeof node.layout.width === 'number' ? node.layout.width : (node.layout.measuredWidth || 200);
@@ -1176,6 +1468,11 @@ function extractNodeTree(element, counter = { id: 0 }, parentRect = null, parent
     }
   }
 
+  // ── 20.5 Ajustar el Auto Layout a la GEOMETRÍA real (principio de swarm-rebuild) ──
+  // Padding, gap y alineación se deducían de palabras clave CSS; márgenes, place-items,
+  // centrados por grid, etc. se perdían. Se recalculan con las posiciones medidas.
+  fitAutoLayoutToGeometry(node);
+
   // ── 21. Flattening de Wrappers Transparentes de Frameworks (Angular/React) ──
   const isFrameworkWrapper = (!isSearchContainer) && (
     ['app-root', 'router-outlet', 'app-login', 'ng-component', 'ng-container'].includes(tagName) ||
@@ -1183,7 +1480,10 @@ function extractNodeTree(element, counter = { id: 0 }, parentRect = null, parent
     (tagName === 'div' && fills.length === 0 && strokes.length === 0 && padding.top === 0 && padding.left === 0 && boxShadow.length === 0 && node.children.length === 1 && node.children[0].type !== 'TEXT')
   );
 
-  if (!isRoot && isFrameworkWrapper && node.children.length === 1) {
+  // No aplanar contenedores con significado visual propio: los que recortan (viewport de
+  // carrusel) o los que llevan background-image (se perdería la imagen).
+  const hasOwnVisual = !!node.clipsContent || !!node._pendingBgImageSrc;
+  if (!isRoot && isFrameworkWrapper && !hasOwnVisual && node.children.length === 1) {
     const singleChild = node.children[0];
     if (singleChild.layout) {
       singleChild.layout.x = (singleChild.layout.x || 0) + (node.layout?.x || 0);
@@ -1300,66 +1600,3 @@ function extractNodeTree(element, counter = { id: 0 }, parentRect = null, parent
 
   return node;
 }
-
-// ── 21. Extractor Automático de Design Tokens (CSS Variables) ──
-function extractDesignTokens() {
-  const colors = {};
-  const radii = {};
-
-  function parseTokenColor(str) {
-    if (!str || str === 'transparent' || str === 'inherit' || str === 'initial') return null;
-    str = str.trim();
-    if (str.startsWith('#')) {
-      let hex = str.slice(1);
-      if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
-      if (hex.length >= 6) {
-        return {
-          r: parseInt(hex.slice(0, 2), 16) / 255,
-          g: parseInt(hex.slice(2, 4), 16) / 255,
-          b: parseInt(hex.slice(4, 6), 16) / 255,
-          a: hex.length >= 8 ? parseInt(hex.slice(6, 8), 16) / 255 : 1
-        };
-      }
-    }
-    if (str.startsWith('rgb')) {
-      const nums = str.match(/[\d.]+/g);
-      if (nums && nums.length >= 3) {
-        return {
-          r: parseFloat(nums[0]) / 255,
-          g: parseFloat(nums[1]) / 255,
-          b: parseFloat(nums[2]) / 255,
-          a: nums[3] !== undefined ? parseFloat(nums[3]) : 1
-        };
-      }
-    }
-    return null;
-  }
-
-  try {
-    for (const sheet of Array.from(document.styleSheets)) {
-      try {
-        for (const rule of Array.from(sheet.cssRules || [])) {
-          if (rule.selectorText && (rule.selectorText === ':root' || rule.selectorText === 'html' || rule.selectorText === 'body' || rule.selectorText.includes(':root'))) {
-            const st = rule.style;
-            for (let i = 0; i < st.length; i++) {
-              const prop = st[i];
-              if (prop && prop.startsWith('--')) {
-                const val = st.getPropertyValue(prop).trim();
-                if (val.startsWith('#') || val.startsWith('rgb') || val.startsWith('hsl')) {
-                  const parsed = parseTokenColor(val);
-                  if (parsed) colors[prop] = parsed;
-                } else if (val.endsWith('px') && prop.toLowerCase().includes('radius')) {
-                  const r = parseFloat(val);
-                  if (!isNaN(r)) radii[prop] = r;
-                }
-              }
-            }
-          }
-        }
-      } catch (_sheetErr) {}
-    }
-  } catch (_e) {}
-
-  return { colors, radii };
-}
-`;

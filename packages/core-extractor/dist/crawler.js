@@ -1,5 +1,5 @@
 import { chromium } from 'playwright';
-import { browserDomExtractorScript } from './dom-to-node.js';
+import { getBrowserExtractorScript } from './browser-script.js';
 import { createDesignSystemFrame } from './design-system-extractor.js';
 export class SiteCrawler {
     browser = null;
@@ -332,19 +332,20 @@ export class SiteCrawler {
                     });
                     const screenTitle = `${target.group} / ${target.title}`;
                     // Extraer la vista base de la pantalla
-                    const uiNode = await page.evaluate(({ scriptCode, sel, screenName }) => {
-                        const evalFn = new Function(`${scriptCode}; return extractNodeTree;`)();
+                    const uiNode = await page.evaluate(async ({ scriptCode, sel, screenName }) => {
+                        if (!window.__codeToFigmaExtract)
+                            (0, eval)(scriptCode); // mismo extractor que la extensión
                         const targetEl = document.querySelector(sel);
                         if (!targetEl)
                             return null;
-                        const node = evalFn(targetEl);
+                        const node = (await window.__codeToFigmaExtract(targetEl))?.rootNode;
                         if (node) {
                             node.name = 'Screen / ' + screenName;
                             node.layout = node.layout || {};
                             node.layout.mode = 'NONE'; // Lienzo raíz fijo 1440x900 libre para capas superpuestas
                         }
                         return node;
-                    }, { scriptCode: browserDomExtractorScript, sel: contentSelector, screenName: screenTitle });
+                    }, { scriptCode: getBrowserExtractorScript(), sel: contentSelector, screenName: screenTitle });
                     function countTreeNodes(n) {
                         let c = 1;
                         if (n && n.children) {
@@ -381,19 +382,20 @@ export class SiteCrawler {
                                     await tabHandle.click();
                                     await this.waitForPageReady(page, 4500);
                                     const tabScreenTitle = `${target.group} / ${target.title} [Pestaña: ${tabText}]`;
-                                    const tabNode = await page.evaluate(({ scriptCode, sel, screenName }) => {
-                                        const evalFn = new Function(`${scriptCode}; return extractNodeTree;`)();
+                                    const tabNode = await page.evaluate(async ({ scriptCode, sel, screenName }) => {
+                                        if (!window.__codeToFigmaExtract)
+                                            (0, eval)(scriptCode); // mismo extractor que la extensión
                                         const targetEl = document.querySelector(sel);
                                         if (!targetEl)
                                             return null;
-                                        const node = evalFn(targetEl);
+                                        const node = (await window.__codeToFigmaExtract(targetEl))?.rootNode;
                                         if (node) {
                                             node.name = 'Screen / ' + screenName;
                                             node.layout = node.layout || {};
                                             node.layout.mode = 'NONE';
                                         }
                                         return node;
-                                    }, { scriptCode: browserDomExtractorScript, sel: contentSelector, screenName: tabScreenTitle });
+                                    }, { scriptCode: getBrowserExtractorScript(), sel: contentSelector, screenName: tabScreenTitle });
                                     if (tabNode) {
                                         const count = countTreeNodes(tabNode);
                                         console.log(`      📑 Pestaña extraída: "${tabScreenTitle}" (${count} elementos)`);
@@ -475,19 +477,20 @@ export class SiteCrawler {
                                         console.log(`      ✨ [Modal Capturado con Fondo] "${modalTitle}"`);
                                         const modalScreenTitle = `${target.group} / ${target.title} [Modal: ${modalTitle}]`;
                                         // Extrae el árbol completo con el fondo oscurecido y el diálogo encima
-                                        const modalNode = await page.evaluate(({ scriptCode, sel, screenName }) => {
-                                            const evalFn = new Function(`${scriptCode}; return extractNodeTree;`)();
+                                        const modalNode = await page.evaluate(async ({ scriptCode, sel, screenName }) => {
+                                            if (!window.__codeToFigmaExtract)
+                                                (0, eval)(scriptCode); // mismo extractor que la extensión
                                             const targetEl = document.querySelector(sel);
                                             if (!targetEl)
                                                 return null;
-                                            const node = evalFn(targetEl);
+                                            const node = (await window.__codeToFigmaExtract(targetEl))?.rootNode;
                                             if (node) {
                                                 node.name = 'Screen / ' + screenName;
                                                 node.layout = node.layout || {};
                                                 node.layout.mode = 'NONE';
                                             }
                                             return node;
-                                        }, { scriptCode: browserDomExtractorScript, sel: contentSelector, screenName: modalScreenTitle });
+                                        }, { scriptCode: getBrowserExtractorScript(), sel: contentSelector, screenName: modalScreenTitle });
                                         if (modalNode) {
                                             const count = countTreeNodes(modalNode);
                                             console.log(`      🗂️ Modal extraído: "${modalScreenTitle}" (${count} elementos)`);

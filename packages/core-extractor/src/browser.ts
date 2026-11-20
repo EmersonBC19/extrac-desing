@@ -1,6 +1,6 @@
 import { chromium, type Browser, type Page } from 'playwright';
 import type { UINode } from '@code-to-figma/contracts';
-import { browserDomExtractorScript } from './dom-to-node.js';
+import { getBrowserExtractorScript } from './browser-script.js';
 
 export interface ExtractOptions {
   url?: string;
@@ -86,14 +86,14 @@ export class BrowserExtractor {
       // Inyectar y ejecutar extractor
       const targetSelector = options.selector || 'body';
       const rootUINode = await page.evaluate(
-        ({ scriptCode, sel }) => {
-          // Evaluar la función extractNodeTree en el contexto de la página
-          const evalFn = new Function(`${scriptCode}; return extractNodeTree;`)();
+        async ({ scriptCode, sel }) => {
+          // Inyectar el extractor (el mismo de la extensión) y extraer el elemento
+          if (!(window as any).__codeToFigmaExtract) (0, eval)(scriptCode); // mismo extractor que la extensión
           const targetEl = document.querySelector(sel);
           if (!targetEl) throw new Error(`No se encontró el elemento con el selector: "${sel}"`);
-          return evalFn(targetEl);
+          return (await (window as any).__codeToFigmaExtract(targetEl))?.rootNode;
         },
-        { scriptCode: browserDomExtractorScript, sel: targetSelector }
+        { scriptCode: getBrowserExtractorScript(), sel: targetSelector }
       );
 
       if (!rootUINode) {

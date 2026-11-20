@@ -2891,5 +2891,8 @@
     }
   };
   window.__codeToFigmaPayload = { measurePayload, heavyPayloadReasons, withoutImages, formatBytes };
-  console.log("[CodeToFigma] Extractor Engine v2.1 (Geometric Direction & Centered Stacking) ready.");
+  if (!window.__codeToFigmaReadyLogged) {
+    window.__codeToFigmaReadyLogged = true;
+    console.log("[CodeToFigma] Extractor Engine v2.1 (Geometric Direction & Centered Stacking) ready.");
+  }
 })();

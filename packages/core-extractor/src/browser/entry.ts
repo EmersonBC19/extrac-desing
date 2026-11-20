@@ -45,4 +45,8 @@ window.__codeToFigmaExtractState = async function (rootElement: Element, state: 
 
 window.__codeToFigmaPayload = { measurePayload, heavyPayloadReasons, withoutImages, formatBytes };
 
-console.log('[CodeToFigma] Extractor Engine v2.1 (Geometric Direction & Centered Stacking) ready.');
+// Cada clic en el ícono vuelve a cargar este archivo: el aviso solo la primera vez (QA-6)
+if (!(window as any).__codeToFigmaReadyLogged) {
+  (window as any).__codeToFigmaReadyLogged = true;
+  console.log('[CodeToFigma] Extractor Engine v2.1 (Geometric Direction & Centered Stacking) ready.');
+}

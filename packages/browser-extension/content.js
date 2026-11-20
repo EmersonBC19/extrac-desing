@@ -81,6 +81,19 @@
   /** Recorrido previo de páginas largas: pasos de ~0,8 pantallas, 220 ms cada uno (≈ 1 min como máximo) */
   const MAX_PRESCROLL_STEPS = 260;
 
+  /**
+   * ¿Sigue viva la extensión que inyectó este script? (QA-6) Al recargar o actualizar la extensión,
+   * la copia vieja de content.js queda en la pestaña sin contexto: chrome.runtime.id desaparece y
+   * cualquier llamada falla con "Extension context invalidated".
+   */
+  function extensionAlive() {
+    try {
+      return typeof chrome !== 'undefined' && !!chrome.runtime && !!chrome.runtime.id;
+    } catch (_e) {
+      return false;
+    }
+  }
+
   /** Texto de la página o de la extracción → HTML seguro dentro del overlay */
   function escapeHtml(str) {
     return String(str == null ? '' : str)
@@ -831,6 +844,7 @@
 
     // ── Live Figma Status Check ──
     async checkFigmaStatus() {
+      if (!extensionAlive()) return this.retire();
       try {
         if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
           chrome.runtime.sendMessage({ type: 'CHECK_FIGMA_STATUS' }, res => {
@@ -1441,6 +1455,7 @@
 
     async sendToFigma() {
       if (this.selectedElements.length === 0) return;
+      if (!extensionAlive()) return this.retire();
 
       const btn = this.hud.querySelector('#__btn_send_figma');
       if (btn) {
@@ -1823,6 +1838,18 @@
         toast.style.transition = 'all 0.3s ease';
         setTimeout(() => toast.remove(), 300);
       }, duration);
+    }
+
+    /** Copia vieja tras recargar la extensión: avisar una vez y apagarse (QA-6) */
+    retire() {
+      if (this._retired) return;
+      this._retired = true;
+      this.showToast(
+        `${ICONS.warning} La extensión se actualizó`,
+        'Recarga la página (F5) para usar la versión nueva del inspector.',
+        6000,
+      );
+      setTimeout(() => this.destroy(), 6200);
     }
 
     destroy() {

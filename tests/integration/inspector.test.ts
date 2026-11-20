@@ -26,6 +26,7 @@ async function openInspector(): Promise<Page> {
     (window as any).__sent = [];
     (window as any).chrome = {
       runtime: {
+        id: 'extension-de-prueba',
         lastError: null,
         sendMessage(m: any, cb: any) {
           if (m.type === 'TRANSMIT_TO_FIGMA') (window as any).__sent.push(m.payload);
@@ -230,5 +231,25 @@ describe('inspector de la extensión', () => {
     // Sin reglas hover propias → sin estados; y nunca en tableros (varios componentes)
     expect((await send(['c2'])).states).toBeUndefined();
     expect((await send(['c1', 'c2'])).states).toBeUndefined();
+  });
+
+  it('QA-6: si la extensión se recarga, el inspector viejo avisa una vez y se retira (sin enviar nada)', async () => {
+    const page = await openInspector();
+    const logs: string[] = [];
+    page.on('console', m => logs.push(m.text()));
+    // otra inyección del extractor (nuevo clic en el ícono): el aviso de "ready" no se repite
+    await page.evaluate(c => (0, eval)(c), read('packages/browser-extension/extractor.js'));
+    expect(logs.filter(l => /Extractor Engine/.test(l))).toHaveLength(0);
+    // la extensión se recarga: chrome.runtime.id desaparece en la copia vieja
+    await page.evaluate(() => delete (window as any).chrome.runtime.id);
+    await page.evaluate(async () => {
+      const i = (window as any).__codeToFigmaInstance;
+      i.selectedElements = [document.getElementById('c1')];
+      i.isElevated = true;
+      await i.sendToFigma();
+    });
+    expect(await page.evaluate(() => (window as any).__sent.length)).toBe(0);
+    const toast = await page.evaluate(() => (window as any).__codeToFigmaInstance.shadow.textContent);
+    expect(toast).toMatch(/La extensión se actualizó/);
   });
 });

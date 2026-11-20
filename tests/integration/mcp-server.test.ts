@@ -17,11 +17,38 @@ let port: number;
 let client: Client;
 let stderr = '';
 
+/**
+ * El HOME temporal aísla el código de vinculación, pero en Linux/macOS Playwright busca Chromium
+ * bajo HOME (~/.cache/ms-playwright): se fija la ruta real para que el extractor siga encontrándolo.
+ * (En Windows usa LOCALAPPDATA, que no se cambia.)
+ */
+function playwrightBrowsersPath(): Record<string, string> {
+  if (process.env.PLAYWRIGHT_BROWSERS_PATH) return {};
+  if (process.platform === 'linux') {
+    return {
+      PLAYWRIGHT_BROWSERS_PATH: path.join(
+        process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache'),
+        'ms-playwright',
+      ),
+    };
+  }
+  if (process.platform === 'darwin') {
+    return { PLAYWRIGHT_BROWSERS_PATH: path.join(os.homedir(), 'Library', 'Caches', 'ms-playwright') };
+  }
+  return {};
+}
+
 async function startMcp(env: Record<string, string>) {
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [require.resolve('tsx/cli'), path.join(ROOT, 'packages/mcp-server/src/index.ts')],
-    env: { ...(process.env as Record<string, string>), USERPROFILE: home, HOME: home, ...env },
+    env: {
+      ...(process.env as Record<string, string>),
+      ...playwrightBrowsersPath(),
+      USERPROFILE: home,
+      HOME: home,
+      ...env,
+    },
     cwd: ROOT,
     stderr: 'pipe',
   });
@@ -42,7 +69,12 @@ async function fakePlugin(url: string) {
   return plugin;
 }
 
-const textOf = (res: any) => JSON.parse(res.content[0].text);
+/** Resultado JSON de una herramienta; si respondió con error, la prueba muestra el texto del error */
+const textOf = (res: any) => {
+  const text = res.content[0].text;
+  if (res.isError) throw new Error(`La herramienta respondió con error: ${text}`);
+  return JSON.parse(text);
+};
 
 describe('servidor MCP (stdio)', () => {
   beforeAll(async () => {

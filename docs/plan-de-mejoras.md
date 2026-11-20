@@ -183,7 +183,21 @@ Ya existen y funcionan; hay que formalizarlas en `tests/` con un runner (**Vites
 
 ---
 
-## Fase 4 — Calidad de código y mensajería
+## Fase 4 — Calidad de código y mensajería — ✅ hecha (2026-11-20)
+
+> **Resultado:**
+> - **Catálogo de mensajes** (`packages/contracts/src/messages.ts`): cada mensaje de los 3 canales (hub WebSocket, UI↔sandbox del plugin, content script↔service worker) con su tipo CQRS (command/query/event), ruta y descripción. Los nombres de red no cambian. `HubInboundSchema` (Zod) valida todo lo que entra al hub.
+> - **Tablas de manejadores** en lugar de cadenas `if`: hub (`ws-hub.ts`, tipada: el compilador exige un manejador por mensaje), sandbox del plugin (`code.ts`; el render pasó a `render-command.ts`), UI del plugin (`HUB_HANDLERS`, `SANDBOX_HANDLERS`) y service worker (`MESSAGE_HANDLERS`). Mensajes desconocidos → aviso en el log. Prueba `tests/integration/messages.test.ts` compara catálogo ↔ manejadores.
+> - **Bug corregido:** la UI del plugin avisaba al hub con `RENDER_COMPLETED` (el hub espera `RENDER_SUCCESS`) y no reenviaba `RENDER_ERROR`: el CLI y el MCP nunca se enteraban de que Figma terminó o falló.
+> - **Logger** (`packages/contracts/src/logger.ts`): niveles, ámbitos anidados (`hub:auth`), metadatos y sinks. Hub: consola + archivo rotativo opcional (`CTF_LOG_FILE`, 5 MB + 1 respaldo; `CTF_LOG_LEVEL`). Plugin: consola de Figma (`src/log.ts`). CLI y crawler: logger inyectable.
+> - **Servidor MCP:** todo su log va a stderr. Antes `crawl_site_to_figma` escribía el progreso del crawler en stdout y corrompía el canal JSON-RPC. Si el puerto 8080 ya está ocupado (hub corriendo) ya no se cae: reenvía los renders a ese hub (`figma-relay.ts`). `@modelcontextprotocol/sdk` 1.31 → 1.32.2 (0 vulnerabilidades); `tests/integration/mcp-server.test.ts` lo cubre por stdio.
+> - **CLI de crawling:** conecta a `127.0.0.1` (antes `localhost`, que en Windows puede resolver a `::1` y no llegar al hub), respeta `WS_PORT` y sale con código 1 si falla.
+> - **ESLint 9 + typescript-eslint** (`eslint.config.mjs`, `npm run lint`, en CI) y **Prettier** (`.prettierrc.json`, `npm run format`). El formato del repo completo se aplica en un commit aparte, solo de formato.
+> - **Extractor de navegador en `strict`** (antes `strict: false`): solo anotaciones de tipo; `extractor.js` generado idéntico byte a byte.
+> - Código muerto eliminado: `if (false && payload.clearPage)` (plugin), parámetro `clearPage` sin uso (service worker). `directWebSocketFallback` ya no existía en `content.js`.
+> - Pruebas: 181 (unit + integración; +4 MCP, +7 mensajes, +4 logger) y 9/9 live.
+>
+> **Nota:** el extractor usa `strict` con `alwaysStrict: false` a propósito: esbuild lee ese tsconfig y con `alwaysStrict` cambiaría la semántica de funciones declaradas dentro de bloques.
 
 ### 4.1 Mensajes tipados (CQRS "ligero")  `[A2]`
 Recomendación: **adoptar los nombres y la separación de A2, sin montar un CQRS completo** (sería sobre-ingeniería para el tamaño actual).

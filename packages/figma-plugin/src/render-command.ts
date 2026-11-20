@@ -11,6 +11,7 @@ import { countNodes, buildFigmaNode } from './render';
 import { buildDesignBoard } from './board/board';
 import { setBoardCtx } from './board/context';
 import { guardRenderPayload } from './validation';
+import { cssTokensToVariables, variablesAvailable } from './board/variables';
 
 /**
  * Comando RENDER_NODES: valida el payload, crea tokens, dibuja (o arma el tablero) y coloca el
@@ -75,7 +76,13 @@ export async function renderNodesCommand(
 
   // 🎨 Extracción y Creación Automática de Design Tokens en Figma
   let createdTokensCount = 0;
-  if (payload.tokens?.colors && typeof figma.createPaintStyle === 'function') {
+  if (payload.tokens?.colors && variablesAvailable()) {
+    // Variables nativas (fase 6.2); sin API de Variables, estilos de color como antes
+    try {
+      createdTokensCount = cssTokensToVariables(payload.tokens.colors);
+    } catch (_varErr) {}
+  }
+  if (payload.tokens?.colors && !createdTokensCount && typeof figma.createPaintStyle === 'function') {
     for (const [tokenName, rgba] of Object.entries(payload.tokens.colors as Record<string, any>)) {
       try {
         const cleanName = 'Token / ' + tokenName.replace(/^--/, '');
@@ -170,7 +177,8 @@ export async function renderNodesCommand(
   const totalNodeCount = countNodes(payload.rootNode);
 
   const renderStartTime = Date.now();
-  const rootFigmaNode = await buildFigmaNode(payload.rootNode);
+  // Estados (fase 6.1): Default + Hover… → set de variantes State=…; si falla, solo el normal
+  const rootFigmaNode = (await buildStateVariants(payload, log)) || (await buildFigmaNode(payload.rootNode));
   const buildMs = Date.now() - renderStartTime;
 
   if (rootFigmaNode) {
@@ -272,5 +280,46 @@ export async function renderNodesCommand(
     });
   } else {
     throw new Error('No se pudo generar el nodo raíz');
+  }
+}
+
+/**
+ * Un componente por estado (State=Default, State=Hover…) unidos con combineAsVariants.
+ * Devuelve el set, o null si no hay estados o no se pudo (quien llama dibuja el normal).
+ */
+async function buildStateVariants(payload: any, log: Logger): Promise<SceneNode | null> {
+  const states: any[] = Array.isArray(payload.states) ? payload.states : [];
+  if (!states.length || typeof (figma as any).combineAsVariants !== 'function') return null;
+  const asComponent = (root: any, state: string) => {
+    const data = JSON.parse(JSON.stringify(root));
+    data.type = 'COMPONENT';
+    data.name = `State=${String(state).replace(/[=,]/g, ' ').trim() || 'Estado'}`;
+    data.layout = { ...data.layout, positioning: 'AUTO', x: 0, y: 0 };
+    return data;
+  };
+  const built: ComponentNode[] = [];
+  try {
+    for (const [root, state] of [[payload.rootNode, 'Default'], ...states.map(s => [s.rootNode, s.name])]) {
+      const node = await buildFigmaNode(asComponent(root, state));
+      if (!node || node.type !== 'COMPONENT') throw new Error('estado sin componente');
+      built.push(node as ComponentNode);
+    }
+    const set = figma.combineAsVariants(built, figma.currentPage);
+    set.name = payload.rootNode?.name || 'Componente';
+    set.layoutMode = 'HORIZONTAL';
+    set.primaryAxisSizingMode = 'AUTO';
+    set.counterAxisSizingMode = 'AUTO';
+    set.counterAxisAlignItems = 'CENTER';
+    set.itemSpacing = 40;
+    set.paddingTop = set.paddingBottom = set.paddingLeft = set.paddingRight = 32;
+    return set;
+  } catch (err: any) {
+    log.warn('No se pudieron unir los estados como variantes', { error: String(err?.message || err) });
+    for (const n of built) {
+      try {
+        n.remove();
+      } catch (_e) {}
+    }
+    return null;
   }
 }

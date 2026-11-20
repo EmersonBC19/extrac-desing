@@ -4,7 +4,23 @@
 import { setBoardCtx, type BoardContext } from './context';
 import { loadFontSafely } from '../fonts';
 import { countNodes, buildFigmaNode } from '../render';
-import { boardColorKey, boardDetectComponents, boardCollect } from './pure';
+import {
+  boardColorKey,
+  boardDetectComponents,
+  boardCollect,
+  boardMergeSimilarColors,
+  boardVariantFamilies,
+  type PaletteEntry,
+} from './pure';
+import {
+  boundSolidPaint,
+  collectNumericTokens,
+  colorVariable,
+  newCollection,
+  numberVariable,
+  variablesAvailable,
+  type NumericUse,
+} from './variables';
 import { base64ToBytes } from '../paint';
 
 /** Crea una instancia del maestro y le aplica el contenido propio (textos, imágenes, tamaño) */
@@ -165,12 +181,13 @@ export async function boardBuildStyles(scope: SceneNode[], stylesSec: SectionNod
   const textNodes: TextNode[] = [];
   const fillNodes: (SceneNode & MinimalFillsMixin)[] = [];
   for (const s of scope) {
-    if ('findAll' in s) {
-      for (const n of (s as ChildrenMixin).findAll(() => true)) {
-        if (insideInstance(n)) continue; // las instancias heredan del maestro
-        if (n.type === 'TEXT') textNodes.push(n as TextNode);
-        else if ('fills' in n && (n as any).fills !== figma.mixed) fillNodes.push(n as any);
-      }
+    // La raíz también cuenta (fondo de la página, de cada sección y de cada componente)
+    const nodes = [s, ...('findAll' in s ? (s as ChildrenMixin).findAll(() => true) : [])];
+    for (const n of nodes) {
+      if (n.type === 'INSTANCE' || insideInstance(n)) continue; // las instancias heredan del maestro
+      if (n.type === 'COMPONENT_SET') continue; // el marco del set no es parte del diseño
+      if (n.type === 'TEXT') textNodes.push(n as TextNode);
+      else if ('fills' in n && (n as any).fills !== figma.mixed) fillNodes.push(n as any);
     }
   }
 
@@ -230,51 +247,79 @@ export async function boardBuildStyles(scope: SceneNode[], stylesSec: SectionNod
     } catch (_e) {}
   }
 
-  // ── Colores sólidos: frecuencia de uso ──
-  const cGroups = new Map<string, { paint: SolidPaint; nodes: (SceneNode & MinimalFillsMixin)[] }>();
+  // ── Colores sólidos (fases 6.2 y 6.3) ──
+  // Agrupados por diferencia perceptual (colores que el ojo no distingue → uno) y convertidos en
+  // Variables de Figma vinculadas a las capas. Sin API de Variables: Paint Styles, como antes.
+  const exact = new Map<string, PaletteEntry<SceneNode & MinimalFillsMixin>>();
   for (const n of [...fillNodes, ...textNodes]) {
     const fills = (n as any).fills;
     if (!Array.isArray(fills) || fills.length !== 1 || fills[0].type !== 'SOLID' || fills[0].visible === false)
       continue;
     const p = fills[0] as SolidPaint;
-    const key = boardColorKey({ ...p.color, a: p.opacity ?? 1 });
-    if (!cGroups.has(key)) cGroups.set(key, { paint: p, nodes: [] });
-    cGroups.get(key)!.nodes.push(n as any);
+    const alpha = p.opacity ?? 1;
+    const key = boardColorKey({ ...p.color, a: alpha });
+    if (!exact.has(key)) exact.set(key, { color: p.color, alpha, items: [] });
+    exact.get(key)!.items.push(n as any);
   }
-  const palette = [...cGroups.entries()].sort((a, b) => b[1].nodes.length - a[1].nodes.length).slice(0, 32);
+  const palette = boardMergeSimilarColors([...exact.values()]).slice(0, 48);
+  const useVariables = variablesAvailable();
+  let vars: { collection: VariableCollection; modeId: string } | null = null;
+  if (useVariables) {
+    try {
+      vars = newCollection(prefix);
+    } catch (varErr: any) {
+      figma.ui.postMessage({
+        type: 'LOG',
+        level: 'warn',
+        message: `Variables no disponibles en este archivo (${varErr?.message || varErr}): se usan estilos de color.`,
+      });
+    }
+  }
 
   const cx = 1100;
   let cy = PAD;
-  const ctitle = await boardLabel('Colores', 32, 700, { r: 0.1, g: 0.1, b: 0.12 });
+  const ctitle = await boardLabel(vars ? 'Colores · Variables' : 'Colores', 32, 700, { r: 0.1, g: 0.1, b: 0.12 });
   stylesSec.appendChild(ctitle);
   ctitle.x = cx;
   ctitle.y = cy;
   cy += 70;
   let col = 0;
-  for (const [hex, g] of palette) {
+  for (const g of palette) {
     try {
-      const st = figma.createPaintStyle();
-      st.name = `${prefix}/Color/${hex}`;
-      st.paints = [g.paint];
-      for (const n of g.nodes) {
-        try {
+      const hex = boardColorKey({ ...g.color, a: g.alpha });
+      const base: SolidPaint = { type: 'SOLID', color: g.color, opacity: g.alpha };
+      let paint: SolidPaint = base;
+      let bindNode: (n: SceneNode & MinimalFillsMixin) => void;
+      if (vars) {
+        const variable = colorVariable(vars.collection, vars.modeId, `Color/${hex.replace('#', '')}`, g.color);
+        paint = boundSolidPaint(base, variable);
+        bindNode = n => {
+          (n as any).fills = [paint];
+        };
+      } else {
+        const st = figma.createPaintStyle();
+        st.name = `${prefix}/Color/${hex}`;
+        st.paints = [base];
+        bindNode = n => {
           (n as any).fillStyleId = st.id;
+        };
+      }
+      for (const n of g.items) {
+        try {
+          bindNode(n);
         } catch (_e) {}
       }
       const sw = figma.createRectangle();
       sw.resize(120, 120);
       sw.cornerRadius = 12;
-      sw.fills = [g.paint];
+      sw.fills = [paint];
       sw.strokes = [{ type: 'SOLID', color: { r: 0, g: 0, b: 0 }, opacity: 0.08 }];
-      try {
-        sw.fillStyleId = st.id;
-      } catch (_e) {}
       const x = cx + col * 150,
         yy = cy;
       stylesSec.appendChild(sw);
       sw.x = x;
       sw.y = yy;
-      const lbl = await boardLabel(`${hex}\n${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
+      const lbl = await boardLabel(`${hex}\n${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
       stylesSec.appendChild(lbl);
       lbl.x = x;
       lbl.y = yy + 128;
@@ -284,6 +329,106 @@ export async function boardBuildStyles(scope: SceneNode[], stylesSec: SectionNod
         cy += 190;
       }
     } catch (_e) {}
+  }
+  if (col > 0) cy += 190;
+
+  // ── Espaciados y radios repetidos → Variables numéricas vinculadas (fase 6.2) ──
+  if (vars) {
+    const frames: SceneNode[] = [];
+    for (const s of scope) {
+      if ((s as any).layoutMode !== undefined && !insideInstance(s)) frames.push(s);
+      if ('findAll' in s)
+        for (const n of (s as ChildrenMixin).findAll(x => x.type === 'FRAME' || x.type === 'COMPONENT'))
+          if (!insideInstance(n)) frames.push(n);
+    }
+    const { spacing, radius } = collectNumericTokens(frames);
+    const groups: [string, [number, NumericUse[]][], VariableScope[]][] = [
+      ['Espaciado', spacing.slice(0, 16), ['GAP']],
+      ['Radio', radius.slice(0, 12), ['CORNER_RADIUS']],
+    ];
+    for (const [label, entries, scopes] of groups) {
+      if (!entries.length) continue;
+      cy += 40;
+      const t = await boardLabel(`${label} · Variables`, 24, 700, { r: 0.1, g: 0.1, b: 0.12 });
+      stylesSec.appendChild(t);
+      t.x = cx;
+      t.y = cy;
+      cy += 50;
+      for (const [value, uses] of entries) {
+        try {
+          const v = numberVariable(vars.collection, vars.modeId, `${label}/${value}`, value, scopes);
+          for (const u of uses) {
+            try {
+              (u.node as any).setBoundVariable(u.field, v);
+            } catch (_e) {}
+          }
+          const row = await boardLabel(`${label}/${value}  ·  ${value} px  ·  ${uses.length} usos`, 13, 500, {
+            r: 0.3,
+            g: 0.3,
+            b: 0.35,
+          });
+          stylesSec.appendChild(row);
+          row.x = cx;
+          row.y = cy;
+          cy += 26;
+        } catch (_e) {}
+      }
+    }
+  }
+}
+
+/** Primer relleno sólido visible de un ancestro: el fondo que la sección hereda en la página */
+function inheritedBackground(n: SceneNode): Paint[] | null {
+  for (let p = n.parent; p && p.type !== 'PAGE' && p.type !== 'SECTION'; p = p.parent) {
+    const fills = (p as any).fills;
+    if (
+      Array.isArray(fills) &&
+      fills.some((f: Paint) => f.visible !== false && (f.type !== 'SOLID' || (f.opacity ?? 1) > 0.05))
+    )
+      return fills.filter((f: Paint) => f.visible !== false);
+  }
+  return null;
+}
+
+/**
+ * Convierte la copia de una sección en componente y pone una instancia en el lugar del bloque
+ * original de la vista completa (misma posición, tamaño y comportamiento en el Auto Layout).
+ * Devuelve el componente, o null si no se pudo (la copia queda tal cual).
+ */
+function sectionToComponent(original: SceneNode, copy: SceneNode, title: string): ComponentNode | null {
+  if (typeof (figma as any).createComponentFromNode !== 'function') return null;
+  if (original.type !== 'FRAME' || copy.type !== 'FRAME' || insideInstance(original)) return null;
+  const parent = original.parent as (BaseNode & ChildrenMixin) | null;
+  if (!parent || !('children' in parent)) return null;
+  try {
+    // QA-2: sin fondo propio, la sección se veía transparente fuera de la página → fondo heredado
+    const own = (copy as FrameNode).fills;
+    if (Array.isArray(own) && !own.some(f => f.visible !== false)) {
+      const bg = inheritedBackground(original);
+      if (bg) (copy as FrameNode).fills = bg;
+    }
+    const comp = figma.createComponentFromNode(copy);
+    comp.name = `Sección / ${title}`.slice(0, 120);
+    const inst = comp.createInstance();
+    parent.insertChild(parent.children.indexOf(original), inst);
+    const o = original as FrameNode;
+    inst.x = o.x;
+    inst.y = o.y;
+    try {
+      inst.resize(o.width, o.height); // primero el tamaño: resize deja el sizing en FIXED
+    } catch (_e) {}
+    try {
+      if ('layoutPositioning' in o) inst.layoutPositioning = o.layoutPositioning;
+      const auto = (parent as any).layoutMode && (parent as any).layoutMode !== 'NONE';
+      if (auto && o.layoutPositioning !== 'ABSOLUTE') {
+        inst.layoutSizingHorizontal = o.layoutSizingHorizontal === 'HUG' ? 'FIXED' : o.layoutSizingHorizontal;
+        inst.layoutSizingVertical = o.layoutSizingVertical === 'HUG' ? 'FIXED' : o.layoutSizingVertical;
+      }
+    } catch (_e) {}
+    original.remove();
+    return comp;
+  } catch (_e) {
+    return null;
   }
 }
 
@@ -317,10 +462,7 @@ export async function buildDesignBoard(
   page.appendChild(compSec);
   const ctx: BoardContext = { masters: new Map() };
   setBoardCtx(ctx);
-  let gx = 100,
-    gy = 100,
-    rowH = 0;
-  const MAX_ROW = 2600;
+  const usesOf = new Map<string, number>();
   for (const g of groups) {
     let built: SceneNode | null = null;
     try {
@@ -337,19 +479,7 @@ export async function buildDesignBoard(
       const master = built as ComponentNode;
       compSec.appendChild(master);
       master.description = `${g.occurrences.length} usos en ${host}`;
-      if (gx > 100 && gx + master.width > MAX_ROW) {
-        gx = 100;
-        gy += rowH + 140;
-        rowH = 0;
-      }
-      master.x = gx;
-      master.y = gy + 40;
-      const lbl = await boardLabel(`${g.name} · ${g.occurrences.length} usos`, 16, 600, { r: 0.33, g: 0.2, b: 0.8 });
-      compSec.appendChild(lbl);
-      lbl.x = gx;
-      lbl.y = gy;
-      gx += master.width + 120;
-      rowH = Math.max(rowH, master.height + 40);
+      usesOf.set(g.id, g.occurrences.length);
       ctx.masters.set(g.id, master);
     } catch (compErr: any) {
       // Sin maestro, sus usos se dibujan como copias normales
@@ -366,7 +496,70 @@ export async function buildDesignBoard(
     }
   }
 
-  progress(`${ctx.masters.size} componentes creados`);
+  // 1b. Variantes (fase 6.1): "Tile", "Tile 2", "Tile 3" con la misma forma → un Component Set
+  const items: { node: SceneNode; label: string }[] = [];
+  const inSet = new Set<string>();
+  let variantSets = 0;
+  for (const fam of boardVariantFamilies(groups)) {
+    const members = fam.members.filter(m => ctx.masters.has(m.groupId));
+    if (members.length < 2 || typeof (figma as any).combineAsVariants !== 'function') continue;
+    try {
+      const masters = members.map(m => {
+        const master = ctx.masters.get(m.groupId)!;
+        master.name = `${fam.property}=${m.value}`;
+        return master;
+      });
+      const set = figma.combineAsVariants(masters, compSec);
+      set.name = fam.name;
+      // Variantes en fila, con aire, como las presenta un design system
+      set.layoutMode = 'HORIZONTAL';
+      set.primaryAxisSizingMode = 'AUTO';
+      set.counterAxisSizingMode = 'AUTO';
+      set.counterAxisAlignItems = 'CENTER';
+      set.itemSpacing = 40;
+      set.paddingTop = set.paddingBottom = set.paddingLeft = set.paddingRight = 32;
+      const uses = members.reduce((a, m) => a + (usesOf.get(m.groupId) || 0), 0);
+      items.push({ node: set, label: `${fam.name} · ${members.length} variantes (${fam.property}) · ${uses} usos` });
+      members.forEach(m => inSet.add(m.groupId));
+      variantSets++;
+    } catch (setErr: any) {
+      figma.ui.postMessage({
+        type: 'LOG',
+        level: 'warn',
+        message: `Variantes de "${fam.name}" no agrupadas: ${setErr?.message || setErr}`,
+      });
+    }
+  }
+  for (const g of groups) {
+    const master = ctx.masters.get(g.id);
+    if (master && !inSet.has(g.id)) items.push({ node: master, label: `${g.name} · ${usesOf.get(g.id) || 0} usos` });
+  }
+
+  // 1c. Grilla de 03 · Componentes: cada componente (o set de variantes) con su etiqueta
+  let gx = 100,
+    gy = 100,
+    rowH = 0;
+  const MAX_ROW = 2600;
+  for (const item of items) {
+    const n = item.node;
+    if (gx > 100 && gx + n.width > MAX_ROW) {
+      gx = 100;
+      gy += rowH + 140;
+      rowH = 0;
+    }
+    n.x = gx;
+    n.y = gy + 40;
+    const lbl = await boardLabel(item.label, 16, 600, { r: 0.33, g: 0.2, b: 0.8 });
+    compSec.appendChild(lbl);
+    lbl.x = gx;
+    lbl.y = gy;
+    gx += n.width + 120;
+    rowH = Math.max(rowH, n.height + 40);
+  }
+
+  progress(
+    `${ctx.masters.size} componentes creados` + (variantSets ? `, ${variantSets} agrupados como variantes` : ''),
+  );
 
   // 2. Vista completa (usa instancias de los maestros)
   const fullSec = boardNewSection('01 · Página completa');
@@ -388,6 +581,7 @@ export async function buildDesignBoard(
   const isMulti = String(root.id || '').startsWith('multi_selection_bundle') && 'children' in full;
   const picked = isMulti ? [...(full as FrameNode).children] : boardPickSections(full);
   let subOk = 0;
+  const sectionComponents: ComponentNode[] = [];
   for (let i = 0; i < picked.length; i++) {
     let clone: SceneNode | null = null;
     try {
@@ -402,6 +596,13 @@ export async function buildDesignBoard(
       subSec.appendChild(clone);
       clone.x = 100;
       clone.y = sy + 44;
+      // Sección como componente + instancia en la vista completa: editar la sección en 02 actualiza
+      // la página completa (fase 6.3). Si no se puede (API antigua, ya es instancia…), queda la copia.
+      const asComponent = sectionToComponent(picked[i], clone, heading || picked[i].name);
+      if (asComponent) {
+        clone = asComponent;
+        sectionComponents.push(asComponent);
+      }
       sy += 44 + clone.height + 140;
       subOk++;
     } catch (subErr: any) {
@@ -423,7 +624,12 @@ export async function buildDesignBoard(
   const stylesSec = boardNewSection('04 · Estilos');
   page.appendChild(stylesSec);
   await boardBuildStyles(
-    [full, ...(compSec.children.filter(c => c.type === 'COMPONENT') as SceneNode[])],
+    [
+      full,
+      // Las secciones convertidas en componente: su contenido vive en el maestro, no en la instancia
+      ...sectionComponents,
+      ...(compSec.children.filter(c => c.type === 'COMPONENT' || c.type === 'COMPONENT_SET') as SceneNode[]),
+    ],
     stylesSec,
     prefix,
   );

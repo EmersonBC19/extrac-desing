@@ -231,6 +231,7 @@ function buildRenderMessage(data) {
           createAsComponent: data.createAsComponent,
           board: data.board === true, // landing completa / multi-selección → tablero design system
           source: data.source, // { url, title } para nombrar la página del tablero
+          states: Array.isArray(data.states) ? data.states : undefined, // variantes de estado (fase 6.1)
           clearPage: false,
         }
       : { rootNode: data, clearPage: false };

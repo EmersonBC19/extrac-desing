@@ -122,6 +122,11 @@ export declare const WSRenderPayloadSchema: z.ZodObject<{
     tokens: z.ZodOptional<z.ZodObject<{}, z.core.$loose>>;
     createAsComponent: z.ZodOptional<z.ZodBoolean>;
     board: z.ZodOptional<z.ZodBoolean>;
+    states: z.ZodOptional<z.ZodArray<z.ZodObject<{
+        name: z.ZodString;
+        rootNode: z.ZodUnknown;
+    }, z.core.$loose>>>;
+    fontMap: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
     clearPage: z.ZodOptional<z.ZodBoolean>;
     pageName: z.ZodOptional<z.ZodString>;
     sectionTitle: z.ZodOptional<z.ZodString>;

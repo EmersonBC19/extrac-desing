@@ -838,6 +838,34 @@
 
       <div class="settings-group">
         <div class="settings-group-title">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+          Tablero Design System
+        </div>
+        <label class="setting-item">
+          <input type="radio" name="optBoard" value="AUTO" checked onchange="savePluginSettings()" />
+          <div>
+            <strong>Automático [Recomendado]</strong>
+            <div class="setting-desc">Página completa o varios componentes → tablero (Página · Secciones · Componentes · Estilos). Un componente suelto → se dibuja tal cual.</div>
+          </div>
+        </label>
+        <label class="setting-item">
+          <input type="radio" name="optBoard" value="ALWAYS" onchange="savePluginSettings()" />
+          <div>
+            <strong>Siempre</strong>
+            <div class="setting-desc">Arma el tablero con cualquier envío, aunque sea un solo componente.</div>
+          </div>
+        </label>
+        <label class="setting-item">
+          <input type="radio" name="optBoard" value="NEVER" onchange="savePluginSettings()" />
+          <div>
+            <strong>Nunca</strong>
+            <div class="setting-desc">Dibuja siempre la extracción tal cual, sin tablero.</div>
+          </div>
+        </label>
+      </div>
+
+      <div class="settings-group">
+        <div class="settings-group-title">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
           Disposición de Nuevos Componentes
         </div>
@@ -1181,6 +1209,10 @@
         // Posicionamiento continuo sin solapamiento
         payloadToSend.placementMode = settings.placement || 'SIDE';
         payloadToSend.placementGap = 120;
+
+        // Tablero design system (fase 6.3): la extensión propone, el ajuste del usuario decide
+        if (settings.boardMode === 'ALWAYS') payloadToSend.board = true;
+        else if (settings.boardMode === 'NEVER') payloadToSend.board = false;
 
         // Ajustar imágenes a lo que acepta figma.createImage antes de dibujar
         normalizeTreeImages(payloadToSend.rootNode).then((imgStats) => {
@@ -1631,6 +1663,7 @@
       return {
         structure: saved.structure || 'FRAME',
         placement: saved.placement || 'SIDE',
+        boardMode: ['AUTO', 'ALWAYS', 'NEVER'].includes(saved.boardMode) ? saved.boardMode : 'AUTO',
         autoPaintStyles: saved.autoPaintStyles !== false,
         prewarmFonts: saved.prewarmFonts !== false,
         fontMap: saved.fontMap && typeof saved.fontMap === 'object' ? saved.fontMap : {}
@@ -1655,6 +1688,7 @@
       savedSettings = {
         structure: document.querySelector('input[name="optStructure"]:checked')?.value || 'FRAME',
         placement: document.querySelector('input[name="optPlacement"]:checked')?.value || 'SIDE',
+        boardMode: document.querySelector('input[name="optBoard"]:checked')?.value || 'AUTO',
         autoPaintStyles: document.getElementById('chkAutoPaintStyles').checked,
         prewarmFonts: document.getElementById('chkPrewarmFonts').checked,
         fontMap: parseFontMap(document.getElementById('txtFontMap').value)
@@ -1670,6 +1704,9 @@
 
       const rPlace = document.querySelector(`input[name="optPlacement"][value="${s.placement}"]`);
       if (rPlace) rPlace.checked = true;
+
+      const rBoard = document.querySelector(`input[name="optBoard"][value="${s.boardMode}"]`);
+      if (rBoard) rBoard.checked = true;
 
       document.getElementById('chkAutoPaintStyles').checked = s.autoPaintStyles;
       document.getElementById('chkPrewarmFonts').checked = s.prewarmFonts;

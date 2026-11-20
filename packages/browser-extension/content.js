@@ -1455,6 +1455,8 @@
 
         let rootNode;
         let tokens;
+        let states;
+        const wantsBoard = this.shouldBuildBoard(this.selectedElements);
 
         // La elevación altera posiciones y tamaños: quitarla mientras se mide
         const relift = await this.suspendLift();
@@ -1469,6 +1471,20 @@
             if (!res) throw new Error('No se pudo estructurar el componente');
             rootNode = res.rootNode || res;
             tokens = res.tokens;
+
+            // Estado hover del componente (fase 6.1): si las hojas de estilo de la página lo
+            // definen, se envía como variante State=Hover. Solo componentes (no tableros) y de
+            // tamaño razonable; si el hover no cambia nada visible, se descarta.
+            const el = this.selectedElements[0];
+            const er = el.getBoundingClientRect();
+            if (!wantsBoard && window.__codeToFigmaExtractState && er.width * er.height <= innerWidth * innerHeight) {
+              try {
+                const hover = await window.__codeToFigmaExtractState(el, 'hover');
+                if (hover && hover.rootNode && JSON.stringify(hover.rootNode) !== JSON.stringify(rootNode)) {
+                  states = [{ name: 'Hover', rootNode: hover.rootNode }];
+                }
+              } catch (_e) {}
+            }
           } else {
             // Multi-selection: Extract all selected elements and bundle in a parent frame
             const results = await Promise.all(this.selectedElements.map(el => window.__codeToFigmaExtract(el)));
@@ -1567,7 +1583,8 @@
           tokens,
           createAsComponent: this.createAsComponent,
           // Landing completa o varios componentes → Figma lo organiza como design system
-          board: this.shouldBuildBoard(this.selectedElements),
+          board: wantsBoard,
+          states,
           source: { url: location.href, title: document.title },
         });
 
@@ -1581,13 +1598,14 @@
           btn.style.borderColor = '#059669';
         }
 
+        const stateNote = states ? ' con estado Hover' : '';
         const sizeNote =
           stats && payloadApi
             ? ` (${payloadApi.formatBytes(stats.bytes)}, ${stats.nodes.toLocaleString('es')} capas)`
             : '';
         this.showToast(
           `${ICONS.check} Enviado a Figma con éxito`,
-          `"${rootNode.name}" transmitido correctamente${sizeNote}.`,
+          `"${rootNode.name}"${stateNote} transmitido correctamente${sizeNote}.`,
           4000,
         );
 

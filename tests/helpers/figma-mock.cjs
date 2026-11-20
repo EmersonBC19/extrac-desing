@@ -34,7 +34,8 @@ function createFigma(opts = {}) {
       this.layoutMode = 'NONE';
       this.clipsContent = true;
       byId.set(this.id, this);
-      if (['FRAME', 'COMPONENT', 'INSTANCE', 'PAGE', 'SECTION', 'GROUP'].includes(type)) this.children = [];
+      if (['FRAME', 'COMPONENT', 'COMPONENT_SET', 'INSTANCE', 'PAGE', 'SECTION', 'GROUP'].includes(type))
+        this.children = [];
     }
     appendChild(c) {
       if (!this.children) throw new Error(this.type + ' no admite hijos');
@@ -45,8 +46,11 @@ function createFigma(opts = {}) {
       this.children.push(c);
       c.parent = this;
     }
-    insertChild(_i, c) {
+    insertChild(i, c) {
       this.appendChild(c);
+      // Como Figma: queda en la posición pedida dentro de children
+      this.children.splice(this.children.indexOf(c), 1);
+      this.children.splice(Math.max(0, Math.min(i, this.children.length)), 0, c);
     }
     resize(w, h) {
       if (!(w >= 0.01 && h >= 0.01)) throw new Error('resize inválido ' + w + 'x' + h);
@@ -92,6 +96,34 @@ function createFigma(opts = {}) {
       }
       current.appendChild(c);
       return c;
+    }
+    set cornerRadius(v) {
+      this._cr = v;
+      if (typeof v === 'number')
+        this.topLeftRadius = this.topRightRadius = this.bottomLeftRadius = this.bottomRightRadius = v;
+    }
+    get cornerRadius() {
+      return this._cr ?? 0;
+    }
+    setBoundVariable(field, variable) {
+      const NUM = [
+        'itemSpacing',
+        'paddingTop',
+        'paddingRight',
+        'paddingBottom',
+        'paddingLeft',
+        'topLeftRadius',
+        'topRightRadius',
+        'bottomLeftRadius',
+        'bottomRightRadius',
+        'width',
+        'height',
+        'counterAxisSpacing',
+      ];
+      if (!NUM.includes(field)) throw new Error('setBoundVariable: campo no vinculable ' + field);
+      if (variable.resolvedType !== 'FLOAT') throw new Error('setBoundVariable: ' + field + ' necesita FLOAT');
+      this.boundVariables = { ...(this.boundVariables || {}), [field]: { type: 'VARIABLE_ALIAS', id: variable.id } };
+      this[field] = variable._values[Object.keys(variable._values)[0]];
     }
     createInstance() {
       if (this.type !== 'COMPONENT') throw new Error('createInstance en ' + this.type);
@@ -281,6 +313,96 @@ function createFigma(opts = {}) {
     },
     getLocalPaintStyles: () => styles.paint,
     getNodeById: id => byId.get(id) || null,
+    // Como en Figma: solo componentes, nombres "Propiedad=Valor" y sin repetir combinación
+    // Variables (fase 6.2). opts.noVariables: archivo/plan sin Variables
+    variables: opts.noVariables
+      ? undefined
+      : (() => {
+          const collections = [];
+          const all = [];
+          return {
+            collections,
+            all,
+            getLocalVariableCollections: () => collections,
+            getLocalVariables: type => all.filter(v => !type || v.resolvedType === type),
+            createVariableCollection: name => {
+              if (!name) throw new Error('colección sin nombre');
+              const c = {
+                id: 'vc' + collections.length,
+                name,
+                modes: [{ modeId: 'm1', name: 'Mode 1' }],
+                defaultModeId: 'm1',
+                variableIds: [],
+              };
+              collections.push(c);
+              return c;
+            },
+            createVariable: (name, collection, type) => {
+              if (!collection || typeof collection !== 'object')
+                throw new Error('createVariable: la colección debe ser un objeto');
+              if (!['COLOR', 'FLOAT', 'STRING', 'BOOLEAN'].includes(type))
+                throw new Error('tipo de variable inválido ' + type);
+              if (!name || /[.{}$]/.test(name)) throw new Error('nombre de variable inválido: ' + name);
+              if (all.some(v => v.collection === collection && v.name === name))
+                throw new Error('variable repetida: ' + name);
+              const v = {
+                id: 'var' + all.length,
+                name,
+                collection,
+                variableCollectionId: collection.id,
+                resolvedType: type,
+                scopes: ['ALL_SCOPES'],
+                _values: {},
+                setValueForMode(modeId, value) {
+                  if (type === 'COLOR' && !(value && [value.r, value.g, value.b].every(x => x >= 0 && x <= 1)))
+                    throw new Error('color inválido');
+                  if (type === 'FLOAT' && typeof value !== 'number') throw new Error('número inválido');
+                  this._values[modeId] = value;
+                },
+              };
+              all.push(v);
+              collection.variableIds.push(v.id);
+              return v;
+            },
+            setBoundVariableForPaint: (paint, field, variable) => {
+              if (paint.type !== 'SOLID' || field !== 'color')
+                throw new Error('setBoundVariableForPaint: solo SOLID/color');
+              if (variable.resolvedType !== 'COLOR') throw new Error('variable no es COLOR');
+              const c = variable._values.m1;
+              return {
+                ...paint,
+                color: { r: c.r, g: c.g, b: c.b },
+                boundVariables: { color: { type: 'VARIABLE_ALIAS', id: variable.id } },
+              };
+            },
+          };
+        })(),
+    // Convierte el nodo en componente y lo pone en su mismo lugar (el nodo original desaparece)
+    createComponentFromNode: node => {
+      if (!node.parent) throw new Error('createComponentFromNode: nodo sin padre');
+      for (let p = node.parent; p; p = p.parent)
+        if (p.type === 'INSTANCE') throw new Error('nodo dentro de una instancia');
+      const comp = new Node('COMPONENT');
+      for (const k of Object.keys(node)) if (!['id', 'parent', 'children', 'type'].includes(k)) comp[k] = node[k];
+      const parent = node.parent;
+      const idx = parent.children.indexOf(node);
+      for (const ch of [...(node.children || [])]) comp.appendChild(ch);
+      node.remove();
+      parent.insertChild(idx, comp);
+      return comp;
+    },
+    combineAsVariants: (nodes, parent) => {
+      if (!nodes.length) throw new Error('combineAsVariants sin nodos');
+      if (nodes.some(n => n.type !== 'COMPONENT')) throw new Error('combineAsVariants: solo componentes');
+      if (nodes.some(n => !/^[^=,]+=[^=,]+(, *[^=,]+=[^=,]+)*$/.test(n.name)))
+        throw new Error('combineAsVariants: nombre de variante inválido');
+      if (new Set(nodes.map(n => n.name)).size !== nodes.length) throw new Error('variantes repetidas');
+      const set = new Node('COMPONENT_SET');
+      set.fills = [];
+      for (const n of nodes) set.appendChild(n);
+      parent.appendChild(set);
+      return set;
+    },
     clientStorage: (() => {
       const m = new Map();
       return {

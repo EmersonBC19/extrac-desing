@@ -6,7 +6,7 @@ import { useBrowser } from '../helpers/browser';
 
 const require = createRequire(import.meta.url);
 const { extract } = require('../helpers/extension-sim.cjs');
-const { runPlugin } = require('../helpers/figma-mock.cjs');
+const { runPlugin, loadPlugin } = require('../helpers/figma-mock.cjs');
 
 const B = useBrowser({ width: 1440, height: 900 });
 let landing: any; // extracción de synthetic/index.html
@@ -34,6 +34,25 @@ const countIn = (n: any, pred: (x: any) => boolean) => {
 };
 
 describe('render normal', () => {
+  it('tokens CSS (:root) → Variables "Tokens CSS"; reenviar actualiza sin duplicar', async () => {
+    const figma = loadPlugin({}, { ...console, log() {}, warn() {} });
+    const send = (brand: any) =>
+      figma.ui.onmessage({
+        type: 'RENDER_NODES',
+        payload: {
+          rootNode: clone(hero),
+          tokens: { colors: { '--brand': brand, '--fondo.claro': { r: 1, g: 1, b: 1, a: 1 } } },
+        },
+      });
+    await send({ r: 1, g: 0, b: 0, a: 1 });
+    await send({ r: 0, g: 0, b: 1, a: 1 });
+    expect(figma.variables.collections.map((c: any) => c.name)).toEqual(['Tokens CSS']);
+    const vars = figma.variables.all;
+    expect(vars.map((v: any) => v.name).sort()).toEqual(['brand', 'fondo,claro']);
+    expect(vars.find((v: any) => v.name === 'brand')._values.m1).toMatchObject({ r: 0, b: 1 });
+    expect(figma.styles.paint).toHaveLength(0);
+  });
+
   it('dibuja la extracción sin errores', async () => {
     const figma = await runPlugin({ rootNode: clone(landing) });
     expect(errorsOf(figma)).toEqual([]);
@@ -82,6 +101,85 @@ describe('tablero design system', () => {
     expect(secs[1]).toBe('02 · Secciones');
     expect(secs.at(-1)).toBe('04 · Estilos');
     expect(figma.styles.text.length).toBeGreaterThan(0);
+    // Colores como Variables de Figma (fase 6.2), no como estilos de color
+    expect(figma.variables.all.filter((v: any) => v.resolvedType === 'COLOR').length).toBeGreaterThan(0);
+    expect(figma.styles.paint.length).toBe(0);
+  });
+
+  it('Variables: colores, espaciados y radios vinculados a las capas', async () => {
+    const figma = await runPlugin({
+      rootNode: clone(landing),
+      board: true,
+      source: { url: 'https://www.ejemplo.com/' },
+    });
+    expect(errorsOf(figma)).toEqual([]);
+    const [collection] = figma.variables.collections;
+    expect(collection.name).toBe('ejemplo.com');
+    // El contenido vive en los maestros (secciones de 02 y componentes de 03); 01 usa instancias.
+    // Toda capa con un único relleno sólido (fuera de instancias y de las muestras de 04) queda vinculada.
+    const inInstance = (n: any) => {
+      for (let p = n.parent; p; p = p.parent) if (p.type === 'INSTANCE') return true;
+      return false;
+    };
+    const all = sectionsOf(figma)
+      .filter((s: any) => s.name !== '04 · Estilos')
+      .flatMap((s: any) => s.findAll(() => true))
+      // fuera: instancias (heredan) y las etiquetas del propio tablero (textos sueltos en la Section)
+      .filter(
+        (n: any) => !inInstance(n) && n.type !== 'INSTANCE' && !(n.type === 'TEXT' && n.parent?.type === 'SECTION'),
+      );
+    const eligible = all.filter(
+      (n: any) =>
+        Array.isArray(n.fills) && n.fills.length === 1 && n.fills[0].type === 'SOLID' && n.fills[0].visible !== false,
+    );
+    expect(eligible.length).toBeGreaterThan(0);
+    expect(eligible.filter((n: any) => !n.fills[0].boundVariables?.color).map((n: any) => n.name)).toEqual([]);
+  });
+
+  it('Variables numéricas: espaciados y radios repetidos, vinculados a las capas', async () => {
+    const text = (characters: string) => ({
+      type: 'TEXT',
+      name: 'Label',
+      layout: { width: 'HUG', height: 'HUG' },
+      styles: { fills: [{ r: 0, g: 0, b: 0, a: 1 }] },
+      textData: { characters, fontSize: 16, fontFamily: 'Inter', fontWeight: 400 },
+    });
+    const card = (title: string, x: number, color: any) => ({
+      type: 'FRAME',
+      name: 'Card ' + title,
+      layout: {
+        mode: 'VERTICAL',
+        x,
+        y: 0,
+        width: 300,
+        height: 120,
+        measuredWidth: 300,
+        measuredHeight: 120,
+        itemSpacing: 8,
+        padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      },
+      styles: { fills: [color], cornerRadius: 12 },
+      children: [text(title), text('detalle ' + title)],
+    });
+    const root = {
+      type: 'FRAME',
+      name: 'Cards',
+      layout: { mode: 'NONE', width: 700, height: 200, measuredWidth: 700, measuredHeight: 200 },
+      styles: { fills: [] },
+      children: [card('Uno', 0, { r: 1, g: 1, b: 1, a: 1 }), card('Dos', 320, { r: 0.9, g: 0.9, b: 1, a: 1 })],
+    };
+    const figma = await runPlugin({ rootNode: root, board: true });
+    expect(errorsOf(figma)).toEqual([]);
+    const names = figma.variables.all.filter((v: any) => v.resolvedType === 'FLOAT').map((v: any) => v.name);
+    expect(names).toEqual(expect.arrayContaining(['Espaciado/8', 'Espaciado/16', 'Radio/12']));
+    const nodes = sectionsOf(figma).flatMap((s: any) => s.findAll(() => true));
+    const bound = nodes.filter((n: any) => n.boundVariables?.paddingLeft && n.boundVariables?.topLeftRadius);
+    expect(bound.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('sin API de Variables (archivo o plan que no las tiene) → estilos de color como antes', async () => {
+    const figma = await runPlugin({ rootNode: clone(landing), board: true }, { noVariables: true });
+    expect(errorsOf(figma)).toEqual([]);
     expect(figma.styles.paint.length).toBeGreaterThan(0);
   });
 
@@ -169,6 +267,88 @@ describe('tablero design system', () => {
     expect(instances).toHaveLength(3);
     const labels = instances.map(i => i.findAll((n: any) => n.type === 'TEXT')[0].characters);
     expect(labels).toEqual(['Más información', 'Comprar', 'Ver ahora']);
+  });
+
+  it('el mismo componente en dos tamaños → un set de variantes Size=L/S con sus instancias', async () => {
+    const text = (characters: string) => ({
+      type: 'TEXT',
+      name: 'Label',
+      layout: { width: 'HUG', height: 'HUG', x: 21, y: 11 },
+      styles: { fills: [{ r: 1, g: 1, b: 1, a: 1 }] },
+      textData: { characters, fontSize: 17, fontFamily: 'Inter', fontWeight: 400 },
+    });
+    const tile = (label: string, x: number, w: number, h: number) => ({
+      type: 'FRAME',
+      name: 'Tile Ctas',
+      layout: { mode: 'HORIZONTAL', x, y: 0, width: w, height: h, measuredWidth: w, measuredHeight: h },
+      styles: { fills: [{ r: 0.1, g: 0.1, b: 0.1, a: 1 }], cornerRadius: 12 },
+      children: [text(label)],
+    });
+    const root = {
+      type: 'FRAME',
+      name: 'Tiles',
+      layout: { mode: 'NONE', width: 1400, height: 600, measuredWidth: 1400, measuredHeight: 600 },
+      styles: { fills: [] },
+      children: [tile('A', 0, 400, 300), tile('B', 420, 400, 300), tile('C', 0, 200, 150), tile('D', 220, 200, 150)],
+    };
+    const figma = await runPlugin({ rootNode: root, board: true });
+    expect(errorsOf(figma)).toEqual([]);
+    const comps = sectionsOf(figma).find((s: any) => s.name === '03 · Componentes');
+    const sets = comps.children.filter((c: any) => c.type === 'COMPONENT_SET');
+    expect(sets).toHaveLength(1);
+    expect(sets[0].name).toBe('Tile Ctas');
+    expect(sets[0].children.map((c: any) => c.name).sort()).toEqual(['Size=L', 'Size=S']);
+    // Las 4 apariciones de la vista completa son instancias de las variantes
+    const full = sectionsOf(figma).find((s: any) => s.name === '01 · Página completa');
+    const masters = full.findAll((n: any) => n.type === 'INSTANCE').map((i: any) => i._master.name);
+    expect(masters.sort()).toEqual(['Size=L', 'Size=L', 'Size=S', 'Size=S']);
+  });
+
+  it('las secciones de 02 son componentes y la vista completa usa sus instancias (se sincronizan)', async () => {
+    const figma = await runPlugin({ rootNode: clone(landing), board: true, source: { url: 'http://localhost/' } });
+    expect(errorsOf(figma)).toEqual([]);
+    const sub = sectionsOf(figma).find((s: any) => s.name === '02 · Secciones');
+    const sectionComps = sub.children.filter((c: any) => c.type === 'COMPONENT');
+    expect(sectionComps.length).toBeGreaterThan(1);
+    expect(sectionComps.every((c: any) => c.name.startsWith('Sección /'))).toBe(true);
+    const full = sectionsOf(figma).find((s: any) => s.name === '01 · Página completa');
+    const used = new Set(
+      full
+        .findAll((n: any) => n.type === 'INSTANCE')
+        .map((i: any) => i._master)
+        .filter((m: any) => sectionComps.includes(m)),
+    );
+    expect(used.size).toBe(sectionComps.length);
+  });
+
+  it('QA-2: una sección sin fondo propio toma el fondo que hereda en la página', async () => {
+    const block = (name: string, y: number) => ({
+      type: 'FRAME',
+      name,
+      layout: { mode: 'VERTICAL', x: 0, y, width: 1440, height: 700, measuredWidth: 1440, measuredHeight: 700 },
+      styles: { fills: [] },
+      children: [
+        {
+          type: 'TEXT',
+          name: 'Título',
+          layout: { x: 0, y: 0, width: 'HUG', height: 'HUG' },
+          styles: { fills: [{ r: 1, g: 1, b: 1, a: 1 }] },
+          textData: { characters: 'Preguntas frecuentes ' + name, fontSize: 32, fontFamily: 'Inter', fontWeight: 700 },
+        },
+      ],
+    });
+    const root = {
+      type: 'FRAME',
+      name: 'Body',
+      layout: { mode: 'NONE', width: 1440, height: 1400, measuredWidth: 1440, measuredHeight: 1400 },
+      styles: { fills: [{ r: 0.05, g: 0.05, b: 0.08, a: 1 }] },
+      children: [block('A', 0), block('B', 700)],
+    };
+    const figma = await runPlugin({ rootNode: root, board: true });
+    const sub = sectionsOf(figma).find((s: any) => s.name === '02 · Secciones');
+    const comps = sub.children.filter((c: any) => c.type === 'COMPONENT');
+    expect(comps).toHaveLength(2);
+    for (const c of comps) expect(c.fills[0].color).toMatchObject({ r: 0.05, g: 0.05 });
   });
 
   it('si el tablero falla, limpia lo creado y dibuja en modo normal', async () => {

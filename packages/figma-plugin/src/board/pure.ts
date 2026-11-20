@@ -159,3 +159,131 @@ export function boardCollect(n: any, pred: (x: any) => boolean, out: any[] = [])
   for (const c of n.children || []) boardCollect(c, pred, out);
   return out;
 }
+
+// ── Variantes (fase 6.1) ─────────────────────────────────────────────────────────────────────
+
+/** Forma de un nodo: tipos y Auto Layout, sin tamaños, colores ni textos */
+export function boardShapeSignature(n: any): string {
+  if (!n) return '';
+  if (n.type === 'TEXT') return 'T';
+  if (n.type === 'SVG') return 'S';
+  const kids = (n.children || []).map(boardShapeSignature).join(',');
+  return `F:${n.layout?.mode || 'NONE'}${n.imageData ? ':img' : ''}[${kids}]`;
+}
+
+/** Estilo de un nodo sin tamaños: colores, bordes, radios, sombras (recursivo) */
+function boardStyleKey(n: any): string {
+  const S = n.styles || {};
+  const own = [
+    (S.fills || []).map(boardColorKey).join(','),
+    (S.strokes || []).map((s: any) => boardColorKey(s) + '@' + s.width).join(','),
+    JSON.stringify(S.cornerRadius ?? 0),
+    (S.boxShadow || []).length,
+    n.type === 'TEXT' ? [n.textData?.fontWeight, (S.fills || []).map(boardColorKey).join(',')].join('|') : '',
+  ].join('|');
+  return own + '[' + (n.children || []).map(boardStyleKey).join(';') + ']';
+}
+
+const areaOf = (n: any) => (n.layout?.measuredWidth || 0) * (n.layout?.measuredHeight || 0);
+const SIZE_NAMES: Record<number, string[]> = {
+  2: ['L', 'S'],
+  3: ['L', 'M', 'S'],
+  4: ['XL', 'L', 'M', 'S'],
+  5: ['XL', 'L', 'M', 'S', 'XS'],
+};
+
+export interface VariantFamily {
+  name: string;
+  property: 'Size' | 'Style' | 'Variant';
+  /** groupId → valor de la propiedad */
+  members: { groupId: string; value: string }[];
+}
+
+/**
+ * Agrupa componentes que son variantes uno de otro: mismo nombre base ("Tile Ctas", "Tile Ctas 2")
+ * y misma forma. Si solo cambia el tamaño → Size=L/M/S; si solo el estilo → Style=<color>;
+ * si cambian ambos → Variant=1..n.
+ */
+export function boardVariantFamilies(groups: BoardGroup[]): VariantFamily[] {
+  const byKey = new Map<string, BoardGroup[]>();
+  for (const g of groups) {
+    const base = g.name.replace(/\s+\d+$/, '');
+    const key = base + '§' + boardShapeSignature(g.occurrences[0]);
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key)!.push(g);
+  }
+  const families: VariantFamily[] = [];
+  for (const [key, members] of byKey) {
+    if (members.length < 2) continue;
+    const name = key.split('§')[0];
+    const reps = members.map(g => g.occurrences[0]);
+    const sameStyle = new Set(reps.map(boardStyleKey)).size === 1;
+    const areas = reps.map(areaOf);
+    const sameSize = Math.max(...areas) - Math.min(...areas) <= Math.max(...areas) * 0.05;
+    let property: VariantFamily['property'];
+    let values: string[];
+    if (sameStyle && !sameSize) {
+      property = 'Size';
+      const order = members.map((_, i) => i).sort((a, b) => areas[b] - areas[a]);
+      const names = SIZE_NAMES[members.length] || members.map((_, i) => String(i + 1));
+      values = new Array(members.length);
+      order.forEach((idx, rank) => (values[idx] = names[rank]));
+    } else if (sameSize && !sameStyle) {
+      property = 'Style';
+      const colors = reps.map(r => boardColorKey((r.styles?.fills || [])[0]));
+      const distinct = new Set(colors).size === colors.length && !colors.includes('-');
+      values = distinct ? colors : members.map((_, i) => String(i + 1));
+    } else {
+      property = 'Variant';
+      values = members.map((_, i) => String(i + 1));
+    }
+    families.push({ name, property, members: members.map((g, i) => ({ groupId: g.id, value: values[i] })) });
+  }
+  return families;
+}
+
+// ── Paleta (fase 6.3): colores casi iguales → uno solo ──────────────────────────────────────
+
+/** sRGB (0..1) → CIE Lab (D65) */
+export function rgbToLab(r: number, g: number, b: number): [number, number, number] {
+  const lin = (c: number) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+  const R = lin(r),
+    G = lin(g),
+    B = lin(b);
+  const x = (R * 0.4124 + G * 0.3576 + B * 0.1805) / 0.95047;
+  const y = R * 0.2126 + G * 0.7152 + B * 0.0722;
+  const z = (R * 0.0193 + G * 0.1192 + B * 0.9505) / 1.08883;
+  const f = (t: number) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+  const fx = f(x),
+    fy = f(y),
+    fz = f(z);
+  return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+}
+
+/** Diferencia perceptual (ΔE 1976). ≈ 2,3 es la diferencia mínima que el ojo nota */
+export function deltaE(a: { r: number; g: number; b: number }, b: { r: number; g: number; b: number }): number {
+  const [l1, a1, b1] = rgbToLab(a.r, a.g, a.b);
+  const [l2, a2, b2] = rgbToLab(b.r, b.g, b.b);
+  return Math.hypot(l1 - l2, a1 - a2, b1 - b2);
+}
+
+export interface PaletteEntry<T> {
+  color: { r: number; g: number; b: number };
+  alpha: number;
+  items: T[];
+}
+
+/**
+ * Une colores que el ojo no distingue (ΔE ≤ umbral y misma opacidad). El representante de cada
+ * grupo es el más usado; los demás se suman a él. Devuelve los grupos de más a menos usados.
+ */
+export function boardMergeSimilarColors<T>(entries: PaletteEntry<T>[], threshold = 2.3): PaletteEntry<T>[] {
+  const sorted = [...entries].sort((a, b) => b.items.length - a.items.length);
+  const merged: PaletteEntry<T>[] = [];
+  for (const e of sorted) {
+    const home = merged.find(m => Math.abs(m.alpha - e.alpha) <= 0.02 && deltaE(m.color, e.color) <= threshold);
+    if (home) home.items.push(...e.items);
+    else merged.push({ color: e.color, alpha: e.alpha, items: [...e.items] });
+  }
+  return merged.sort((a, b) => b.items.length - a.items.length);
+}

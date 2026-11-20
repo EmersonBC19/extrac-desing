@@ -105,3 +105,67 @@ describe('boardColorKey', () => {
     expect(B.boardColorKey({ r: 0, g: 0, b: 0, a: 0.5 })).toBe('#000000/50');
   });
 });
+
+describe('variantes (fase 6.1)', () => {
+  it('mismo componente en distintos tamaños → familia Size=L/M/S ordenada por área', () => {
+    const groups = [
+      { id: 'a', name: 'Tile Ctas', occurrences: [button('x', undefined, 171)] },
+      { id: 'b', name: 'Tile Ctas 2', occurrences: [button('y', undefined, 300)] },
+      { id: 'c', name: 'Tile Ctas 3', occurrences: [button('z', undefined, 120)] },
+    ];
+    const [fam] = B.boardVariantFamilies(groups);
+    expect(fam).toMatchObject({ name: 'Tile Ctas', property: 'Size' });
+    expect(Object.fromEntries(fam.members.map(m => [m.groupId, m.value]))).toEqual({ a: 'M', b: 'L', c: 'S' });
+  });
+
+  it('mismo tamaño y distinto color → Style con el color', () => {
+    const groups = [
+      { id: 'a', name: 'Link', occurrences: [button('x', { r: 0, g: 0.44, b: 0.89, a: 1 })] },
+      { id: 'b', name: 'Link 2', occurrences: [button('y', { r: 0, g: 0, b: 0, a: 1 })] },
+    ];
+    const [fam] = B.boardVariantFamilies(groups);
+    expect(fam.property).toBe('Style');
+    expect(fam.members.map(m => m.value)).toEqual(['#0070e3', '#000000']);
+  });
+
+  it('nombres distintos o estructura distinta → no son variantes', () => {
+    expect(
+      B.boardVariantFamilies([
+        { id: 'a', name: 'Link', occurrences: [button('x')] },
+        { id: 'b', name: 'Card', occurrences: [button('y', undefined, 300)] },
+      ]),
+    ).toEqual([]);
+    expect(
+      B.boardVariantFamilies([
+        { id: 'a', name: 'Card', occurrences: [card('t', 'c')] },
+        { id: 'b', name: 'Card 2', occurrences: [button('y')] },
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe('paleta: colores casi iguales (fase 6.3)', () => {
+  const hex = (h: string) => ({
+    r: parseInt(h.slice(1, 3), 16) / 255,
+    g: parseInt(h.slice(3, 5), 16) / 255,
+    b: parseInt(h.slice(5, 7), 16) / 255,
+  });
+  it('ΔE: blanco/negro ≈ 100, casi iguales < 2,3', () => {
+    expect(B.deltaE(hex('#ffffff'), hex('#000000'))).toBeCloseTo(100, 0);
+    expect(B.deltaE(hex('#1a1a1f'), hex('#1b1a1f'))).toBeLessThan(2.3);
+    expect(B.deltaE(hex('#0071e3'), hex('#0066cc'))).toBeGreaterThan(2.3);
+  });
+
+  it('une los que el ojo no distingue; el más usado representa al grupo', () => {
+    const e = (h: string, n: number, alpha = 1) => ({
+      color: hex(h),
+      alpha,
+      items: Array.from({ length: n }, (_, i) => h + i),
+    });
+    const out = B.boardMergeSimilarColors([e('#1b1a1f', 2), e('#1a1a1f', 10), e('#0071e3', 5), e('#1a1a1f', 3, 0.5)]);
+    expect(out).toHaveLength(3);
+    expect(out[0].items).toHaveLength(12);
+    expect(out[0].color).toEqual(hex('#1a1a1f'));
+    expect(out.find(g => g.alpha === 0.5)!.items).toHaveLength(3); // otra opacidad: aparte
+  });
+});

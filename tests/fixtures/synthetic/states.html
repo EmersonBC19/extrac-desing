@@ -1,0 +1,63 @@
+<!doctype html>
+<html>
+  <!-- Estados emulados (fase 6.1): reglas :hover propias, de descendientes, en @media y de un enlace interno -->
+  <head>
+    <style>
+      body {
+        margin: 0;
+        font:
+          16px Arial,
+          sans-serif;
+      }
+      .btn {
+        display: inline-block;
+        padding: 12px 20px;
+        background: #2563eb;
+        color: #fff;
+        border-radius: 8px;
+        transition: background 0.3s;
+      }
+      .btn:hover {
+        background: #1e40af;
+      }
+      .card {
+        width: 300px;
+        padding: 16px;
+        background: #fff;
+        border: 1px solid #ddd;
+      }
+      .card .title {
+        color: #111111;
+      }
+      .card:hover .title {
+        color: #dc2626;
+      }
+      .card a {
+        color: #2563eb;
+      }
+      .card a:hover {
+        color: #16a34a;
+      }
+      @media (max-width: 10px) {
+        .btn:hover {
+          background: #000000;
+        }
+      }
+      .plain {
+        width: 100px;
+        height: 40px;
+        background: #eee;
+      }
+    </style>
+  </head>
+  <body>
+    <div style="padding: 20px">
+      <span id="btn" class="btn">Comprar</span>
+      <div id="card" class="card">
+        <div class="title">Título</div>
+        <a href="#">Ver más</a>
+      </div>
+      <div id="plain" class="plain"></div>
+    </div>
+  </body>
+</html>

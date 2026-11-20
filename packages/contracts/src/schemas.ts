@@ -130,6 +130,13 @@ export const WSRenderPayloadSchema = z
     tokens: z.object({}).passthrough().optional(),
     createAsComponent: z.boolean().optional(),
     board: z.boolean().optional(),
+    /** Estados extra del mismo componente (fase 6.1): Hover, Focus… → variantes State=… */
+    states: z
+      .array(z.object({ name: z.string().min(1).max(40), rootNode: z.unknown() }).passthrough())
+      .max(4)
+      .optional(),
+    /** Equivalencias de fuentes de los ajustes del plugin (fase 5.3) */
+    fontMap: z.record(z.string().max(200), z.string().max(200)).optional(),
     clearPage: z.boolean().optional(),
     pageName: z.string().max(200).optional(),
     sectionTitle: z.string().max(500).optional(),
@@ -150,7 +157,20 @@ export function validateRenderPayload(payload: unknown): ValidationResult {
     const issue = env.error.issues[0];
     return { ok: false, error: `payload${issue.path.length ? '.' + issue.path.join('.') : ''}: ${issue.message}` };
   }
-  return validateUINodeTree(env.data.rootNode);
+  const main = validateUINodeTree(env.data.rootNode);
+  if (!main.ok) return main;
+  // Cada estado es otro árbol completo: mismas reglas y mismo tope total de nodos
+  let nodeCount = main.nodeCount;
+  let maxDepth = main.maxDepth;
+  for (const [i, st] of (env.data.states || []).entries()) {
+    const r = validateUINodeTree(st.rootNode);
+    if (!r.ok) return { ok: false, error: `states[${i}]: ${r.error}` };
+    nodeCount += r.nodeCount;
+    maxDepth = Math.max(maxDepth, r.maxDepth);
+    if (nodeCount > PAYLOAD_LIMITS.maxNodes)
+      return { ok: false, error: `Demasiados nodos (> ${PAYLOAD_LIMITS.maxNodes})` };
+  }
+  return { ok: true, nodeCount, maxDepth };
 }
 
 /** Sobre mínimo de cualquier mensaje del bus */

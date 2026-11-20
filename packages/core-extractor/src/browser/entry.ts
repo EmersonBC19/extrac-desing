@@ -10,6 +10,7 @@
 import { extractNodeTree } from './extract-node';
 import { resolvePendingImages } from './images';
 import { extractDesignTokens } from './tokens';
+import { emulateState, type InteractionState } from './states';
 // Desde la fuente (no desde el paquete): solo funciones puras, sin arrastrar Zod al bundle
 import { formatBytes, heavyPayloadReasons, measurePayload, withoutImages } from '../../../contracts/src/payload-stats';
 
@@ -22,6 +23,24 @@ window.__codeToFigmaExtract = async function (rootElement: Element) {
   const resolved = await resolvePendingImages(rawNode);
   const tokens = extractDesignTokens();
   return { rootNode: resolved, tokens };
+};
+
+/**
+ * El mismo elemento en otro estado (hover/focus) emulado desde las hojas de estilo (fase 6.1).
+ * null si ninguna regla de la página lo cambia en ese estado.
+ */
+window.__codeToFigmaExtractState = async function (rootElement: Element, state: InteractionState) {
+  if (!rootElement || typeof window.__codeToFigmaExtract !== 'function') return null;
+  const emulation = emulateState(rootElement, state);
+  if (!emulation) return null;
+  try {
+    const res = await window.__codeToFigmaExtract(rootElement);
+    return res
+      ? { rootNode: res.rootNode, rules: emulation.rules, unreadableSheets: emulation.unreadableSheets }
+      : null;
+  } finally {
+    emulation.undo();
+  }
 };
 
 window.__codeToFigmaPayload = { measurePayload, heavyPayloadReasons, withoutImages, formatBytes };

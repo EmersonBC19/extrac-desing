@@ -96,3 +96,17 @@ describe('validateRenderPayload', () => {
     if (!r.ok) expect(r.error).toContain('rootNode.children[1].children[0]');
   });
 });
+
+describe('estados (fase 6.1)', () => {
+  const node = { type: 'FRAME', name: 'Botón', children: [] };
+  it('acepta estados válidos y valida cada árbol', async () => {
+    const { validateRenderPayload } = await import('../../packages/contracts/src/schemas');
+    expect(validateRenderPayload({ rootNode: node, states: [{ name: 'Hover', rootNode: node }] }).ok).toBe(true);
+    const bad = validateRenderPayload({ rootNode: node, states: [{ name: 'Hover', rootNode: { type: 'SCRIPT' } }] });
+    expect(bad.ok).toBe(false);
+    expect((bad as any).error).toMatch(/^states\[0\]/);
+    expect(validateRenderPayload({ rootNode: node, states: Array(5).fill({ name: 'X', rootNode: node }) }).ok).toBe(
+      false,
+    );
+  });
+});

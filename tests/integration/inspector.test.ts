@@ -212,4 +212,23 @@ describe('inspector de la extensión', () => {
     const after = await page.evaluate(() => document.getElementById('c1')!.style.cssText);
     expect(after).toBe(before);
   });
+
+  it('un componente con :hover en la hoja de estilos se envía con su estado Hover', async () => {
+    const page = await openInspector();
+    await page.addStyleTag({ content: '#c1:hover { background: rgb(200, 0, 0) !important; }' });
+    const send = (ids: string[]) =>
+      page.evaluate(async ids => {
+        const i = (window as any).__codeToFigmaInstance;
+        i.selectedElements = ids.map(id => document.getElementById(id));
+        i.isElevated = true;
+        await i.sendToFigma();
+        return (window as any).__sent.at(-1);
+      }, ids);
+    const single = await send(['c1']);
+    expect(single.states.map((st: any) => st.name)).toEqual(['Hover']);
+    expect(single.states[0].rootNode.styles.fills[0]).toMatchObject({ r: 200 / 255, g: 0, b: 0 });
+    // Sin reglas hover propias → sin estados; y nunca en tableros (varios componentes)
+    expect((await send(['c2'])).states).toBeUndefined();
+    expect((await send(['c1', 'c2'])).states).toBeUndefined();
+  });
 });

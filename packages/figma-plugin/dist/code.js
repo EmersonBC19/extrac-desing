@@ -1296,6 +1296,7 @@
     return new RegExp(`^${dateSource}T(?:${timeRegex})$`);
   }
   var anyString = /^[\s\S]{0,}$/;
+  var integer = /^-?\d+$/;
   var number = /^-?\d+(?:\.\d+)?$/;
   var boolean = /^(?:true|false)$/i;
   var lowercase = /^[^A-Z]*$/;
@@ -2859,6 +2860,161 @@ ${content.join("\n")}
     result.value = merged.data;
     return result;
   }
+  var $ZodRecord = /* @__PURE__ */ $constructor("$ZodRecord", (inst, def) => {
+    $ZodType.init(inst, def);
+    const memo2 = globalConfig.memoizer;
+    memo2?.attach(inst);
+    inst._zod.parse = (payload, ctx) => {
+      const input = payload.value;
+      if (!isPlainObject(input)) {
+        payload.issues.push({
+          expected: "record",
+          code: "invalid_type",
+          input,
+          inst
+        });
+        return payload;
+      }
+      const proms = [];
+      const values = def.keyType._zod.values;
+      if (values && !def.partial) {
+        payload.value = memo2 ? memo2.alloc(inst, payload, {}, ctx) : {};
+        const recordKeys = /* @__PURE__ */ new Set();
+        for (const key of values) {
+          if (typeof key === "string" || typeof key === "number" || typeof key === "symbol") {
+            recordKeys.add(typeof key === "number" ? key.toString() : key);
+            if (key === "__proto__")
+              continue;
+            const keyResult = def.keyType._zod.run({ value: key, issues: [] }, ctx);
+            if (keyResult instanceof Promise) {
+              throw new Error("Async schemas not supported in object keys currently");
+            }
+            if (keyResult.issues.length) {
+              payload.issues.push({
+                code: "invalid_key",
+                origin: "record",
+                issues: keyResult.issues.map((iss) => finalizeIssue(iss, ctx, config())),
+                input: key,
+                path: [key],
+                inst
+              });
+              continue;
+            }
+            const outKey = keyResult.value;
+            if (outKey === "__proto__")
+              continue;
+            const result = def.valueType._zod.run({ value: input[key], issues: [] }, ctx);
+            if (result instanceof Promise) {
+              proms.push(result.then((result2) => {
+                if (result2.issues.length) {
+                  payload.issues.push(...prefixIssues(key, result2.issues));
+                }
+                payload.value[outKey] = result2.value;
+              }));
+            } else {
+              if (result.issues.length) {
+                payload.issues.push(...prefixIssues(key, result.issues));
+              }
+              payload.value[outKey] = result.value;
+            }
+          }
+        }
+        let unrecognized;
+        for (const key in input) {
+          if (!recordKeys.has(key)) {
+            if (def.mode === "loose") {
+              if (key === "__proto__")
+                continue;
+              payload.value[key] = input[key];
+            } else {
+              unrecognized = unrecognized ?? [];
+              unrecognized.push(key);
+            }
+          }
+        }
+        if (unrecognized && unrecognized.length > 0) {
+          payload.issues.push({
+            code: "unrecognized_keys",
+            input,
+            inst,
+            keys: unrecognized,
+            continue: true
+          });
+        }
+      } else {
+        payload.value = memo2 ? memo2.alloc(inst, payload, {}, ctx) : {};
+        let unrecognized;
+        for (const key of Reflect.ownKeys(input)) {
+          if (key === "__proto__")
+            continue;
+          if (!Object.prototype.propertyIsEnumerable.call(input, key))
+            continue;
+          let keyResult = def.keyType._zod.run({ value: key, issues: [] }, ctx);
+          if (keyResult instanceof Promise) {
+            throw new Error("Async schemas not supported in object keys currently");
+          }
+          const checkNumericKey = typeof key === "string" && number.test(key) && keyResult.issues.length;
+          if (checkNumericKey) {
+            const retryResult = def.keyType._zod.run({ value: Number(key), issues: [] }, ctx);
+            if (retryResult instanceof Promise) {
+              throw new Error("Async schemas not supported in object keys currently");
+            }
+            if (retryResult.issues.length === 0) {
+              keyResult = retryResult;
+            }
+          }
+          if (keyResult.issues.length) {
+            if (def.mode === "loose") {
+              payload.value[key] = input[key];
+            } else if (values) {
+              unrecognized = unrecognized ?? [];
+              unrecognized.push(key);
+            } else {
+              payload.issues.push({
+                code: "invalid_key",
+                origin: "record",
+                issues: keyResult.issues.map((iss) => finalizeIssue(iss, ctx, config())),
+                input: key,
+                path: [key],
+                inst
+              });
+            }
+            continue;
+          }
+          const outKey = keyResult.value;
+          if (outKey === "__proto__")
+            continue;
+          const result = def.valueType._zod.run({ value: input[key], issues: [] }, ctx);
+          if (result instanceof Promise) {
+            proms.push(result.then((result2) => {
+              if (result2.issues.length) {
+                payload.issues.push(...prefixIssues(key, result2.issues));
+              }
+              payload.value[outKey] = result2.value;
+            }));
+          } else {
+            if (result.issues.length) {
+              payload.issues.push(...prefixIssues(key, result.issues));
+            }
+            payload.value[outKey] = result.value;
+          }
+        }
+        if (unrecognized && unrecognized.length > 0) {
+          payload.issues.push({
+            code: "unrecognized_keys",
+            input,
+            inst,
+            keys: unrecognized,
+            continue: true
+          });
+        }
+      }
+      if (proms.length) {
+        return Promise.all(proms).then(() => payload);
+      }
+      return payload;
+    };
+  });
   var $ZodEnum = /* @__PURE__ */ $constructor("$ZodEnum", (inst, def) => {
     $ZodType.init(inst, def);
     const values = getEnumValues(def.entries);
@@ -4982,6 +5138,112 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     json.allOf = allOf;
     ctx.intersections.push(allOf);
   };
+  function stringifyKeyNames(bySchema, json, visited) {
+    if (json.$ref) {
+      if (visited.has(json))
+        return json;
+      visited.add(json);
+      const def = bySchema.get(json)?.def;
+      if (!def)
+        return json;
+      const inlined = stringifyKeyNames(bySchema, def, visited);
+      return inlined === def ? json : inlined;
+    }
+    for (const keyword of ["anyOf", "oneOf"]) {
+      const branches = json[keyword];
+      if (!Array.isArray(branches))
+        continue;
+      const mapped = branches.map((branch) => stringifyKeyNames(bySchema, branch, visited));
+      if (mapped.some((branch, i) => branch !== branches[i]))
+        json = { ...json, [keyword]: mapped };
+    }
+    const types = Array.isArray(json.type) ? json.type : [json.type];
+    const numericType = !types.includes("string") && types.some((t) => t === "number" || t === "integer");
+    const values = json.enum ?? (json.const !== void 0 ? [json.const] : void 0);
+    if (!numericType && !values?.some((v) => typeof v === "number"))
+      return json;
+    const { minimum, maximum, exclusiveMinimum, exclusiveMaximum, multipleOf, format, id, ...rest } = json;
+    if (rest.enum)
+      rest.enum = rest.enum.map((v) => typeof v === "number" ? String(v) : v);
+    else if (typeof rest.const === "number")
+      rest.const = String(rest.const);
+    if (!numericType)
+      return rest;
+    rest.type = "string";
+    if (!values)
+      rest.pattern = (types.includes("number") ? number : integer).source;
+    return rest;
+  }
+  var pendingRecords = /* @__PURE__ */ new WeakMap();
+  function rewriteKeyNames(ctx) {
+    const bySchema = /* @__PURE__ */ new Map();
+    for (const entry of ctx.seen.values()) {
+      if (entry.def && !bySchema.has(entry.schema))
+        bySchema.set(entry.schema, entry);
+    }
+    const rewrites = /* @__PURE__ */ new Map();
+    for (const record2 of pendingRecords.get(ctx) ?? []) {
+      const seen = ctx.seen.get(record2);
+      const names = (seen?.def ?? seen?.schema)?.propertyNames;
+      if (!names || names === true || rewrites.has(names))
+        continue;
+      const rewritten = stringifyKeyNames(bySchema, names, /* @__PURE__ */ new Set());
+      if (rewritten !== names)
+        rewrites.set(names, rewritten);
+    }
+    if (!rewrites.size)
+      return;
+    for (const entry of ctx.seen.values()) {
+      for (const carrier of [entry.schema, entry.def]) {
+        const rewritten = carrier && rewrites.get(carrier.propertyNames);
+        if (rewritten)
+          carrier.propertyNames = rewritten;
+      }
+    }
+  }
+  var recordProcessor = (schema, ctx, _json, params) => {
+    const json = _json;
+    const def = schema._zod.def;
+    json.type = "object";
+    const keyType = def.keyType;
+    const patterns = aggregateChecks(keyType).patterns;
+    if (def.mode === "loose" && patterns && patterns.size > 0) {
+      const valueSchema = processSchema(def.valueType, ctx, {
+        ...params,
+        path: [...params.path, "patternProperties", "*"]
+      });
+      json.patternProperties = {};
+      for (const pattern of patterns) {
+        assignProp(json.patternProperties, exactPattern(pattern).source, valueSchema);
+      }
+    } else {
+      if (ctx.target === "draft-07" || ctx.target === "draft-2020-12") {
+        json.propertyNames = processSchema(def.keyType, ctx, {
+          ...params,
+          path: [...params.path, "propertyNames"]
+        });
+        let pending = pendingRecords.get(ctx);
+        if (!pending) {
+          pending = [];
+          pendingRecords.set(ctx, pending);
+          ctx.deferred.push(() => rewriteKeyNames(ctx));
+        }
+        pending.push(schema);
+      }
+      json.additionalProperties = processSchema(def.valueType, ctx, {
+        ...params,
+        path: [...params.path, "additionalProperties"]
+      });
+    }
+    const keyValues = keyType._zod.values;
+    const omittableOnInput = ctx.io === "input" && inputOptin(def.valueType) !== void 0;
+    if (keyValues && !def.partial && !omittableOnInput) {
+      const validKeyValues = [...keyValues].filter((v) => typeof v === "string" || typeof v === "number");
+      if (validKeyValues.length > 0) {
+        json.required = validKeyValues.map(String);
+      }
+    }
+  };
   var nullableProcessor = (schema, ctx, json, params) => {
     const def = schema._zod.def;
     const inner = processSchema(def.innerType, ctx, params);
@@ -5778,6 +6040,30 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       right
     });
   }
+  var ZodRecord = /* @__PURE__ */ $constructor("ZodRecord", (inst, def) => {
+    _ensureDefaultMemoizer();
+    $ZodRecord.init(inst, def);
+    ZodType.init(inst, def);
+    inst._zod.processJSONSchema = (ctx, json, params) => recordProcessor(inst, ctx, json, params);
+    inst.keyType = def.keyType;
+    inst.valueType = def.valueType;
+  });
+  function record(keyType, valueType, params) {
+    if (!valueType || !valueType._zod) {
+      return new ZodRecord({
+        type: "record",
+        keyType: string2(),
+        valueType: keyType,
+        ...util_exports.normalizeParams(valueType)
+      });
+    }
+    return new ZodRecord({
+      type: "record",
+      keyType,
+      valueType,
+      ...util_exports.normalizeParams(params)
+    });
+  }
   var ZodEnum = /* @__PURE__ */ $constructor("ZodEnum", (inst, def) => {
     $ZodEnum.init(inst, def);
     ZodType.init(inst, def);
@@ -6105,6 +6391,10 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     tokens: object({}).passthrough().optional(),
     createAsComponent: boolean2().optional(),
     board: boolean2().optional(),
+    /** Estados extra del mismo componente (fase 6.1): Hover, Focus… → variantes State=… */
+    states: array(object({ name: string2().min(1).max(40), rootNode: unknown() }).passthrough()).max(4).optional(),
+    /** Equivalencias de fuentes de los ajustes del plugin (fase 5.3) */
+    fontMap: record(string2().max(200), string2().max(200)).optional(),
     clearPage: boolean2().optional(),
     pageName: string2().max(200).optional(),
     sectionTitle: string2().max(500).optional(),
@@ -6119,7 +6409,19 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       const issue2 = env.error.issues[0];
       return { ok: false, error: `payload${issue2.path.length ? "." + issue2.path.join(".") : ""}: ${issue2.message}` };
     }
-    return validateUINodeTree(env.data.rootNode);
+    const main = validateUINodeTree(env.data.rootNode);
+    if (!main.ok) return main;
+    let nodeCount = main.nodeCount;
+    let maxDepth = main.maxDepth;
+    for (const [i, st] of (env.data.states || []).entries()) {
+      const r = validateUINodeTree(st.rootNode);
+      if (!r.ok) return { ok: false, error: `states[${i}]: ${r.error}` };
+      nodeCount += r.nodeCount;
+      maxDepth = Math.max(maxDepth, r.maxDepth);
+      if (nodeCount > PAYLOAD_LIMITS.maxNodes)
+        return { ok: false, error: `Demasiados nodos (> ${PAYLOAD_LIMITS.maxNodes})` };
+    }
+    return { ok: true, nodeCount, maxDepth };
   }
   var WSMessageEnvelopeSchema = object({
     type: string2().min(1).max(64)
@@ -6173,10 +6475,10 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     const min = ORDER[options.level || "info"];
     const emit = (level, message, data) => {
       if (ORDER[level] < min) return;
-      const record = { time: (/* @__PURE__ */ new Date()).toISOString(), level, scope, message, ...data ? { data } : {} };
+      const record2 = { time: (/* @__PURE__ */ new Date()).toISOString(), level, scope, message, ...data ? { data } : {} };
       for (const sink of options.sinks) {
         try {
-          sink(record);
+          sink(record2);
         } catch (_e) {
         }
       }
@@ -6751,6 +7053,177 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     for (const c of n.children || []) boardCollect(c, pred, out);
     return out;
   }
+  function boardShapeSignature(n) {
+    if (!n) return "";
+    if (n.type === "TEXT") return "T";
+    if (n.type === "SVG") return "S";
+    const kids = (n.children || []).map(boardShapeSignature).join(",");
+    return `F:${n.layout?.mode || "NONE"}${n.imageData ? ":img" : ""}[${kids}]`;
+  }
+  function boardStyleKey(n) {
+    const S = n.styles || {};
+    const own2 = [
+      (S.fills || []).map(boardColorKey).join(","),
+      (S.strokes || []).map((s) => boardColorKey(s) + "@" + s.width).join(","),
+      JSON.stringify(S.cornerRadius ?? 0),
+      (S.boxShadow || []).length,
+      n.type === "TEXT" ? [n.textData?.fontWeight, (S.fills || []).map(boardColorKey).join(",")].join("|") : ""
+    ].join("|");
+    return own2 + "[" + (n.children || []).map(boardStyleKey).join(";") + "]";
+  }
+  var areaOf = (n) => (n.layout?.measuredWidth || 0) * (n.layout?.measuredHeight || 0);
+  var SIZE_NAMES = {
+    2: ["L", "S"],
+    3: ["L", "M", "S"],
+    4: ["XL", "L", "M", "S"],
+    5: ["XL", "L", "M", "S", "XS"]
+  };
+  function boardVariantFamilies(groups) {
+    const byKey = /* @__PURE__ */ new Map();
+    for (const g of groups) {
+      const base = g.name.replace(/\s+\d+$/, "");
+      const key = base + "§" + boardShapeSignature(g.occurrences[0]);
+      if (!byKey.has(key)) byKey.set(key, []);
+      byKey.get(key).push(g);
+    }
+    const families = [];
+    for (const [key, members2] of byKey) {
+      if (members2.length < 2) continue;
+      const name = key.split("§")[0];
+      const reps = members2.map((g) => g.occurrences[0]);
+      const sameStyle = new Set(reps.map(boardStyleKey)).size === 1;
+      const areas = reps.map(areaOf);
+      const sameSize = Math.max(...areas) - Math.min(...areas) <= Math.max(...areas) * 0.05;
+      let property;
+      let values;
+      if (sameStyle && !sameSize) {
+        property = "Size";
+        const order = members2.map((_, i) => i).sort((a, b) => areas[b] - areas[a]);
+        const names = SIZE_NAMES[members2.length] || members2.map((_, i) => String(i + 1));
+        values = new Array(members2.length);
+        order.forEach((idx, rank) => values[idx] = names[rank]);
+      } else if (sameSize && !sameStyle) {
+        property = "Style";
+        const colors = reps.map((r) => boardColorKey((r.styles?.fills || [])[0]));
+        const distinct = new Set(colors).size === colors.length && !colors.includes("-");
+        values = distinct ? colors : members2.map((_, i) => String(i + 1));
+      } else {
+        property = "Variant";
+        values = members2.map((_, i) => String(i + 1));
+      }
+      families.push({ name, property, members: members2.map((g, i) => ({ groupId: g.id, value: values[i] })) });
+    }
+    return families;
+  }
+  function rgbToLab(r, g, b) {
+    const lin = (c) => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    const R = lin(r), G = lin(g), B = lin(b);
+    const x = (R * 0.4124 + G * 0.3576 + B * 0.1805) / 0.95047;
+    const y = R * 0.2126 + G * 0.7152 + B * 0.0722;
+    const z = (R * 0.0193 + G * 0.1192 + B * 0.9505) / 1.08883;
+    const f = (t) => t > 8856e-6 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+    const fx = f(x), fy = f(y), fz = f(z);
+    return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+  }
+  function deltaE(a, b) {
+    const [l1, a1, b1] = rgbToLab(a.r, a.g, a.b);
+    const [l2, a2, b2] = rgbToLab(b.r, b.g, b.b);
+    return Math.hypot(l1 - l2, a1 - a2, b1 - b2);
+  }
+  function boardMergeSimilarColors(entries, threshold = 2.3) {
+    const sorted = [...entries].sort((a, b) => b.items.length - a.items.length);
+    const merged = [];
+    for (const e of sorted) {
+      const home = merged.find((m) => Math.abs(m.alpha - e.alpha) <= 0.02 && deltaE(m.color, e.color) <= threshold);
+      if (home) home.items.push(...e.items);
+      else merged.push({ color: e.color, alpha: e.alpha, items: [...e.items] });
+    }
+    return merged.sort((a, b) => b.items.length - a.items.length);
+  }
+
+  // packages/figma-plugin/src/board/variables.ts
+  function variablesAvailable() {
+    const v = figma.variables;
+    return !!v && typeof v.createVariableCollection === "function" && typeof v.createVariable === "function";
+  }
+  function safeVarName(name) {
+    return name.replace(/\./g, ",").replace(/[${}]/g, "").trim() || "Variable";
+  }
+  function newCollection(base) {
+    let existing = [];
+    try {
+      existing = (figma.variables.getLocalVariableCollections?.() || []).map((c) => c.name);
+    } catch (_e) {
+    }
+    let name = base;
+    for (let i = 2; existing.includes(name); i++) name = `${base} ${i}`;
+    const collection = figma.variables.createVariableCollection(name);
+    return { collection, modeId: collection.modes[0].modeId };
+  }
+  function colorVariable(collection, modeId, name, rgb) {
+    const v = figma.variables.createVariable(safeVarName(name), collection, "COLOR");
+    v.setValueForMode(modeId, { r: rgb.r, g: rgb.g, b: rgb.b, a: 1 });
+    try {
+      v.scopes = ["ALL_FILLS", "STROKE_COLOR", "EFFECT_COLOR"];
+    } catch (_e) {
+    }
+    return v;
+  }
+  function numberVariable(collection, modeId, name, value, scopes) {
+    const v = figma.variables.createVariable(safeVarName(name), collection, "FLOAT");
+    v.setValueForMode(modeId, value);
+    try {
+      v.scopes = scopes;
+    } catch (_e) {
+    }
+    return v;
+  }
+  function boundSolidPaint(paint, variable) {
+    return figma.variables.setBoundVariableForPaint(paint, "color", variable);
+  }
+  var SPACING_FIELDS = ["itemSpacing", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft"];
+  var RADIUS_FIELDS = ["topLeftRadius", "topRightRadius", "bottomLeftRadius", "bottomRightRadius"];
+  function collectNumericTokens(nodes, minUses = 2) {
+    const spacing2 = /* @__PURE__ */ new Map();
+    const radius = /* @__PURE__ */ new Map();
+    const add = (map, value, use) => {
+      const v = Math.round(value * 10) / 10;
+      if (!(v > 0)) return;
+      if (!map.has(v)) map.set(v, []);
+      map.get(v).push(use);
+    };
+    for (const n of nodes) {
+      const f = n;
+      if (f.layoutMode && f.layoutMode !== "NONE") {
+        for (const field of SPACING_FIELDS) {
+          if (field === "itemSpacing" && f.primaryAxisAlignItems === "SPACE_BETWEEN") continue;
+          if (typeof f[field] === "number") add(spacing2, f[field], { node: n, field });
+        }
+      }
+      if ("topLeftRadius" in f) {
+        for (const field of RADIUS_FIELDS) if (typeof f[field] === "number") add(radius, f[field], { node: n, field });
+      }
+    }
+    const keep = (map) => [...map.entries()].filter(([, uses]) => uses.length >= minUses).sort((a, b) => a[0] - b[0]);
+    return { spacing: keep(spacing2), radius: keep(radius) };
+  }
+  function cssTokensToVariables(colors) {
+    const V = figma.variables;
+    const collection = (V.getLocalVariableCollections?.() || []).find((c) => c.name === "Tokens CSS") || V.createVariableCollection("Tokens CSS");
+    const modeId = collection.modes[0].modeId;
+    const existing = (V.getLocalVariables?.("COLOR") || []).filter((v) => v.variableCollectionId === collection.id);
+    let count = 0;
+    for (const [token, c] of Object.entries(colors)) {
+      try {
+        const name = safeVarName(token.replace(/^--/, ""));
+        const v = existing.find((x) => x.name === name) || V.createVariable(name, collection, "COLOR");
+        v.setValueForMode(modeId, { r: c.r, g: c.g, b: c.b, a: c.a !== void 0 ? c.a : 1 });
+        count++;
+      } catch (_e) {
+      }
+    }
+    return count;
+  }
 
   // packages/figma-plugin/src/board/board.ts
   async function buildBoardInstance(nodeData, master) {
@@ -6875,12 +7348,12 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     const textNodes = [];
     const fillNodes = [];
     for (const s of scope) {
-      if ("findAll" in s) {
-        for (const n of s.findAll(() => true)) {
-          if (insideInstance(n)) continue;
-          if (n.type === "TEXT") textNodes.push(n);
-          else if ("fills" in n && n.fills !== figma.mixed) fillNodes.push(n);
-        }
+      const nodes = [s, ..."findAll" in s ? s.findAll(() => true) : []];
+      for (const n of nodes) {
+        if (n.type === "INSTANCE" || insideInstance(n)) continue;
+        if (n.type === "COMPONENT_SET") continue;
+        if (n.type === "TEXT") textNodes.push(n);
+        else if ("fills" in n && n.fills !== figma.mixed) fillNodes.push(n);
       }
     }
     const tGroups = /* @__PURE__ */ new Map();
@@ -6937,51 +7410,76 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       } catch (_e) {
       }
     }
-    const cGroups = /* @__PURE__ */ new Map();
+    const exact = /* @__PURE__ */ new Map();
     for (const n of [...fillNodes, ...textNodes]) {
       const fills = n.fills;
       if (!Array.isArray(fills) || fills.length !== 1 || fills[0].type !== "SOLID" || fills[0].visible === false)
         continue;
       const p = fills[0];
-      const key = boardColorKey({ ...p.color, a: p.opacity ?? 1 });
-      if (!cGroups.has(key)) cGroups.set(key, { paint: p, nodes: [] });
-      cGroups.get(key).nodes.push(n);
+      const alpha = p.opacity ?? 1;
+      const key = boardColorKey({ ...p.color, a: alpha });
+      if (!exact.has(key)) exact.set(key, { color: p.color, alpha, items: [] });
+      exact.get(key).items.push(n);
     }
-    const palette = [...cGroups.entries()].sort((a, b) => b[1].nodes.length - a[1].nodes.length).slice(0, 32);
+    const palette = boardMergeSimilarColors([...exact.values()]).slice(0, 48);
+    const useVariables = variablesAvailable();
+    let vars = null;
+    if (useVariables) {
+      try {
+        vars = newCollection(prefix);
+      } catch (varErr) {
+        figma.ui.postMessage({
+          type: "LOG",
+          level: "warn",
+          message: `Variables no disponibles en este archivo (${varErr?.message || varErr}): se usan estilos de color.`
+        });
+      }
+    }
     const cx = 1100;
     let cy = PAD;
-    const ctitle = await boardLabel("Colores", 32, 700, { r: 0.1, g: 0.1, b: 0.12 });
+    const ctitle = await boardLabel(vars ? "Colores · Variables" : "Colores", 32, 700, { r: 0.1, g: 0.1, b: 0.12 });
     stylesSec.appendChild(ctitle);
     ctitle.x = cx;
     ctitle.y = cy;
     cy += 70;
     let col = 0;
-    for (const [hex, g] of palette) {
+    for (const g of palette) {
       try {
-        const st = figma.createPaintStyle();
-        st.name = `${prefix}/Color/${hex}`;
-        st.paints = [g.paint];
-        for (const n of g.nodes) {
-          try {
+        const hex = boardColorKey({ ...g.color, a: g.alpha });
+        const base = { type: "SOLID", color: g.color, opacity: g.alpha };
+        let paint = base;
+        let bindNode;
+        if (vars) {
+          const variable = colorVariable(vars.collection, vars.modeId, `Color/${hex.replace("#", "")}`, g.color);
+          paint = boundSolidPaint(base, variable);
+          bindNode = (n) => {
+            n.fills = [paint];
+          };
+        } else {
+          const st = figma.createPaintStyle();
+          st.name = `${prefix}/Color/${hex}`;
+          st.paints = [base];
+          bindNode = (n) => {
             n.fillStyleId = st.id;
+          };
+        }
+        for (const n of g.items) {
+          try {
+            bindNode(n);
           } catch (_e) {
           }
         }
         const sw = figma.createRectangle();
         sw.resize(120, 120);
         sw.cornerRadius = 12;
-        sw.fills = [g.paint];
+        sw.fills = [paint];
         sw.strokes = [{ type: "SOLID", color: { r: 0, g: 0, b: 0 }, opacity: 0.08 }];
-        try {
-          sw.fillStyleId = st.id;
-        } catch (_e) {
-        }
         const x = cx + col * 150, yy = cy;
         stylesSec.appendChild(sw);
         sw.x = x;
         sw.y = yy;
         const lbl = await boardLabel(`${hex}
-${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
+${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
         stylesSec.appendChild(lbl);
         lbl.x = x;
         lbl.y = yy + 128;
@@ -6992,6 +7490,97 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
         }
       } catch (_e) {
       }
+    }
+    if (col > 0) cy += 190;
+    if (vars) {
+      const frames = [];
+      for (const s of scope) {
+        if (s.layoutMode !== void 0 && !insideInstance(s)) frames.push(s);
+        if ("findAll" in s) {
+          for (const n of s.findAll((x) => x.type === "FRAME" || x.type === "COMPONENT"))
+            if (!insideInstance(n)) frames.push(n);
+        }
+      }
+      const { spacing: spacing2, radius } = collectNumericTokens(frames);
+      const groups = [
+        ["Espaciado", spacing2.slice(0, 16), ["GAP"]],
+        ["Radio", radius.slice(0, 12), ["CORNER_RADIUS"]]
+      ];
+      for (const [label, entries, scopes] of groups) {
+        if (!entries.length) continue;
+        cy += 40;
+        const t = await boardLabel(`${label} · Variables`, 24, 700, { r: 0.1, g: 0.1, b: 0.12 });
+        stylesSec.appendChild(t);
+        t.x = cx;
+        t.y = cy;
+        cy += 50;
+        for (const [value, uses] of entries) {
+          try {
+            const v = numberVariable(vars.collection, vars.modeId, `${label}/${value}`, value, scopes);
+            for (const u of uses) {
+              try {
+                u.node.setBoundVariable(u.field, v);
+              } catch (_e) {
+              }
+            }
+            const row = await boardLabel(`${label}/${value}  ·  ${value} px  ·  ${uses.length} usos`, 13, 500, {
+              r: 0.3,
+              g: 0.3,
+              b: 0.35
+            });
+            stylesSec.appendChild(row);
+            row.x = cx;
+            row.y = cy;
+            cy += 26;
+          } catch (_e) {
+          }
+        }
+      }
+    }
+  }
+  function inheritedBackground(n) {
+    for (let p = n.parent; p && p.type !== "PAGE" && p.type !== "SECTION"; p = p.parent) {
+      const fills = p.fills;
+      if (Array.isArray(fills) && fills.some((f) => f.visible !== false && (f.type !== "SOLID" || (f.opacity ?? 1) > 0.05)))
+        return fills.filter((f) => f.visible !== false);
+    }
+    return null;
+  }
+  function sectionToComponent(original, copy, title) {
+    if (typeof figma.createComponentFromNode !== "function") return null;
+    if (original.type !== "FRAME" || copy.type !== "FRAME" || insideInstance(original)) return null;
+    const parent = original.parent;
+    if (!parent || !("children" in parent)) return null;
+    try {
+      const own2 = copy.fills;
+      if (Array.isArray(own2) && !own2.some((f) => f.visible !== false)) {
+        const bg = inheritedBackground(original);
+        if (bg) copy.fills = bg;
+      }
+      const comp = figma.createComponentFromNode(copy);
+      comp.name = `Sección / ${title}`.slice(0, 120);
+      const inst = comp.createInstance();
+      parent.insertChild(parent.children.indexOf(original), inst);
+      const o = original;
+      inst.x = o.x;
+      inst.y = o.y;
+      try {
+        inst.resize(o.width, o.height);
+      } catch (_e) {
+      }
+      try {
+        if ("layoutPositioning" in o) inst.layoutPositioning = o.layoutPositioning;
+        const auto = parent.layoutMode && parent.layoutMode !== "NONE";
+        if (auto && o.layoutPositioning !== "ABSOLUTE") {
+          inst.layoutSizingHorizontal = o.layoutSizingHorizontal === "HUG" ? "FIXED" : o.layoutSizingHorizontal;
+          inst.layoutSizingVertical = o.layoutSizingVertical === "HUG" ? "FIXED" : o.layoutSizingVertical;
+        }
+      } catch (_e) {
+      }
+      original.remove();
+      return comp;
+    } catch (_e) {
+      return null;
     }
   }
   async function buildDesignBoard(payload) {
@@ -7013,8 +7602,7 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     page.appendChild(compSec);
     const ctx = { masters: /* @__PURE__ */ new Map() };
     setBoardCtx(ctx);
-    let gx = 100, gy = 100, rowH = 0;
-    const MAX_ROW = 2600;
+    const usesOf = /* @__PURE__ */ new Map();
     for (const g of groups) {
       let built = null;
       try {
@@ -7031,19 +7619,7 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
         const master = built;
         compSec.appendChild(master);
         master.description = `${g.occurrences.length} usos en ${host}`;
-        if (gx > 100 && gx + master.width > MAX_ROW) {
-          gx = 100;
-          gy += rowH + 140;
-          rowH = 0;
-        }
-        master.x = gx;
-        master.y = gy + 40;
-        const lbl = await boardLabel(`${g.name} · ${g.occurrences.length} usos`, 16, 600, { r: 0.33, g: 0.2, b: 0.8 });
-        compSec.appendChild(lbl);
-        lbl.x = gx;
-        lbl.y = gy;
-        gx += master.width + 120;
-        rowH = Math.max(rowH, master.height + 40);
+        usesOf.set(g.id, g.occurrences.length);
         ctx.masters.set(g.id, master);
       } catch (compErr) {
         if (built && !built.removed) {
@@ -7059,7 +7635,63 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
         });
       }
     }
-    progress(`${ctx.masters.size} componentes creados`);
+    const items = [];
+    const inSet = /* @__PURE__ */ new Set();
+    let variantSets = 0;
+    for (const fam of boardVariantFamilies(groups)) {
+      const members2 = fam.members.filter((m) => ctx.masters.has(m.groupId));
+      if (members2.length < 2 || typeof figma.combineAsVariants !== "function") continue;
+      try {
+        const masters = members2.map((m) => {
+          const master = ctx.masters.get(m.groupId);
+          master.name = `${fam.property}=${m.value}`;
+          return master;
+        });
+        const set = figma.combineAsVariants(masters, compSec);
+        set.name = fam.name;
+        set.layoutMode = "HORIZONTAL";
+        set.primaryAxisSizingMode = "AUTO";
+        set.counterAxisSizingMode = "AUTO";
+        set.counterAxisAlignItems = "CENTER";
+        set.itemSpacing = 40;
+        set.paddingTop = set.paddingBottom = set.paddingLeft = set.paddingRight = 32;
+        const uses = members2.reduce((a, m) => a + (usesOf.get(m.groupId) || 0), 0);
+        items.push({ node: set, label: `${fam.name} · ${members2.length} variantes (${fam.property}) · ${uses} usos` });
+        members2.forEach((m) => inSet.add(m.groupId));
+        variantSets++;
+      } catch (setErr) {
+        figma.ui.postMessage({
+          type: "LOG",
+          level: "warn",
+          message: `Variantes de "${fam.name}" no agrupadas: ${setErr?.message || setErr}`
+        });
+      }
+    }
+    for (const g of groups) {
+      const master = ctx.masters.get(g.id);
+      if (master && !inSet.has(g.id)) items.push({ node: master, label: `${g.name} · ${usesOf.get(g.id) || 0} usos` });
+    }
+    let gx = 100, gy = 100, rowH = 0;
+    const MAX_ROW = 2600;
+    for (const item of items) {
+      const n = item.node;
+      if (gx > 100 && gx + n.width > MAX_ROW) {
+        gx = 100;
+        gy += rowH + 140;
+        rowH = 0;
+      }
+      n.x = gx;
+      n.y = gy + 40;
+      const lbl = await boardLabel(item.label, 16, 600, { r: 0.33, g: 0.2, b: 0.8 });
+      compSec.appendChild(lbl);
+      lbl.x = gx;
+      lbl.y = gy;
+      gx += n.width + 120;
+      rowH = Math.max(rowH, n.height + 40);
+    }
+    progress(
+      `${ctx.masters.size} componentes creados` + (variantSets ? `, ${variantSets} agrupados como variantes` : "")
+    );
     const fullSec = boardNewSection("01 · Página completa");
     page.appendChild(fullSec);
     const full = await buildFigmaNode(root);
@@ -7076,6 +7708,7 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     const isMulti = String(root.id || "").startsWith("multi_selection_bundle") && "children" in full;
     const picked = isMulti ? [...full.children] : boardPickSections(full);
     let subOk = 0;
+    const sectionComponents = [];
     for (let i = 0; i < picked.length; i++) {
       let clone2 = null;
       try {
@@ -7089,6 +7722,11 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
         subSec.appendChild(clone2);
         clone2.x = 100;
         clone2.y = sy + 44;
+        const asComponent = sectionToComponent(picked[i], clone2, heading || picked[i].name);
+        if (asComponent) {
+          clone2 = asComponent;
+          sectionComponents.push(asComponent);
+        }
         sy += 44 + clone2.height + 140;
         subOk++;
       } catch (subErr) {
@@ -7109,7 +7747,12 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     const stylesSec = boardNewSection("04 · Estilos");
     page.appendChild(stylesSec);
     await boardBuildStyles(
-      [full, ...compSec.children.filter((c) => c.type === "COMPONENT")],
+      [
+        full,
+        // Las secciones convertidas en componente: su contenido vive en el maestro, no en la instancia
+        ...sectionComponents,
+        ...compSec.children.filter((c) => c.type === "COMPONENT" || c.type === "COMPONENT_SET")
+      ],
       stylesSec,
       prefix
     );
@@ -7691,7 +8334,13 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
       payload.rootNode.type = "COMPONENT";
     }
     let createdTokensCount = 0;
-    if (payload.tokens?.colors && typeof figma.createPaintStyle === "function") {
+    if (payload.tokens?.colors && variablesAvailable()) {
+      try {
+        createdTokensCount = cssTokensToVariables(payload.tokens.colors);
+      } catch (_varErr) {
+      }
+    }
+    if (payload.tokens?.colors && !createdTokensCount && typeof figma.createPaintStyle === "function") {
       for (const [tokenName, rgba] of Object.entries(payload.tokens.colors)) {
         try {
           const cleanName = "Token / " + tokenName.replace(/^--/, "");
@@ -7784,7 +8433,7 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     }
     const totalNodeCount = countNodes(payload.rootNode);
     const renderStartTime = Date.now();
-    const rootFigmaNode = await buildFigmaNode(payload.rootNode);
+    const rootFigmaNode = await buildStateVariants(payload, log2) || await buildFigmaNode(payload.rootNode);
     const buildMs = Date.now() - renderStartTime;
     if (rootFigmaNode) {
       targetPage.appendChild(rootFigmaNode);
@@ -7870,6 +8519,43 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
       });
     } else {
       throw new Error("No se pudo generar el nodo raíz");
+    }
+  }
+  async function buildStateVariants(payload, log2) {
+    const states = Array.isArray(payload.states) ? payload.states : [];
+    if (!states.length || typeof figma.combineAsVariants !== "function") return null;
+    const asComponent = (root, state) => {
+      const data = JSON.parse(JSON.stringify(root));
+      data.type = "COMPONENT";
+      data.name = `State=${String(state).replace(/[=,]/g, " ").trim() || "Estado"}`;
+      data.layout = { ...data.layout, positioning: "AUTO", x: 0, y: 0 };
+      return data;
+    };
+    const built = [];
+    try {
+      for (const [root, state] of [[payload.rootNode, "Default"], ...states.map((s) => [s.rootNode, s.name])]) {
+        const node2 = await buildFigmaNode(asComponent(root, state));
+        if (!node2 || node2.type !== "COMPONENT") throw new Error("estado sin componente");
+        built.push(node2);
+      }
+      const set = figma.combineAsVariants(built, figma.currentPage);
+      set.name = payload.rootNode?.name || "Componente";
+      set.layoutMode = "HORIZONTAL";
+      set.primaryAxisSizingMode = "AUTO";
+      set.counterAxisSizingMode = "AUTO";
+      set.counterAxisAlignItems = "CENTER";
+      set.itemSpacing = 40;
+      set.paddingTop = set.paddingBottom = set.paddingLeft = set.paddingRight = 32;
+      return set;
+    } catch (err) {
+      log2.warn("No se pudieron unir los estados como variantes", { error: String(err?.message || err) });
+      for (const n of built) {
+        try {
+          n.remove();
+        } catch (_e) {
+        }
+      }
+      return null;
     }
   }
 

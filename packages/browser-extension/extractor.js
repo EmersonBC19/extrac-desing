@@ -2673,6 +2673,101 @@
     return { colors, radii };
   }
 
+  // packages/core-extractor/src/browser/states.ts
+  var ATTR = "data-ctf-state";
+  var PSEUDO = {
+    hover: /:hover\b/g,
+    focus: /:focus(?:-visible|-within)?\b/g
+  };
+  function collectRules(list, out) {
+    for (const rule of Array.from(list)) {
+      if (rule instanceof CSSStyleRule) out.push(rule);
+      else if (rule instanceof CSSMediaRule) {
+        if (window.matchMedia(rule.conditionText || rule.media.mediaText).matches) collectRules(rule.cssRules, out);
+      } else if ("cssRules" in rule && rule.cssRules) {
+        collectRules(rule.cssRules, out);
+      }
+    }
+  }
+  function mark(el, state) {
+    const touched = [];
+    for (let p = el; p; p = p.parentElement) {
+      const prev = p.getAttribute(ATTR);
+      touched.push([p, prev]);
+      p.setAttribute(ATTR, prev ? `${prev} ${state}` : state);
+    }
+    return () => {
+      for (const [p, prev] of touched) {
+        if (prev === null) p.removeAttribute(ATTR);
+        else p.setAttribute(ATTR, prev);
+      }
+    };
+  }
+  function emulateState(target, state) {
+    const pseudo = PSEUDO[state];
+    const rules = [];
+    let unreadableSheets = 0;
+    for (const sheet of Array.from(document.styleSheets)) {
+      try {
+        collectRules(sheet.cssRules, rules);
+      } catch (_e) {
+        unreadableSheets++;
+      }
+    }
+    const unmark = mark(target, state);
+    const css = [];
+    for (const rule of rules) {
+      const sel = rule.selectorText || "";
+      pseudo.lastIndex = 0;
+      if (!pseudo.test(sel)) continue;
+      const parts = sel.split(/,(?![^(]*\))/).filter((part) => {
+        pseudo.lastIndex = 0;
+        return pseudo.test(part);
+      }).map((part) => part.replace(pseudo, `[${ATTR}~="${state}"]`).trim());
+      const relevant = parts.filter((part) => {
+        try {
+          return target.matches(part) || !!target.querySelector(part);
+        } catch (_e) {
+          return false;
+        }
+      });
+      if (relevant.length) css.push(`${relevant.join(", ")} { ${rule.style.cssText} }`);
+    }
+    if (!css.length) {
+      unmark();
+      return null;
+    }
+    const removeState = addSheet(css.join("\n"));
+    const removeFreeze = addSheet(`[${ATTR}], [${ATTR}] * { transition: none !important; animation: none !important; }`);
+    void target.getBoundingClientRect();
+    return {
+      rules: css.length,
+      unreadableSheets,
+      undo: () => {
+        removeState();
+        void window.getComputedStyle(target).color;
+        void target.getBoundingClientRect();
+        unmark();
+        removeFreeze();
+      }
+    };
+  }
+  function addSheet(cssText) {
+    try {
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(cssText);
+      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+      return () => {
+        document.adoptedStyleSheets = document.adoptedStyleSheets.filter((x) => x !== sheet);
+      };
+    } catch (_e) {
+      const style = document.createElement("style");
+      style.textContent = cssText;
+      (document.head || document.documentElement).appendChild(style);
+      return () => style.remove();
+    }
+  }
+
   // packages/contracts/src/payload-stats.ts
   var HEAVY_PAYLOAD = {
     /** Más de esto: aviso antes de enviar */
@@ -2747,6 +2842,17 @@
     const resolved = await resolvePendingImages(rawNode);
     const tokens = extractDesignTokens();
     return { rootNode: resolved, tokens };
+  };
+  window.__codeToFigmaExtractState = async function(rootElement, state) {
+    if (!rootElement || typeof window.__codeToFigmaExtract !== "function") return null;
+    const emulation = emulateState(rootElement, state);
+    if (!emulation) return null;
+    try {
+      const res = await window.__codeToFigmaExtract(rootElement);
+      return res ? { rootNode: res.rootNode, rules: emulation.rules, unreadableSheets: emulation.unreadableSheets } : null;
+    } finally {
+      emulation.undo();
+    }
   };
   window.__codeToFigmaPayload = { measurePayload, heavyPayloadReasons, withoutImages, formatBytes };
   console.log("[CodeToFigma] Extractor Engine v2.1 (Geometric Direction & Centered Stacking) ready.");

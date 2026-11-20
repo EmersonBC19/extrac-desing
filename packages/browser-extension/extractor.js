@@ -46,7 +46,7 @@ function isCarouselTrack(el, rect, children) {
 
 /** Extrae la URL de la primera capa url()/image-set() de un background-image CSS. */
 function extractBgUrl(bgStr) {
-  if (!bgStr || bgStr === 'none' || !bgStr.includes('url(')) return null;
+  if (!bgStr || bgStr === 'none' || (!bgStr.includes('url(') && !/image-set\(/i.test(bgStr))) return null;
   // image-set(url(a) 1x, url(b) 2x) → preferir la de mayor densidad
   if (/image-set\(/i.test(bgStr)) {
     const opts = [...bgStr.matchAll(/(?:url\(\s*['"]?([^'")]+)['"]?\s*\)|['"]([^'"]+)['"])\s*([\d.]+)x/gi)]
@@ -393,12 +393,15 @@ function fitAutoLayoutToGeometry(node) {
   const after = boxes.map(b => CROSS - (cross(b) + crossSize(b)));
   const same = arr => Math.max(...arr) - Math.min(...arr) <= 1.5;
   let counter, padBefore, padAfter;
-  if (same(before)) { counter = 'MIN'; padBefore = before[0]; padAfter = Math.min(...after); }
-  else if (same(after)) { counter = 'MAX'; padAfter = after[0]; padBefore = Math.min(...before); }
-  else if (boxes.every((_, i) => Math.abs(before[i] - after[i]) <= 2)) {
+  // CENTER primero: si los hijos están centrados, seguir centrados al redimensionar en Figma
+  // (antes un icono centrado salía como MIN + padding: igual a la vista, pero se descentraba al editar)
+  if (boxes.every((_, i) => Math.abs(before[i] - after[i]) <= 2)) {
     counter = 'CENTER';
     padBefore = padAfter = Math.min(...before);
-  } else { L.mode = 'NONE'; return; }
+  }
+  else if (same(before)) { counter = 'MIN'; padBefore = before[0]; padAfter = Math.min(...after); }
+  else if (same(after)) { counter = 'MAX'; padAfter = after[0]; padBefore = Math.min(...before); }
+  else { L.mode = 'NONE'; return; }
   if (padBefore < -1 || padAfter < -1) { L.mode = 'NONE'; return; }
 
   const r = v => Math.max(0, Math.round(v));
@@ -1849,6 +1852,13 @@ function extractNodeTree(element, counter = { id: 0 }, parentRect = null, parent
         }
       });
       if (leafAfter) node.children.push(leafAfter);
+    } else {
+      // Caja vacía con decoración en ::before/::after (brillos, formas de fondo, iconos):
+      // antes solo se extraían los pseudo-elementos de elementos con hijos y se perdían
+      const decoBefore = extractPseudoElement(element, '::before', rect, currentLayout, counter);
+      if (decoBefore) node.children.push(decoBefore);
+      const decoAfter = extractPseudoElement(element, '::after', rect, currentLayout, counter);
+      if (decoAfter) node.children.push(decoAfter);
     }
   } else {
     // ── 17.5 Pseudo-elemento ::before ──
@@ -2339,6 +2349,14 @@ function extractDesignTokens() {
     const resolved = await resolvePendingImages(rawNode);
     const tokens = typeof extractDesignTokens === 'function' ? extractDesignTokens() : undefined;
     return { rootNode: resolved, tokens };
+  };
+
+  // Funciones internas para las pruebas unitarias (tests/unit). En la extensión el extractor corre
+  // en el mundo aislado del content script: la página no ve este objeto.
+  window.__codeToFigmaInternals = {
+    extractBgUrl, bgScaleMode, isVisuallyHidden, cssColorToRgba,
+    fitAutoLayoutToGeometry, fitWrapToGeometry, dataUriToBase64,
+    isCarouselSlide, isCarouselTrack, isInlineTextRoot, buildRichText, pseudoPosition,
   };
 
   console.log('[CodeToFigma] Extractor Engine v2.1 (Geometric Direction & Centered Stacking) ready.');

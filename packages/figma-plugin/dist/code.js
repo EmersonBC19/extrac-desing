@@ -272,8 +272,11 @@ function boardDetectComponents(root) {
             return false;
         if (!n.children || n.children.length === 0)
             return false; // imagen/caja suelta: no es componente
-        if (boardCountNodes(n) < 3)
-            return false; // demasiado trivial
+        // Demasiado trivial, salvo una caja con estilo propio + contenido (botón, badge, chip):
+        // es el componente más básico de un design system
+        const styled = (n.styles?.fills || []).length > 0 || (n.styles?.strokes || []).length > 0;
+        if (boardCountNodes(n) < 3 && !styled)
+            return false;
         const area = (n.layout?.measuredWidth || 0) * (n.layout?.measuredHeight || 0);
         return area > 0 && area / rootArea < 0.35; // secciones enteras no
     };

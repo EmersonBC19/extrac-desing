@@ -59,7 +59,8 @@ export function isInlineTextRoot(el: Element) {
       if (cs.display !== 'inline') return false;
       // Fondos/bordes en un inline (chips, badges) necesitan su propia capa
       const bg = cs.backgroundColor;
-      if ((bg && bg !== 'transparent' && !/rgba\([^)]*,\s*0\)$/.test(bg)) || cs.backgroundImage !== 'none') return false;
+      if ((bg && bg !== 'transparent' && !/rgba\([^)]*,\s*0\)$/.test(bg)) || cs.backgroundImage !== 'none')
+        return false;
       if (parseFloat(cs.borderTopWidth) > 0 && cs.borderTopStyle !== 'none') return false;
       if (!check(c)) return false;
     }
@@ -71,15 +72,49 @@ export function isInlineTextRoot(el: Element) {
 export function cssColorToRgba(str: string | null | undefined): Rgba | null {
   const m = (str || '').match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+%?))?\s*\)/);
   if (!m) return null;
-  const a = m[4] === undefined ? 1 : (m[4].endsWith('%') ? parseFloat(m[4]) / 100 : parseFloat(m[4]));
+  const a = m[4] === undefined ? 1 : m[4].endsWith('%') ? parseFloat(m[4]) / 100 : parseFloat(m[4]);
   return { r: +m[1] / 255, g: +m[2] / 255, b: +m[3] / 255, a };
 }
 
 // Superíndices/subíndices: Figma no permite aplicar vertical-align ni OpenType "sups/numr" por API,
 // así que se usan los caracteres Unicode equivalentes (1 a 1, no altera los índices de los tramos).
-export const SUP_MAP: Record<string, string> = { '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹', '+': '⁺', '-': '⁻', '=': '⁼', '(': '⁽', ')': '⁾', 'n': 'ⁿ', 'i': 'ⁱ' };
+export const SUP_MAP: Record<string, string> = {
+  '0': '⁰',
+  '1': '¹',
+  '2': '²',
+  '3': '³',
+  '4': '⁴',
+  '5': '⁵',
+  '6': '⁶',
+  '7': '⁷',
+  '8': '⁸',
+  '9': '⁹',
+  '+': '⁺',
+  '-': '⁻',
+  '=': '⁼',
+  '(': '⁽',
+  ')': '⁾',
+  n: 'ⁿ',
+  i: 'ⁱ',
+};
 
-export const SUB_MAP: Record<string, string> = { '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄', '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉', '+': '₊', '-': '₋', '=': '₌', '(': '₍', ')': '₎' };
+export const SUB_MAP: Record<string, string> = {
+  '0': '₀',
+  '1': '₁',
+  '2': '₂',
+  '3': '₃',
+  '4': '₄',
+  '5': '₅',
+  '6': '₆',
+  '7': '₇',
+  '8': '₈',
+  '9': '₉',
+  '+': '₊',
+  '-': '₋',
+  '=': '₌',
+  '(': '₍',
+  ')': '₎',
+};
 
 /** SUPER / SUB si el elemento o algún ancestro (hasta root) lo convierte en super/subíndice */
 export function scriptPosition(el: Element, root: Element): ScriptBaseline | null {
@@ -120,8 +155,10 @@ export function buildRichText(root: Element, rootStyle: CSSStyleDeclaration) {
   const rootRect = root.getBoundingClientRect();
   const rootFs = parseFloat(rootStyle.fontSize) || 16;
   const rootLh = parseFloat(rootStyle.lineHeight) || rootFs * 1.2;
-  const clipsY = /^(hidden|clip)$/.test(rootStyle.overflowY) || (rootStyle.webkitLineClamp && rootStyle.webkitLineClamp !== 'none');
-  const ellipsis = rootStyle.textOverflow === 'ellipsis' || (rootStyle.webkitLineClamp && rootStyle.webkitLineClamp !== 'none');
+  const clipsY =
+    /^(hidden|clip)$/.test(rootStyle.overflowY) || (rootStyle.webkitLineClamp && rootStyle.webkitLineClamp !== 'none');
+  const ellipsis =
+    rootStyle.textOverflow === 'ellipsis' || (rootStyle.webkitLineClamp && rootStyle.webkitLineClamp !== 'none');
   const range = document.createRange();
   const MAX_MEASURE = 4000;
   let measured = 0;
@@ -145,9 +182,18 @@ export function buildRichText(root: Element, rootStyle: CSSStyleDeclaration) {
       strike: (cs.textDecorationLine || '').includes('line-through'),
       baseline: scriptPosition(el, root),
       _tt: cs.textTransform,
-      _ws: cs.whiteSpace
+      _ws: cs.whiteSpace,
     };
-    st.key = [st.fontFamily, st.fontWeight, st.fontSize, st.italic, st.color && [st.color.r, st.color.g, st.color.b, st.color.a].join(','), st.underline, st.strike, st.baseline].join('|');
+    st.key = [
+      st.fontFamily,
+      st.fontWeight,
+      st.fontSize,
+      st.italic,
+      st.color && [st.color.r, st.color.g, st.color.b, st.color.a].join(','),
+      st.underline,
+      st.strike,
+      st.baseline,
+    ].join('|');
     styleKeyCache.set(el, st);
     return st;
   }
@@ -159,8 +205,9 @@ export function buildRichText(root: Element, rootStyle: CSSStyleDeclaration) {
 
   function newLine() {
     lines++;
-    if (out.length && out[out.length - 1] === ' ') { out[out.length - 1] = '\n'; }
-    else pushChar('\n', charStyles[charStyles.length - 1] || null);
+    if (out.length && out[out.length - 1] === ' ') {
+      out[out.length - 1] = '\n';
+    } else pushChar('\n', charStyles[charStyles.length - 1] || null);
     lastWasSpace = true;
   }
 
@@ -172,7 +219,11 @@ export function buildRichText(root: Element, rootStyle: CSSStyleDeclaration) {
     for (let i = 0; i < data.length && !truncated; i++) {
       const ch = data[i];
       const isSpace = /\s/.test(ch);
-      if (preserve && ch === '\n') { newLine(); lineCenter = null; continue; }
+      if (preserve && ch === '\n') {
+        newLine();
+        lineCenter = null;
+        continue;
+      }
       if (isSpace && !preserve) {
         if (lastWasSpace) continue;
         pushChar(' ', st);
@@ -191,12 +242,17 @@ export function buildRichText(root: Element, rootStyle: CSSStyleDeclaration) {
           range.setEnd(node, i + 1);
           const r = range.getClientRects()[0];
           if (r && r.height > 0) {
-            if (clipsY && r.top >= rootRect.bottom - 1) { truncated = true; break; }
+            if (clipsY && r.top >= rootRect.bottom - 1) {
+              truncated = true;
+              break;
+            }
             const c = r.top + r.height / 2;
             if (lineCenter !== null && c > lineCenter + rootLh * 0.5) newLine();
             lineCenter = c;
           }
-        } catch (_e) { measureOk = false; }
+        } catch (_e) {
+          measureOk = false;
+        }
       } else if (measured >= MAX_MEASURE) {
         measureOk = false;
       }
@@ -211,11 +267,18 @@ export function buildRichText(root: Element, rootStyle: CSSStyleDeclaration) {
   (function walk(node: Node) {
     for (const ch of node.childNodes) {
       if (truncated) return;
-      if (ch.nodeType === Node.TEXT_NODE) { emitText(ch as Text); continue; }
+      if (ch.nodeType === Node.TEXT_NODE) {
+        emitText(ch as Text);
+        continue;
+      }
       if (ch.nodeType !== Node.ELEMENT_NODE) continue;
       const tag = (ch as Element).localName;
       if (INLINE_SKIP.test(tag)) continue;
-      if (tag === 'br') { newLine(); lineCenter = null; continue; }
+      if (tag === 'br') {
+        newLine();
+        lineCenter = null;
+        continue;
+      }
       const cs = window.getComputedStyle(ch as Element);
       if (cs.display === 'none' || cs.visibility === 'hidden') continue;
       if (isVisuallyHidden(cs, (ch as Element).getBoundingClientRect())) continue;
@@ -233,9 +296,18 @@ export function buildRichText(root: Element, rootStyle: CSSStyleDeclaration) {
   }
   const chars = keep.map(i => out[i]);
   const styles = keep.map(i => charStyles[i]);
-  while (chars.length && chars[chars.length - 1] === '\n') { chars.pop(); styles.pop(); }
-  while (chars.length && chars[0] === '\n') { chars.shift(); styles.shift(); }
-  if (truncated && ellipsis && chars.length) { chars.push('…'); styles.push(styles[styles.length - 1]); }
+  while (chars.length && chars[chars.length - 1] === '\n') {
+    chars.pop();
+    styles.pop();
+  }
+  while (chars.length && chars[0] === '\n') {
+    chars.shift();
+    styles.shift();
+  }
+  if (truncated && ellipsis && chars.length) {
+    chars.push('…');
+    styles.push(styles[styles.length - 1]);
+  }
   text = chars.join('');
   lines = text.split('\n').length;
 
@@ -245,13 +317,22 @@ export function buildRichText(root: Element, rootStyle: CSSStyleDeclaration) {
     const st = styles[i] || styles[i - 1];
     if (!st) continue;
     const last = segments[segments.length - 1];
-    if (last && last._key === st.key && last.end === i) { last.end = i + 1; continue; }
+    if (last && last._key === st.key && last.end === i) {
+      last.end = i + 1;
+      continue;
+    }
     segments.push({
-      start: i, end: i + 1, _key: st.key,
-      fontFamily: st.fontFamily, fontWeight: st.fontWeight, fontSize: st.fontSize,
-      italic: st.italic || undefined, color: st.color || undefined,
-      underline: st.underline || undefined, strike: st.strike || undefined,
-      baseline: st.baseline || undefined
+      start: i,
+      end: i + 1,
+      _key: st.key,
+      fontFamily: st.fontFamily,
+      fontWeight: st.fontWeight,
+      fontSize: st.fontSize,
+      italic: st.italic || undefined,
+      color: st.color || undefined,
+      underline: st.underline || undefined,
+      strike: st.strike || undefined,
+      baseline: st.baseline || undefined,
     });
   }
   segments.forEach(s => delete s._key);
@@ -260,6 +341,6 @@ export function buildRichText(root: Element, rootStyle: CSSStyleDeclaration) {
     characters: text,
     segments: segments.length > 1 ? segments : null,
     lines,
-    linesPreserved: measureOk && measured > 0
+    linesPreserved: measureOk && measured > 0,
   };
 }

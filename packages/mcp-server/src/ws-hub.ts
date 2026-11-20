@@ -33,7 +33,10 @@ const PORT = parseInt(process.env.WS_PORT || '8080', 10);
 /** Solo escuchar en la propia máquina (antes: todas las interfaces de red) */
 const HOST = process.env.WS_HOST || '127.0.0.1';
 /** IDs de extensión permitidos (opcional, separados por coma). Vacío = cualquier extensión local */
-const ALLOWED_EXTENSION_IDS = (process.env.CTF_EXTENSION_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+const ALLOWED_EXTENSION_IDS = (process.env.CTF_EXTENSION_IDS || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
 /** Guardar el último RENDER_NODES en disco solo si se pide explícitamente (puede contener datos privados) */
 const DEBUG_CAPTURE = process.env.CTF_DEBUG_CAPTURE === '1';
 /** Tope de tamaño por mensaje (payloads con imágenes base64) */
@@ -48,7 +51,11 @@ interface ClientState {
   pairingTimer: NodeJS.Timeout | null;
 }
 
-type HandlerOf<K extends HubInboundType> = (ws: WebSocket, state: ClientState, msg: Extract<HubInboundMessage, { type: K }>) => void;
+type HandlerOf<K extends HubInboundType> = (
+  ws: WebSocket,
+  state: ClientState,
+  msg: Extract<HubInboundMessage, { type: K }>,
+) => void;
 type HandlerTable = { [K in HubInboundType]: HandlerOf<K> };
 
 function defaultLogger(): Logger {
@@ -82,8 +89,9 @@ export class FigmaWsHub {
         const list = JSON.parse(fs.readFileSync(catalogPath, 'utf-8'));
         const viewsDir = path.resolve(process.cwd(), 'scratch/views');
         return list.map((item: any) => {
-          const cached = fs.existsSync(path.join(viewsDir, `${item.id}.json`)) ||
-                         (item.id === 'dashboard' && fs.existsSync(path.resolve(process.cwd(), 'scratch/dashboard_tree.json')));
+          const cached =
+            fs.existsSync(path.join(viewsDir, `${item.id}.json`)) ||
+            (item.id === 'dashboard' && fs.existsSync(path.resolve(process.cwd(), 'scratch/dashboard_tree.json')));
           return { ...item, isReady: !!cached };
         });
       }
@@ -101,7 +109,10 @@ export class FigmaWsHub {
       host: HOST,
       maxPayload: MAX_PAYLOAD_BYTES,
       // Rechazar en el handshake a cualquier página web (el navegador no deja falsificar Origin)
-      verifyClient: (info: { origin: string; req: IncomingMessage }, done: (ok: boolean, code?: number, msg?: string) => void) => {
+      verifyClient: (
+        info: { origin: string; req: IncomingMessage },
+        done: (ok: boolean, code?: number, msg?: string) => void,
+      ) => {
         const cls = classifyOrigin(info.origin || undefined, ALLOWED_EXTENSION_IDS);
         if (cls === 'rejected') {
           this.log.warn('Conexión rechazada: origen no permitido', { origin: info.origin });
@@ -125,8 +136,11 @@ export class FigmaWsHub {
 
     this.wss.on('listening', () => {
       this.log.info(`⚡ Figma WebSocket Hub en ws://${HOST}:${port}`);
-      this.log.info(`🔑 Código de vinculación para el plugin de Figma: ${this.pairing.code}`, { archivo: this.pairing.file });
-      if (DEBUG_CAPTURE) this.log.info('🐞 CTF_DEBUG_CAPTURE=1: se guardará el último render en scratch/captured-last-payload.json');
+      this.log.info(`🔑 Código de vinculación para el plugin de Figma: ${this.pairing.code}`, {
+        archivo: this.pairing.file,
+      });
+      if (DEBUG_CAPTURE)
+        this.log.info('🐞 CTF_DEBUG_CAPTURE=1: se guardará el último render en scratch/captured-last-payload.json');
       this.log.info('Esperando conexión del Plugin de Figma...');
     });
 
@@ -135,7 +149,12 @@ export class FigmaWsHub {
 
   private onConnection(ws: WebSocket, req: IncomingMessage): void {
     const originClass: OriginClass = (req as any).__ctfOrigin || 'needs-pairing';
-    const state: ClientState = { originClass, authenticated: originClass !== 'needs-pairing', isFigma: false, pairingTimer: null };
+    const state: ClientState = {
+      originClass,
+      authenticated: originClass !== 'needs-pairing',
+      isFigma: false,
+      pairingTimer: null,
+    };
 
     // Clientes con origen "null" (plugin de Figma) deben vincularse a tiempo
     if (!state.authenticated) {
@@ -145,7 +164,7 @@ export class FigmaWsHub {
       }, PAIRING_TIMEOUT_MS);
     }
 
-    ws.on('message', (raw) => {
+    ws.on('message', raw => {
       try {
         const parsed = HubInboundSchema.safeParse(JSON.parse(raw.toString()));
         if (!parsed.success) {
@@ -172,7 +191,7 @@ export class FigmaWsHub {
       }
     });
 
-    ws.on('error', (err) => this.log.error('Error en socket', { error: err.message }));
+    ws.on('error', err => this.log.error('Error en socket', { error: err.message }));
   }
 
   // ── Manejadores (uno por tipo de mensaje entrante; ver MESSAGE_CATALOG en contracts) ──────
@@ -180,10 +199,10 @@ export class FigmaWsHub {
     REGISTER_CLIENT: (ws, state, msg) => this.onRegister(ws, state, msg),
     REGISTER: (ws, state, msg) => this.onRegister(ws, state, msg),
 
-    GET_STATUS: (ws) => this.sendStatus(ws),
-    PING: (ws) => this.sendStatus(ws),
+    GET_STATUS: ws => this.sendStatus(ws),
+    PING: ws => this.sendStatus(ws),
 
-    GET_VIEWS_CATALOG: (ws) => this.send(ws, { type: 'VIEWS_CATALOG', payload: { views: this.getCatalog() } }),
+    GET_VIEWS_CATALOG: ws => this.send(ws, { type: 'VIEWS_CATALOG', payload: { views: this.getCatalog() } }),
 
     REQUEST_VIEW_RENDER: (ws, _state, msg) => this.handleViewRender(ws, msg),
 
@@ -198,13 +217,20 @@ export class FigmaWsHub {
       const renderMsg = msg as unknown as WSMessage<WSRenderPayload>;
       this.lastRenderPayload = renderMsg;
       if (DEBUG_CAPTURE) this.saveDebugCapture(msg.payload);
-      this.log.info(`Render recibido. Transmitiendo a ${this.figmaSockets.size} plugin(s) de Figma`, { nodos: check.nodeCount });
+      this.log.info(`Render recibido. Transmitiendo a ${this.figmaSockets.size} plugin(s) de Figma`, {
+        nodos: check.nodeCount,
+      });
       this.broadcastToFigma(renderMsg);
     },
 
     RENDER_SUCCESS: (_ws, _state, msg) => {
       this.log.info('Render completado en Figma', { nodeId: msg.nodeId, name: msg.name, durationMs: msg.durationMs });
-      this.broadcastToClients({ type: 'RENDER_SUCCESS', nodeId: msg.nodeId, name: msg.name, durationMs: msg.durationMs });
+      this.broadcastToClients({
+        type: 'RENDER_SUCCESS',
+        nodeId: msg.nodeId,
+        name: msg.name,
+        durationMs: msg.durationMs,
+      });
     },
 
     RENDER_ERROR: (_ws, _state, msg) => {
@@ -220,7 +246,11 @@ export class FigmaWsHub {
     });
   }
 
-  private onRegister(ws: WebSocket, state: ClientState, msg: Extract<HubInboundMessage, { type: 'REGISTER_CLIENT' | 'REGISTER' }>): void {
+  private onRegister(
+    ws: WebSocket,
+    state: ClientState,
+    msg: Extract<HubInboundMessage, { type: 'REGISTER_CLIENT' | 'REGISTER' }>,
+  ): void {
     if (!state.authenticated) {
       if (this.pairingLimiter.isLocked()) {
         this.send(ws, { type: 'AUTH_FAILED', reason: 'Demasiados intentos. Espera un minuto.' });
@@ -239,7 +269,9 @@ export class FigmaWsHub {
       this.send(ws, { type: 'AUTH_OK' });
     }
 
-    const isFigmaPlugin = msg.clientType === 'FIGMA_PLUGIN' || msg.role === 'plugin' ||
+    const isFigmaPlugin =
+      msg.clientType === 'FIGMA_PLUGIN' ||
+      msg.role === 'plugin' ||
       (typeof msg.client === 'string' && msg.client.toLowerCase().includes('figma'));
     if (isFigmaPlugin) {
       state.isFigma = true;
@@ -276,13 +308,17 @@ export class FigmaWsHub {
     const viewsDir = path.resolve(process.cwd(), 'scratch/views');
     const targetFile = path.join(viewsDir, `${viewId}.json`);
     const fallbackDash = path.resolve(process.cwd(), 'scratch/dashboard_tree.json');
-    const fileToLoad = fs.existsSync(targetFile) ? targetFile : (viewId === 'dashboard' && fs.existsSync(fallbackDash) ? fallbackDash : null);
+    const fileToLoad = fs.existsSync(targetFile)
+      ? targetFile
+      : viewId === 'dashboard' && fs.existsSync(fallbackDash)
+        ? fallbackDash
+        : null;
 
     if (fileToLoad) {
       const rootNode = JSON.parse(fs.readFileSync(fileToLoad, 'utf-8'));
       const renderMsg: WSMessage<WSRenderPayload> = {
         type: 'RENDER_NODES',
-        payload: { rootNode, pageName: useSeparatePage ? pageName : undefined, clearPage: false }
+        payload: { rootNode, pageName: useSeparatePage ? pageName : undefined, clearPage: false },
       };
       this.lastRenderPayload = renderMsg;
       this.broadcastToFigma(renderMsg);
@@ -290,7 +326,10 @@ export class FigmaWsHub {
     }
 
     this.log.info(`La vista "${viewId}" no está en caché. Iniciando extracción automática`);
-    this.send(ws, { type: 'EXTRACT_PROGRESS', payload: { status: 'EXTRACTING', viewId, message: `Extrayendo vista ${viewId} del navegador...` } });
+    this.send(ws, {
+      type: 'EXTRACT_PROGRESS',
+      payload: { status: 'EXTRACTING', viewId, message: `Extrayendo vista ${viewId} del navegador...` },
+    });
     const scriptPath = path.resolve(process.cwd(), 'scratch/extract-single-view.ts');
     let tsxCli: string;
     try {
@@ -303,14 +342,14 @@ export class FigmaWsHub {
       process.execPath,
       [tsxCli, scriptPath, viewId, route, name, useSeparatePage ? pageName : ''],
       { shell: false, timeout: 5 * 60_000 },
-      (err) => {
+      err => {
         if (err) {
           this.log.error('Error extrayendo vista', { viewId, error: err.message });
           this.send(ws, { type: 'RENDER_ERROR', error: `Error al extraer vista ${viewId}: ${err.message}` });
         } else {
           this.log.info(`Vista ${viewId} extraída`);
         }
-      }
+      },
     );
   }
 
@@ -353,7 +392,8 @@ export class FigmaWsHub {
 }
 
 // Si se ejecuta directamente desde terminal:
-const isDirectRun = import.meta.url.endsWith(process.argv[1]?.replace(/\\/g, '/')) || process.argv[1]?.includes('ws-hub');
+const isDirectRun =
+  import.meta.url.endsWith(process.argv[1]?.replace(/\\/g, '/')) || process.argv[1]?.includes('ws-hub');
 if (isDirectRun) {
   const hub = new FigmaWsHub();
   hub.start();

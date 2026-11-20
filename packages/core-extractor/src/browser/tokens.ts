@@ -14,13 +14,17 @@ export function extractDesignTokens() {
     str = str.trim();
     if (str.startsWith('#')) {
       let hex = str.slice(1);
-      if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+      if (hex.length === 3)
+        hex = hex
+          .split('')
+          .map(c => c + c)
+          .join('');
       if (hex.length >= 6) {
         return {
           r: parseInt(hex.slice(0, 2), 16) / 255,
           g: parseInt(hex.slice(2, 4), 16) / 255,
           b: parseInt(hex.slice(4, 6), 16) / 255,
-          a: hex.length >= 8 ? parseInt(hex.slice(6, 8), 16) / 255 : 1
+          a: hex.length >= 8 ? parseInt(hex.slice(6, 8), 16) / 255 : 1,
         };
       }
     }
@@ -31,7 +35,7 @@ export function extractDesignTokens() {
           r: parseFloat(nums[0]) / 255,
           g: parseFloat(nums[1]) / 255,
           b: parseFloat(nums[2]) / 255,
-          a: nums[3] !== undefined ? parseFloat(nums[3]) : 1
+          a: nums[3] !== undefined ? parseFloat(nums[3]) : 1,
         };
       }
     }
@@ -42,7 +46,13 @@ export function extractDesignTokens() {
     for (const sheet of Array.from(document.styleSheets)) {
       try {
         for (const rule of Array.from(sheet.cssRules || []) as any[]) {
-          if (rule.selectorText && (rule.selectorText === ':root' || rule.selectorText === 'html' || rule.selectorText === 'body' || rule.selectorText.includes(':root'))) {
+          if (
+            rule.selectorText &&
+            (rule.selectorText === ':root' ||
+              rule.selectorText === 'html' ||
+              rule.selectorText === 'body' ||
+              rule.selectorText.includes(':root'))
+          ) {
             const st = rule.style;
             for (let i = 0; i < st.length; i++) {
               const prop = st[i];

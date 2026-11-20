@@ -16,7 +16,10 @@ const { read } = require('../helpers/code-loaders.cjs');
 function handlerKeys(src: string, tableName: string): string[] {
   const start = src.indexOf(`const ${tableName} = {`);
   if (start < 0) throw new Error(`no se encontró ${tableName}`);
-  const body = src.slice(start, src.indexOf('\n    };', start) >= 0 ? src.indexOf('\n    };', start) : src.indexOf('\n};', start));
+  const body = src.slice(
+    start,
+    src.indexOf('\n    };', start) >= 0 ? src.indexOf('\n    };', start) : src.indexOf('\n};', start),
+  );
   return [...body.matchAll(/^\s{2,6}([A-Z][A-Z0-9_]+)\s*(?:\(|:)/gm)].map(m => m[1]);
 }
 
@@ -64,8 +67,12 @@ describe('catálogo de mensajes', () => {
     const quiet = { ...console, log() {}, warn: (...a: unknown[]) => warnings.push(a.join(' ')), error() {} };
     const figma = loadPlugin({}, quiet);
     const sample: Record<string, object> = {
-      DELETE_NODE: { nodeId: 'x' }, DELETE_MULTIPLE_NODES: { nodeIds: [] }, CONVERT_TO_COMPONENT: { nodeId: 'x' },
-      FOCUS_NODE: { nodeId: 'x' }, SET_PAIRING_CODE: { code: 'ABC123' }, RENDER_NODES: { payload: null },
+      DELETE_NODE: { nodeId: 'x' },
+      DELETE_MULTIPLE_NODES: { nodeIds: [] },
+      CONVERT_TO_COMPONENT: { nodeId: 'x' },
+      FOCUS_NODE: { nodeId: 'x' },
+      SET_PAIRING_CODE: { code: 'ABC123' },
+      RENDER_NODES: { payload: null },
     };
     const types = [...messageTypesOf('plugin', /^UI → sandbox/), 'RENDER_NODES'];
     for (const type of types) await figma.ui.onmessage({ type, ...(sample[type] || {}) });

@@ -17,7 +17,7 @@ export class BrowserExtractor {
   async init(): Promise<void> {
     if (!this.browser) {
       this.browser = await chromium.launch({
-        headless: true
+        headless: true,
       });
     }
   }
@@ -27,7 +27,7 @@ export class BrowserExtractor {
     if (!this.browser) throw new Error('No se pudo inicializar Chromium');
 
     const context = await this.browser.newContext({
-      viewport: options.viewport || { width: 1280, height: 800 }
+      viewport: options.viewport || { width: 1280, height: 800 },
     });
 
     const page: Page = await context.newPage();
@@ -36,11 +36,11 @@ export class BrowserExtractor {
       if (options.url) {
         await page.goto(options.url, {
           waitUntil: 'networkidle',
-          timeout: options.timeout || 30000
+          timeout: options.timeout || 30000,
         });
       } else if (options.htmlContent) {
         await page.setContent(options.htmlContent, {
-          waitUntil: 'load'
+          waitUntil: 'load',
         });
       } else {
         throw new Error('Debe proveer una url o htmlContent para extraer');
@@ -93,7 +93,7 @@ export class BrowserExtractor {
           if (!targetEl) throw new Error(`No se encontró el elemento con el selector: "${sel}"`);
           return (await (window as any).__codeToFigmaExtract(targetEl))?.rootNode;
         },
-        { scriptCode: getBrowserExtractorScript(), sel: targetSelector }
+        { scriptCode: getBrowserExtractorScript(), sel: targetSelector },
       );
 
       if (!rootUINode) {

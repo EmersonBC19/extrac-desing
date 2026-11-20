@@ -12,13 +12,25 @@ describe('logger', () => {
     log.debug('oculto');
     log.child('auth').warn('intento fallido', { origen: 'null' });
     expect(out).toHaveLength(1);
-    expect(out[0]).toMatchObject({ level: 'warn', scope: 'hub:auth', message: 'intento fallido', data: { origen: 'null' } });
+    expect(out[0]).toMatchObject({
+      level: 'warn',
+      scope: 'hub:auth',
+      message: 'intento fallido',
+      data: { origen: 'null' },
+    });
     expect(formatLogRecord(out[0])).toBe('[hub:auth] intento fallido {"origen":"null"}');
   });
 
   it('un sink que falla no tumba al que registra', () => {
     const ok: string[] = [];
-    const log = createLogger('x', { sinks: [() => { throw new Error('roto'); }, r => ok.push(r.message)] });
+    const log = createLogger('x', {
+      sinks: [
+        () => {
+          throw new Error('roto');
+        },
+        r => ok.push(r.message),
+      ],
+    });
     expect(() => log.error('sigue')).not.toThrow();
     expect(ok).toEqual(['sigue']);
   });
@@ -37,7 +49,11 @@ describe('logger', () => {
       for (let i = 0; i < 30; i++) log.info(`mensaje ${i}`);
       expect(fs.statSync(file).size).toBeLessThanOrEqual(400);
       expect(fs.existsSync(file + '.1')).toBe(true);
-      const last = fs.readFileSync(file, 'utf8').trim().split('\n').map(l => JSON.parse(l));
+      const last = fs
+        .readFileSync(file, 'utf8')
+        .trim()
+        .split('\n')
+        .map(l => JSON.parse(l));
       expect(last.at(-1).message).toBe('mensaje 29');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });

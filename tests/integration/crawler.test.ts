@@ -10,7 +10,9 @@ const { read } = require('../helpers/extension-sim.cjs');
 const { auditLayout } = require('../helpers/layout-audit.cjs');
 
 const extractor = new BrowserExtractor();
-afterAll(async () => { await extractor.close(); });
+afterAll(async () => {
+  await extractor.close();
+});
 
 describe('crawler (BrowserExtractor) con el extractor unificado', () => {
   it('inyecta el mismo archivo que carga la extensión', () => {
@@ -18,7 +20,11 @@ describe('crawler (BrowserExtractor) con el extractor unificado', () => {
   });
 
   it('produce el layout corregido (geometría medida), no el del extractor viejo', async () => {
-    const root: any = await extractor.extractFromUrl({ url: fixture('synthetic/layout.html'), selector: '#root', viewport: { width: 1440, height: 900 } });
+    const root: any = await extractor.extractFromUrl({
+      url: fixture('synthetic/layout.html'),
+      selector: '#root',
+      viewport: { width: 1440, height: 900 },
+    });
     const audit = auditLayout(root);
     expect(audit.children).toBeGreaterThan(0);
     expect(audit.misplaced).toBe(0);
@@ -27,13 +33,21 @@ describe('crawler (BrowserExtractor) con el extractor unificado', () => {
   });
 
   it('texto enriquecido y superíndices también en el crawler', async () => {
-    const root: any = await extractor.extractFromUrl({ url: fixture('synthetic/text.html'), selector: '#inline', viewport: { width: 1440, height: 900 } });
+    const root: any = await extractor.extractFromUrl({
+      url: fixture('synthetic/text.html'),
+      selector: '#inline',
+      viewport: { width: 1440, height: 900 },
+    });
     expect(root.type).toBe('TEXT');
     expect(root.textData.characters.endsWith('wearable.¹')).toBe(true);
   });
 
   it('extrae desde HTML en memoria', async () => {
-    const root: any = await extractor.extractFromUrl({ htmlContent: '<div id="x" style="display:flex;gap:8px"><b style="width:40px;height:20px;background:red"></b><b style="width:40px;height:20px;background:blue"></b></div>', selector: '#x' });
+    const root: any = await extractor.extractFromUrl({
+      htmlContent:
+        '<div id="x" style="display:flex;gap:8px"><b style="width:40px;height:20px;background:red"></b><b style="width:40px;height:20px;background:blue"></b></div>',
+      selector: '#x',
+    });
     expect(root.layout).toMatchObject({ mode: 'HORIZONTAL', itemSpacing: 8 });
   });
 });

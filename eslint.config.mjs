@@ -11,7 +11,7 @@ export default tseslint.config(
       '**/node_modules/**',
       '**/dist/**',
       'swarm-cursors-main/**', // referencia de terceros, solo consulta
-      'scratch/**',            // experimentos locales
+      'scratch/**', // experimentos locales
       'packages/browser-extension/extractor.js', // generado por npm run build:extractor
       'test-results/**',
       'coverage/**',
@@ -26,7 +26,10 @@ export default tseslint.config(
   {
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
-      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrors: 'none' }],
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrors: 'none' },
+      ],
       'no-unused-vars': 'off',
       'no-empty': ['error', { allowEmptyCatch: true }],
       'prefer-const': 'warn',
@@ -35,7 +38,13 @@ export default tseslint.config(
 
   // Servidor MCP, hub, crawler, scripts y pruebas: Node
   {
-    files: ['packages/mcp-server/**/*.ts', 'packages/core-extractor/src/*.ts', 'scripts/**/*.mjs', 'tests/**/*.{ts,mts}', '*.{mjs,mts}'],
+    files: [
+      'packages/mcp-server/**/*.ts',
+      'packages/core-extractor/src/*.ts',
+      'scripts/**/*.mjs',
+      'tests/**/*.{ts,mts}',
+      '*.{mjs,mts}',
+    ],
     languageOptions: { globals: { ...globals.node } },
   },
   {

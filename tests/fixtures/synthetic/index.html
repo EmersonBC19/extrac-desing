@@ -1,22 +1,113 @@
-<!doctype html><html><head><meta charset="utf-8"><style>
-body{margin:0;font-family:sans-serif} .wrap{width:1200px;margin:20px auto}
-#swiper{overflow:hidden;width:800px;height:400px;position:relative}
-#swiper .track{display:flex;transform:translate3d(-800px,0,0)} #swiper .slide{flex:0 0 800px;height:400px}
-#swiper .slide img{width:800px;height:400px;display:block}
-#snap{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;width:1000px;gap:20px}
-#snap .card{flex:0 0 400px;height:200px;scroll-snap-align:start;background-size:cover;background-position:center}
-#fade{position:relative;width:800px;height:400px} #fade .f{position:absolute;inset:0;opacity:0} #fade .f.active{opacity:1}
-.hero{height:300px;background-image:linear-gradient(rgba(0,0,0,.5),rgba(0,0,0,0)),url(img/huge.jpg);background-size:cover;background-color:#222;color:#fff}
-.iset{width:200px;height:100px;background-image:image-set(url(img/slide1.png) 1x, url(img/slide2.png) 2x);background-size:contain;background-repeat:no-repeat}
-.ico::before{content:"";display:inline-block;width:24px;height:24px;background:url(img/icon.svg) no-repeat center/contain;margin-right:8px}
-</style></head><body><div class="wrap" id="root">
-<div class="hero"><h1>Hero con degradado sobre imagen</h1></div>
-<div id="swiper"><div class="track">
- <div class="slide"><img src="img/slide1.webp"></div><div class="slide"><img src="img/slide2.webp"></div><div class="slide"><img src="img/slide3.webp"></div><div class="slide"><img loading="lazy" src="img/slide4.webp"></div><div class="slide"><img data-src="img/slide5.png" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></div>
-</div></div>
-<div id="snap"><div class="card" style="background-image:url(img/slide1.png)"></div><div class="card" style="background-image:url(img/slide2.png)"></div><div class="card" style="background-image:url(img/slide3.png)"></div><div class="card" style="background-image:url(img/slide4.png)"></div></div>
-<div id="fade"><div class="f"><img src="img/slide1.png" width=800 height=400></div><div class="f active"><img src="img/slide2.png" width=800 height=400></div><div class="f"><img src="img/slide3.png" width=800 height=400></div></div>
-<div class="iset"></div><p class="ico">Texto con icono en ::before</p>
-<img src="img/icon.svg" width="48" height="48" alt="svg-img">
-<video width="400" height="200" poster="img/slide3.png" src="nonexistent.mp4"></video>
-</div></body></html>
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        margin: 0;
+        font-family: sans-serif;
+      }
+      .wrap {
+        width: 1200px;
+        margin: 20px auto;
+      }
+      #swiper {
+        overflow: hidden;
+        width: 800px;
+        height: 400px;
+        position: relative;
+      }
+      #swiper .track {
+        display: flex;
+        transform: translate3d(-800px, 0, 0);
+      }
+      #swiper .slide {
+        flex: 0 0 800px;
+        height: 400px;
+      }
+      #swiper .slide img {
+        width: 800px;
+        height: 400px;
+        display: block;
+      }
+      #snap {
+        display: flex;
+        overflow-x: auto;
+        scroll-snap-type: x mandatory;
+        width: 1000px;
+        gap: 20px;
+      }
+      #snap .card {
+        flex: 0 0 400px;
+        height: 200px;
+        scroll-snap-align: start;
+        background-size: cover;
+        background-position: center;
+      }
+      #fade {
+        position: relative;
+        width: 800px;
+        height: 400px;
+      }
+      #fade .f {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+      }
+      #fade .f.active {
+        opacity: 1;
+      }
+      .hero {
+        height: 300px;
+        background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0)), url(img/huge.jpg);
+        background-size: cover;
+        background-color: #222;
+        color: #fff;
+      }
+      .iset {
+        width: 200px;
+        height: 100px;
+        background-image: image-set(url(img/slide1.png) 1x, url(img/slide2.png) 2x);
+        background-size: contain;
+        background-repeat: no-repeat;
+      }
+      .ico::before {
+        content: '';
+        display: inline-block;
+        width: 24px;
+        height: 24px;
+        background: url(img/icon.svg) no-repeat center/contain;
+        margin-right: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap" id="root">
+      <div class="hero"><h1>Hero con degradado sobre imagen</h1></div>
+      <div id="swiper">
+        <div class="track">
+          <div class="slide"><img src="img/slide1.webp" /></div>
+          <div class="slide"><img src="img/slide2.webp" /></div>
+          <div class="slide"><img src="img/slide3.webp" /></div>
+          <div class="slide"><img loading="lazy" src="img/slide4.webp" /></div>
+          <div class="slide"><img data-src="img/slide5.png" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" /></div>
+        </div>
+      </div>
+      <div id="snap">
+        <div class="card" style="background-image: url(img/slide1.png)"></div>
+        <div class="card" style="background-image: url(img/slide2.png)"></div>
+        <div class="card" style="background-image: url(img/slide3.png)"></div>
+        <div class="card" style="background-image: url(img/slide4.png)"></div>
+      </div>
+      <div id="fade">
+        <div class="f"><img src="img/slide1.png" width="800" height="400" /></div>
+        <div class="f active"><img src="img/slide2.png" width="800" height="400" /></div>
+        <div class="f"><img src="img/slide3.png" width="800" height="400" /></div>
+      </div>
+      <div class="iset"></div>
+      <p class="ico">Texto con icono en ::before</p>
+      <img src="img/icon.svg" width="48" height="48" alt="svg-img" />
+      <video width="400" height="200" poster="img/slide3.png" src="nonexistent.mp4"></video>
+    </div>
+  </body>
+</html>

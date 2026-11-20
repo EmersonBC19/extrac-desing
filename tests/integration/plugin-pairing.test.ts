@@ -17,24 +17,41 @@ let browser: Browser;
 let hub: any;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ctf-ui-'));
 
-beforeAll(async () => { browser = await chromium.launch(); hub = await startHub(); });
-afterAll(async () => { await browser?.close(); await hub?.stop(); fs.rmSync(tmp, { recursive: true, force: true }); });
+beforeAll(async () => {
+  browser = await chromium.launch();
+  hub = await startHub();
+});
+afterAll(async () => {
+  await browser?.close();
+  await hub?.stop();
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
 
 async function openPlugin(port: number, store: { code?: string }): Promise<Page> {
-  const html = fs.readFileSync(path.join(ROOT, 'packages/figma-plugin/src/ui.html'), 'utf8')
+  const html = fs
+    .readFileSync(path.join(ROOT, 'packages/figma-plugin/src/ui.html'), 'utf8')
     .replace("'ws://localhost:8080'", `'ws://localhost:${port}'`);
   const file = path.join(tmp, `ui-${port}-${Date.now()}.html`);
   fs.writeFileSync(file, html);
   const page = await browser.newPage();
-  await page.exposeFunction('__store', (op: string, v: string) => { if (op === 'set') store.code = v; return store.code || ''; });
+  await page.exposeFunction('__store', (op: string, v: string) => {
+    if (op === 'set') store.code = v;
+    return store.code || '';
+  });
   await page.addInitScript(() => {
     (window as any).__sent = [];
     const orig = window.postMessage.bind(window);
     (window as any).postMessage = (data: any, origin: any) => {
       const m = data && data.pluginMessage;
       if (!m) return orig(data, origin);
-      if (m.type === 'GET_PAIRING_CODE') (window as any).__store('get').then((code: string) =>
-        window.dispatchEvent(new MessageEvent('message', { data: { pluginMessage: { type: 'PAIRING_CODE', code } } })));
+      if (m.type === 'GET_PAIRING_CODE')
+        (window as any)
+          .__store('get')
+          .then((code: string) =>
+            window.dispatchEvent(
+              new MessageEvent('message', { data: { pluginMessage: { type: 'PAIRING_CODE', code } } }),
+            ),
+          );
       else if (m.type === 'SET_PAIRING_CODE') (window as any).__store('set', m.code);
       else (window as any).__sent.push(m.type);
     };
@@ -43,7 +60,8 @@ async function openPlugin(port: number, store: { code?: string }): Promise<Page>
   return page;
 }
 
-const bannerVisible = (page: Page) => page.evaluate(() => document.getElementById('pairingBanner')!.classList.contains('visible'));
+const bannerVisible = (page: Page) =>
+  page.evaluate(() => document.getElementById('pairingBanner')!.classList.contains('visible'));
 
 async function figmaConnected(port: number): Promise<boolean> {
   const c = await connectClient(`ws://127.0.0.1:${port}`, undefined);
@@ -81,7 +99,10 @@ describe('vinculación del plugin con el hub', () => {
 
     // un render del hub llega a Figma
     const cli = await connectClient(hub.url, undefined);
-    cli.send({ type: 'RENDER_NODES', payload: { rootNode: { id: 'r', type: 'FRAME', name: 'DesdeElHub', layout: {}, children: [] } } });
+    cli.send({
+      type: 'RENDER_NODES',
+      payload: { rootNode: { id: 'r', type: 'FRAME', name: 'DesdeElHub', layout: {}, children: [] } },
+    });
     await sleep(800);
     cli.close();
     expect(await page.evaluate(() => (window as any).__sent)).toContain('RENDER_NODES');

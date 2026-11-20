@@ -24,54 +24,64 @@ const finite = z.number().finite();
 const sizing = z.union([finite, z.literal('FILL'), z.literal('HUG')]);
 const spacing = z.object({ top: finite, right: finite, bottom: finite, left: finite }).partial().passthrough();
 
-export const UILayoutSchema = z.object({
-  mode: z.enum(['NONE', 'HORIZONTAL', 'VERTICAL']).optional(),
-  width: sizing.optional(),
-  height: sizing.optional(),
-  measuredWidth: finite.optional(),
-  measuredHeight: finite.optional(),
-  x: finite.optional(),
-  y: finite.optional(),
-  itemSpacing: finite.optional(),
-  padding: spacing.optional(),
-  positioning: z.enum(['AUTO', 'ABSOLUTE']).optional(),
-}).passthrough();
+export const UILayoutSchema = z
+  .object({
+    mode: z.enum(['NONE', 'HORIZONTAL', 'VERTICAL']).optional(),
+    width: sizing.optional(),
+    height: sizing.optional(),
+    measuredWidth: finite.optional(),
+    measuredHeight: finite.optional(),
+    x: finite.optional(),
+    y: finite.optional(),
+    itemSpacing: finite.optional(),
+    padding: spacing.optional(),
+    positioning: z.enum(['AUTO', 'ABSOLUTE']).optional(),
+  })
+  .passthrough();
 
-export const UITextSegmentSchema = z.object({
-  start: z.number().int().nonnegative(),
-  end: z.number().int().nonnegative(),
-}).passthrough();
+export const UITextSegmentSchema = z
+  .object({
+    start: z.number().int().nonnegative(),
+    end: z.number().int().nonnegative(),
+  })
+  .passthrough();
 
-export const UITextDataSchema = z.object({
-  characters: z.string().max(PAYLOAD_LIMITS.maxTextChars),
-  fontSize: finite.optional(),
-  fontFamily: z.string().max(200).optional(),
-  segments: z.array(UITextSegmentSchema).max(10_000).optional(),
-}).passthrough();
+export const UITextDataSchema = z
+  .object({
+    characters: z.string().max(PAYLOAD_LIMITS.maxTextChars),
+    fontSize: finite.optional(),
+    fontFamily: z.string().max(200).optional(),
+    segments: z.array(UITextSegmentSchema).max(10_000).optional(),
+  })
+  .passthrough();
 
 /** SVG que Figma va a interpretar: sin scripts ni URLs javascript: */
-const svgContent = z.string()
+const svgContent = z
+  .string()
   .max(PAYLOAD_LIMITS.maxSvgChars)
   .refine(s => !/<script[\s>]/i.test(s), 'SVG con <script>')
   .refine(s => !/javascript:/i.test(s), 'SVG con URL javascript:');
 
 /** Imagen embebida: solo data URI de imagen en base64 */
-const imageData = z.string()
+const imageData = z
+  .string()
   .max(PAYLOAD_LIMITS.maxImageChars)
   .regex(/^data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=\s]*$/i, 'imageData debe ser data:image/...;base64');
 
 /** Un nodo SIN validar sus hijos (el árbol se recorre de forma iterativa, ver validateUINodeTree) */
-export const UINodeShallowSchema = z.object({
-  id: z.string().max(200).optional(),
-  type: z.enum(['FRAME', 'TEXT', 'SVG', 'COMPONENT', 'INSTANCE']),
-  name: z.string().max(PAYLOAD_LIMITS.maxNameChars).optional(),
-  layout: UILayoutSchema.optional(),
-  styles: z.object({}).passthrough().optional(),
-  textData: UITextDataSchema.optional(),
-  svgContent: svgContent.optional(),
-  imageData: imageData.optional(),
-  children: z.array(z.unknown()).optional(),
-}).passthrough();
+export const UINodeShallowSchema = z
+  .object({
+    id: z.string().max(200).optional(),
+    type: z.enum(['FRAME', 'TEXT', 'SVG', 'COMPONENT', 'INSTANCE']),
+    name: z.string().max(PAYLOAD_LIMITS.maxNameChars).optional(),
+    layout: UILayoutSchema.optional(),
+    styles: z.object({}).passthrough().optional(),
+    textData: UITextDataSchema.optional(),
+    svgContent: svgContent.optional(),
+    imageData: imageData.optional(),
+    children: z.array(z.unknown()).optional(),
+  })
+  .passthrough();
 
 export type ValidationResult = { ok: true; nodeCount: number; maxDepth: number } | { ok: false; error: string };
 
@@ -90,13 +100,21 @@ export function validateUINodeTree(root: unknown): ValidationResult {
   let maxDepth = 0;
   while (stack.length) {
     const { node, depth, path } = stack.pop()!;
-    if (depth > PAYLOAD_LIMITS.maxDepth) return { ok: false, error: `Árbol demasiado profundo (> ${PAYLOAD_LIMITS.maxDepth} niveles) en ${shortPath(path)}` };
-    if (++count > PAYLOAD_LIMITS.maxNodes) return { ok: false, error: `Demasiados nodos (> ${PAYLOAD_LIMITS.maxNodes})` };
+    if (depth > PAYLOAD_LIMITS.maxDepth)
+      return {
+        ok: false,
+        error: `Árbol demasiado profundo (> ${PAYLOAD_LIMITS.maxDepth} niveles) en ${shortPath(path)}`,
+      };
+    if (++count > PAYLOAD_LIMITS.maxNodes)
+      return { ok: false, error: `Demasiados nodos (> ${PAYLOAD_LIMITS.maxNodes})` };
     maxDepth = Math.max(maxDepth, depth);
     const parsed = UINodeShallowSchema.safeParse(node);
     if (!parsed.success) {
       const issue = parsed.error.issues[0];
-      return { ok: false, error: `${shortPath(path)}${issue.path.length ? '.' + issue.path.join('.') : ''}: ${issue.message}` };
+      return {
+        ok: false,
+        error: `${shortPath(path)}${issue.path.length ? '.' + issue.path.join('.') : ''}: ${issue.message}`,
+      };
     }
     const children = parsed.data.children || [];
     for (let i = children.length - 1; i >= 0; i--) {
@@ -106,19 +124,24 @@ export function validateUINodeTree(root: unknown): ValidationResult {
   return { ok: true, nodeCount: count, maxDepth };
 }
 
-export const WSRenderPayloadSchema = z.object({
-  rootNode: z.unknown(),
-  tokens: z.object({}).passthrough().optional(),
-  createAsComponent: z.boolean().optional(),
-  board: z.boolean().optional(),
-  clearPage: z.boolean().optional(),
-  pageName: z.string().max(200).optional(),
-  sectionTitle: z.string().max(500).optional(),
-  source: z.object({
-    url: z.string().max(4096).optional(),
-    title: z.string().max(1000).optional(),
-  }).passthrough().optional(),
-}).passthrough();
+export const WSRenderPayloadSchema = z
+  .object({
+    rootNode: z.unknown(),
+    tokens: z.object({}).passthrough().optional(),
+    createAsComponent: z.boolean().optional(),
+    board: z.boolean().optional(),
+    clearPage: z.boolean().optional(),
+    pageName: z.string().max(200).optional(),
+    sectionTitle: z.string().max(500).optional(),
+    source: z
+      .object({
+        url: z.string().max(4096).optional(),
+        title: z.string().max(1000).optional(),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
 
 /** Payload de RENDER_NODES completo: forma del sobre + árbol de nodos */
 export function validateRenderPayload(payload: unknown): ValidationResult {
@@ -131,6 +154,8 @@ export function validateRenderPayload(payload: unknown): ValidationResult {
 }
 
 /** Sobre mínimo de cualquier mensaje del bus */
-export const WSMessageEnvelopeSchema = z.object({
-  type: z.string().min(1).max(64),
-}).passthrough();
+export const WSMessageEnvelopeSchema = z
+  .object({
+    type: z.string().min(1).max(64),
+  })
+  .passthrough();

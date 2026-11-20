@@ -46,8 +46,10 @@ export function extractBgUrl(bgStr: string | null | undefined) {
   if (!bgStr || bgStr === 'none' || (!bgStr.includes('url(') && !/image-set\(/i.test(bgStr))) return null;
   // image-set(url(a) 1x, url(b) 2x) → preferir la de mayor densidad
   if (/image-set\(/i.test(bgStr)) {
-    const opts = [...bgStr.matchAll(/(?:url\(\s*['"]?([^'")]+)['"]?\s*\)|['"]([^'"]+)['"])\s*([\d.]+)x/gi)]
-      .map(m => ({ url: m[1] || m[2], d: parseFloat(m[3]) || 1 }));
+    const opts = [...bgStr.matchAll(/(?:url\(\s*['"]?([^'")]+)['"]?\s*\)|['"]([^'"]+)['"])\s*([\d.]+)x/gi)].map(m => ({
+      url: m[1] || m[2],
+      d: parseFloat(m[3]) || 1,
+    }));
     if (opts.length) {
       opts.sort((a, b) => b.d - a.d);
       return opts[0].url;

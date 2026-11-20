@@ -12,10 +12,22 @@ let hub: any;
 const marker = path.join(os.tmpdir(), `ctf-pwned-${process.pid}.txt`);
 const injection = `x" & echo PWNED > "${marker}" & "`;
 
-beforeAll(async () => { hub = await startHub(); });
-afterAll(async () => { await hub?.stop(); fs.rmSync(marker, { force: true }); });
+beforeAll(async () => {
+  hub = await startHub();
+});
+afterAll(async () => {
+  await hub?.stop();
+  fs.rmSync(marker, { force: true });
+});
 
-const frame = (name: string, extra: Record<string, unknown> = {}) => ({ id: 'r', type: 'FRAME', name, layout: {}, children: [], ...extra });
+const frame = (name: string, extra: Record<string, unknown> = {}) => ({
+  id: 'r',
+  type: 'FRAME',
+  name,
+  layout: {},
+  children: [],
+  ...extra,
+});
 
 async function pairedPlugin() {
   const plugin = await connectClient(hub.url, 'null');
@@ -57,7 +69,9 @@ describe('hub WebSocket: autenticación y origen', () => {
     const ext = await connectClient(hub.url, 'chrome-extension://abcdefghijklmnopabcdefghijklmnop');
     expect(ext.opened).toBe(true);
     ext.send({ type: 'RENDER_NODES', payload: { rootNode: frame('Prueba') } });
-    expect(await plugin.waitFor((m: any) => m.type === 'RENDER_NODES' && m.payload.rootNode.name === 'Prueba')).toBeTruthy();
+    expect(
+      await plugin.waitFor((m: any) => m.type === 'RENDER_NODES' && m.payload.rootNode.name === 'Prueba'),
+    ).toBeTruthy();
     await sleep(200);
     expect(spy.msgs.some((m: any) => m.type === 'RENDER_NODES')).toBe(false);
     for (const c of [plugin, spy, ext]) c.close();
@@ -66,12 +80,22 @@ describe('hub WebSocket: autenticación y origen', () => {
   it('payload malicioso de un cliente autorizado: RENDER_ERROR y no llega a Figma', async () => {
     const plugin = await pairedPlugin();
     const ext = await connectClient(hub.url, 'chrome-extension://abcdefghijklmnopabcdefghijklmnop');
-    ext.send({ type: 'RENDER_NODES', payload: { rootNode: frame('Malicioso', { children: [{ type: 'SVG', svgContent: '<svg><script>alert(1)</script></svg>' }] }) } });
+    ext.send({
+      type: 'RENDER_NODES',
+      payload: {
+        rootNode: frame('Malicioso', {
+          children: [{ type: 'SVG', svgContent: '<svg><script>alert(1)</script></svg>' }],
+        }),
+      },
+    });
     const err = await ext.waitFor((m: any) => m.type === 'RENDER_ERROR');
     expect(err?.error).toMatch(/script/i);
     await sleep(200);
-    expect(plugin.msgs.some((m: any) => m.type === 'RENDER_NODES' && m.payload.rootNode.name === 'Malicioso')).toBe(false);
-    plugin.close(); ext.close();
+    expect(plugin.msgs.some((m: any) => m.type === 'RENDER_NODES' && m.payload.rootNode.name === 'Malicioso')).toBe(
+      false,
+    );
+    plugin.close();
+    ext.close();
   });
 
   it('cliente local (CLI/MCP, sin Origin) funciona sin código', async () => {
@@ -108,11 +132,16 @@ describe('hub WebSocket: inyección y abuso', () => {
   });
 
   it('no escucha en otras interfaces de red', async () => {
-    const lanIp = Object.values(os.networkInterfaces()).flat().find((i: any) => i && i.family === 'IPv4' && !i.internal)?.address;
+    const lanIp = Object.values(os.networkInterfaces())
+      .flat()
+      .find((i: any) => i && i.family === 'IPv4' && !i.internal)?.address;
     if (!lanIp) return; // equipo sin red: nada que comprobar
-    const reachable = await new Promise<boolean>((resolve) => {
+    const reachable = await new Promise<boolean>(resolve => {
       const w = new WebSocket(`ws://${lanIp}:${hub.port}`);
-      w.on('open', () => { w.close(); resolve(true); });
+      w.on('open', () => {
+        w.close();
+        resolve(true);
+      });
       w.on('error', () => resolve(false));
     });
     expect(reachable).toBe(false);

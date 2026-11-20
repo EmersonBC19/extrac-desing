@@ -18,7 +18,9 @@ function createLogger(scope, options) {
             try {
                 sink(record);
             }
-            catch (_e) { /* un sink roto no debe tumbar al llamador */ }
+            catch (_e) {
+                /* un sink roto no debe tumbar al llamador */
+            }
         }
     };
     return {
@@ -26,7 +28,7 @@ function createLogger(scope, options) {
         info: (m, d) => emit('info', m, d),
         warn: (m, d) => emit('warn', m, d),
         error: (m, d) => emit('error', m, d),
-        child: (sub) => createLogger(`${scope}:${sub}`, options),
+        child: sub => createLogger(`${scope}:${sub}`, options),
     };
 }
 /** Texto legible de una entrada: "[hub:auth] mensaje {"origen":"null"}" */
@@ -39,7 +41,7 @@ function formatLogRecord(r) {
  * (el servidor MCP habla JSON-RPC por stdout: un console.log lo corrompe).
  */
 function consoleSink(stream = 'auto') {
-    return (r) => {
+    return r => {
         const line = formatLogRecord(r);
         if (stream === 'stderr' || r.level === 'error')
             console.error(line);

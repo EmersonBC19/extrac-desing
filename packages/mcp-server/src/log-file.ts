@@ -11,12 +11,20 @@ import type { LogSink } from '@code-to-figma/contracts';
 export function rotatingFileSink(file: string, maxBytes = 5 * 1024 * 1024): LogSink {
   fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
   let size = 0;
-  try { size = fs.statSync(file).size; } catch (_e) { size = 0; }
-  return (r) => {
+  try {
+    size = fs.statSync(file).size;
+  } catch (_e) {
+    size = 0;
+  }
+  return r => {
     const line = JSON.stringify(r) + '\n';
     const bytes = Buffer.byteLength(line);
     if (size > 0 && size + bytes > maxBytes) {
-      try { fs.renameSync(file, file + '.1'); } catch (_e) { /* otro proceso lo movió: seguir */ }
+      try {
+        fs.renameSync(file, file + '.1');
+      } catch (_e) {
+        /* otro proceso lo movió: seguir */
+      }
       size = 0;
     }
     fs.appendFileSync(file, line);

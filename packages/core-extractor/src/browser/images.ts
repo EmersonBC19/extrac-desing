@@ -30,10 +30,15 @@ export function dataUriToBase64(uri: string) {
   if (!mime.startsWith('image/')) return null;
   if (/;base64$/i.test(meta)) return uri;
   let raw;
-  try { raw = decodeURIComponent(m[2]); } catch (_e) { raw = m[2]; }
+  try {
+    raw = decodeURIComponent(m[2]);
+  } catch (_e) {
+    raw = m[2];
+  }
   const bytes = new TextEncoder().encode(raw);
   let bin = '';
-  for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192) as unknown as number[]);
+  for (let i = 0; i < bytes.length; i += 8192)
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192) as unknown as number[]);
   return `data:${mime};base64,${btoa(bin)}`;
 }
 
@@ -50,75 +55,90 @@ export async function resolvePendingImages(rootNode: RawNode) {
   }
   collect(rootNode);
 
-  await Promise.all(pendingNodes.map(async (n) => {
-    try {
-      let url = n._pendingImageSrc || n._pendingBgImageSrc;
-      if (!url) return;
-      if (!url.startsWith('data:')) {
-        try { url = new URL(url, document.baseURI).href; } catch (_u) {}
-      }
+  await Promise.all(
+    pendingNodes.map(async n => {
+      try {
+        let url = n._pendingImageSrc || n._pendingBgImageSrc;
+        if (!url) return;
+        if (!url.startsWith('data:')) {
+          try {
+            url = new URL(url, document.baseURI).href;
+          } catch (_u) {}
+        }
 
-      let base64: string | null = null;
-      if (url.startsWith('data:')) base64 = dataUriToBase64(url); // data URI embebido (SVG inline, etc.)
+        let base64: string | null = null;
+        if (url.startsWith('data:')) base64 = dataUriToBase64(url); // data URI embebido (SVG inline, etc.)
 
-      // 1. Intento vía background service worker (inmune a CSP y CORS de la página)
-      if (!base64 && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-        try {
-          const resp: any = await new Promise((resolve) => {
-            chrome.runtime.sendMessage({ type: "FETCH_IMAGE_AS_BASE64", url }, (res: any) => {
-              if (chrome.runtime.lastError) {
-                resolve(null);
-              } else {
-                resolve(res);
-              }
+        // 1. Intento vía background service worker (inmune a CSP y CORS de la página)
+        if (!base64 && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+          try {
+            const resp: any = await new Promise(resolve => {
+              chrome.runtime.sendMessage({ type: 'FETCH_IMAGE_AS_BASE64', url }, (res: any) => {
+                if (chrome.runtime.lastError) {
+                  resolve(null);
+                } else {
+                  resolve(res);
+                }
+              });
             });
-          });
-          if (resp && resp.success && isImageDataUri(resp.base64)) {
-            base64 = resp.base64;
+            if (resp && resp.success && isImageDataUri(resp.base64)) {
+              base64 = resp.base64;
+            }
+          } catch (_bgErr) {
+            base64 = null;
           }
-        } catch (_bgErr) {
-          base64 = null;
         }
-      }
 
-      // 2. Fallback directo en el contexto de la página
-      if (!base64) {
-        try {
-          const res = await fetch(url);
-          if (!res.ok) throw new Error('HTTP ' + res.status);
-          const blob = await res.blob();
-          if (blob.type && !blob.type.startsWith('image/')) throw new Error('No es imagen: ' + blob.type);
-          base64 = await new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result as string | null); // readAsDataURL → string
-            reader.onerror = () => resolve(null);
-            reader.readAsDataURL(blob);
-          });
-        } catch (_fetchErr) {
-          console.warn('[CodeToFigma] No se pudo obtener imagen directa:', url);
+        // 2. Fallback directo en el contexto de la página
+        if (!base64) {
+          try {
+            const res = await fetch(url);
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const blob = await res.blob();
+            if (blob.type && !blob.type.startsWith('image/')) throw new Error('No es imagen: ' + blob.type);
+            base64 = await new Promise(resolve => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string | null); // readAsDataURL → string
+              reader.onerror = () => resolve(null);
+              reader.readAsDataURL(blob);
+            });
+          } catch (_fetchErr) {
+            console.warn('[CodeToFigma] No se pudo obtener imagen directa:', url);
+          }
         }
-      }
 
-      if (base64) {
-        if (isImageDataUri(base64)) n.imageData = base64;
+        if (base64) {
+          if (isImageDataUri(base64)) n.imageData = base64;
+        }
+      } catch (_err) {
+        console.warn('[CodeToFigma] Error resolviendo imagen:', n._pendingImageSrc || n._pendingBgImageSrc);
+      } finally {
+        delete n._pendingImageSrc;
+        delete n._pendingBgImageSrc;
       }
-    } catch (_err) {
-      console.warn('[CodeToFigma] Error resolviendo imagen:', n._pendingImageSrc || n._pendingBgImageSrc);
-    } finally {
-      delete n._pendingImageSrc;
-      delete n._pendingBgImageSrc;
-    }
-  }));
+    }),
+  );
 
   // 3. Fallback estilo swarm-rebuild: lo que el DOM no puede devolver (video cross-origin,
   //    WebGL, iframes, imágenes con hotlink-protection) se recorta de una captura de pantalla.
   //    Solo nodos hoja visibles: si tuvieran hijos, la captura duplicaría el texto encima.
-  const vw = window.innerWidth, vh = window.innerHeight;
+  const vw = window.innerWidth,
+    vh = window.innerHeight;
   const shotNodes: RawNode[] = [];
   (function collectShot(n: RawNode) {
     const r = n._vpRect;
-    if (!n.imageData && r && (n._needsShot || n._hadPendingImage) && (!n.children || n.children.length === 0) &&
-        r.width > 2 && r.height > 2 && r.left < vw && r.top < vh && r.left + r.width > 0 && r.top + r.height > 0) {
+    if (
+      !n.imageData &&
+      r &&
+      (n._needsShot || n._hadPendingImage) &&
+      (!n.children || n.children.length === 0) &&
+      r.width > 2 &&
+      r.height > 2 &&
+      r.left < vw &&
+      r.top < vh &&
+      r.left + r.width > 0 &&
+      r.top + r.height > 0
+    ) {
       shotNodes.push(n);
     }
     (n.children || []).forEach(collectShot);
@@ -127,7 +147,9 @@ export async function resolvePendingImages(rootNode: RawNode) {
   if (shotNodes.length > 0 && typeof window.__codeToFigmaCaptureRegions === 'function') {
     try {
       const crops = await window.__codeToFigmaCaptureRegions(shotNodes.map(n => n._vpRect));
-      (crops || []).forEach((c, i) => { if (isImageDataUri(c)) shotNodes[i].imageData = c; });
+      (crops || []).forEach((c, i) => {
+        if (isImageDataUri(c)) shotNodes[i].imageData = c;
+      });
     } catch (_shotErr) {
       console.warn('[CodeToFigma] Captura de pantalla no disponible:', _shotErr);
     }

@@ -18,7 +18,9 @@ export function getBrowserExtractorScript(): string {
     try {
       cached = readFileSync(EXTRACTOR_URL, 'utf8');
     } catch (err: any) {
-      throw new Error(`No se encontró el extractor generado (${EXTRACTOR_URL.pathname}). Ejecuta: npm run build:extractor\n${err?.message || err}`);
+      throw new Error(
+        `No se encontró el extractor generado (${EXTRACTOR_URL.pathname}). Ejecuta: npm run build:extractor\n${err?.message || err}`,
+      );
     }
   }
   return cached;

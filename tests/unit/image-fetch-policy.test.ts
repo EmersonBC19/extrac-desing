@@ -7,12 +7,30 @@ const { imageFetchPolicy, isPrivateHost, siteOf } = loadImageFetchPolicy();
 
 describe('imageFetchPolicy (background.js)', () => {
   it.each([
-    ['imagen de otro dominio desde web pública → sin cookies', 'https://is1-ssl.mzstatic.com/a.jpg', 'https://www.apple.com/co/', true, false],
+    [
+      'imagen de otro dominio desde web pública → sin cookies',
+      'https://is1-ssl.mzstatic.com/a.jpg',
+      'https://www.apple.com/co/',
+      true,
+      false,
+    ],
     ['mismo sitio → con cookies', 'https://www.apple.com/img.png', 'https://www.apple.com/co/', true, true],
-    ['subdominio del mismo sitio → con cookies', 'https://cdn.apple.com/a.jpg', 'https://www.apple.com/co/', true, true],
+    [
+      'subdominio del mismo sitio → con cookies',
+      'https://cdn.apple.com/a.jpg',
+      'https://www.apple.com/co/',
+      true,
+      true,
+    ],
     ['.com.co mismo sitio', 'https://static.empresa.com.co/a.png', 'https://www.empresa.com.co/', true, true],
     ['.com.co otro sitio → sin cookies', 'https://otra.com.co/a.png', 'https://www.empresa.com.co/', true, false],
-    ['dashboard en localhost → sus imágenes', 'http://localhost:4210/assets/logo.png', 'http://localhost:4210/dashboard', true, true],
+    [
+      'dashboard en localhost → sus imágenes',
+      'http://localhost:4210/assets/logo.png',
+      'http://localhost:4210/dashboard',
+      true,
+      true,
+    ],
     ['intranet 10.x → imagen interna', 'http://10.1.2.3/logo.png', 'http://10.1.2.3/app', true, true],
     ['data URI', 'data:image/png;base64,AAAA', 'https://sitio.com/', true, false],
   ])('permite: %s', (_n, url, tab, _allowed, credentials) => {

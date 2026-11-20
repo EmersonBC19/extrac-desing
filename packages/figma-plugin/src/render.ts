@@ -27,7 +27,11 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
     try {
       return await buildBoardInstance(nodeData, boardCtx.masters.get(cg)!);
     } catch (instErr: any) {
-      figma.ui.postMessage({ type: 'LOG', level: 'warn', message: `Instancia "${nodeData.name}" no creada, se dibuja como copia: ${instErr?.message || instErr}` });
+      figma.ui.postMessage({
+        type: 'LOG',
+        level: 'warn',
+        message: `Instancia "${nodeData.name}" no creada, se dibuja como copia: ${instErr?.message || instErr}`,
+      });
     }
   }
 
@@ -35,14 +39,11 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
     if (nodeData.type === 'TEXT' && nodeData.textData) {
       // 1. Cargar obligatoriamente Inter Regular primero para que figma.createText() nunca falle
       try {
-        await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+        await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
       } catch (_e) {}
 
       // 2. Cargar la fuente deseada preservando peso visual
-      const font = await loadFontSafely(
-        nodeData.textData.fontFamily,
-        nodeData.textData.fontWeight
-      );
+      const font = await loadFontSafely(nodeData.textData.fontFamily, nodeData.textData.fontWeight);
 
       // 3. Crear el nodo de texto (garantizado libre de excepciones)
       const textNode = figma.createText();
@@ -52,7 +53,7 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
         textNode.fontName = font;
       } catch (_fErr) {
         try {
-          textNode.fontName = { family: "Inter", style: "Regular" };
+          textNode.fontName = { family: 'Inter', style: 'Regular' };
         } catch (_fErr2) {}
       }
 
@@ -85,7 +86,7 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
             LEFT: 'LEFT',
             CENTER: 'CENTER',
             RIGHT: 'RIGHT',
-            JUSTIFIED: 'JUSTIFIED'
+            JUSTIFIED: 'JUSTIFIED',
           };
           textNode.textAlignHorizontal = alignMap[nodeData.textData.textAlign] || 'LEFT';
         } catch (_e) {}
@@ -97,7 +98,7 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
           textNode.fills = nodeData.styles.fills.map((f: any) => ({
             type: 'SOLID',
             color: { r: f.r, g: f.g, b: f.b },
-            opacity: f.a !== undefined ? f.a : 1
+            opacity: f.a !== undefined ? f.a : 1,
           }));
         } catch (_e) {}
       }
@@ -110,7 +111,9 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
       // 12. Texto con saltos de línea medidos en el navegador: no dejar que Figma lo re-acomode.
       //     El dimensionado final lo ajusta el padre (applyNoWrapSizing).
       if (nodeData.textData.noWrap) {
-        try { textNode.textAutoResize = 'WIDTH_AND_HEIGHT'; } catch (_e) {}
+        try {
+          textNode.textAutoResize = 'WIDTH_AND_HEIGHT';
+        } catch (_e) {}
       }
 
       createdNode = textNode;
@@ -131,9 +134,7 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
       }
     } else {
       // FRAME o COMPONENT
-      const frame = nodeData.type === 'COMPONENT'
-        ? figma.createComponent()
-        : figma.createFrame();
+      const frame = nodeData.type === 'COMPONENT' ? figma.createComponent() : figma.createFrame();
       // Registrar desde ya: si algo falla más abajo, el frame parcial se devuelve y se anida
       // en su padre en vez de quedar huérfano en la raíz de la página (detrás del diseño).
       createdNode = frame;
@@ -166,7 +167,7 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
             MIN: 'MIN',
             CENTER: 'CENTER',
             MAX: 'MAX',
-            SPACE_BETWEEN: 'SPACE_BETWEEN'
+            SPACE_BETWEEN: 'SPACE_BETWEEN',
           };
           frame.primaryAxisAlignItems = mapPrimary[nodeData.layout.primaryAxisAlignItems] || 'MIN';
         }
@@ -176,7 +177,7 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
             MIN: 'MIN',
             CENTER: 'CENTER',
             MAX: 'MAX',
-            BASELINE: 'BASELINE'
+            BASELINE: 'BASELINE',
           };
           frame.counterAxisAlignItems = mapCounter[nodeData.layout.counterAxisAlignItems] || 'MIN';
         }
@@ -186,7 +187,9 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
           // Separación entre filas medida en el navegador
           const cas = (nodeData.layout as any).counterAxisSpacing;
           if (typeof cas === 'number' && cas >= 0) {
-            try { frame.counterAxisSpacing = cas; } catch (_e) {}
+            try {
+              frame.counterAxisSpacing = cas;
+            } catch (_e) {}
           }
         }
       }
@@ -201,19 +204,15 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
           const imagePaint: Paint = {
             type: 'IMAGE',
             scaleMode: (nodeData.styles?.imageScaleMode as any) || 'FILL',
-            imageHash: image.hash
+            imageHash: image.hash,
           };
-          frame.fills = [
-            ...baseFills.map(cssFillToPaint),
-            imagePaint,
-            ...overlayFills.map(cssFillToPaint)
-          ];
+          frame.fills = [...baseFills.map(cssFillToPaint), imagePaint, ...overlayFills.map(cssFillToPaint)];
         } catch (_imgErr: any) {
           log.warn('Error decodificando imagen base64', { error: errText(_imgErr) });
           figma.ui.postMessage({
             type: 'LOG',
             level: 'error',
-            message: `Imagen no aplicada en "${nodeData.name}": ${_imgErr?.message || _imgErr}`
+            message: `Imagen no aplicada en "${nodeData.name}": ${_imgErr?.message || _imgErr}`,
           });
           // Placeholder visible para que la capa no quede "vacía" sin aviso
           frame.fills = [{ type: 'SOLID', color: { r: 0.9, g: 0.9, b: 0.92 } }];
@@ -225,11 +224,13 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
       // Bordes (Strokes) y lados individuales
       if (nodeData.styles?.strokes && nodeData.styles.strokes.length > 0) {
         const stroke = nodeData.styles.strokes[0];
-        frame.strokes = [{
-          type: 'SOLID',
-          color: { r: stroke.r, g: stroke.g, b: stroke.b },
-          opacity: stroke.a !== undefined ? stroke.a : 1
-        }];
+        frame.strokes = [
+          {
+            type: 'SOLID',
+            color: { r: stroke.r, g: stroke.g, b: stroke.b },
+            opacity: stroke.a !== undefined ? stroke.a : 1,
+          },
+        ];
         frame.strokeAlign = 'INSIDE';
 
         // Lados individuales de borde si aplican
@@ -276,13 +277,13 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
               r: shadow.color.r,
               g: shadow.color.g,
               b: shadow.color.b,
-              a: shadow.color.a
+              a: shadow.color.a,
             },
             offset: { x: shadow.offset.x, y: shadow.offset.y },
             radius: Math.max(0, shadow.radius),
             spread: shadow.spread || 0,
             visible: true,
-            blendMode: 'NORMAL'
+            blendMode: 'NORMAL',
           });
         }
       }
@@ -290,7 +291,7 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
         effects.push({
           type: 'BACKGROUND_BLUR',
           radius: Math.max(1, nodeData.styles.backdropBlur),
-          visible: true
+          visible: true,
         } as any);
       }
       if (effects.length > 0) {
@@ -299,12 +300,18 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
 
       // Dimensiones iniciales (usar width explícito o measuredWidth del DOM real)
       // Ojo: measured 0 es un valor real (elemento colapsado), no "desconocido"
-      const initW = typeof nodeData.layout?.width === 'number'
-        ? nodeData.layout.width
-        : (typeof nodeData.layout?.measuredWidth === 'number' ? nodeData.layout.measuredWidth : 100);
-      const initH = typeof nodeData.layout?.height === 'number'
-        ? nodeData.layout.height
-        : (typeof nodeData.layout?.measuredHeight === 'number' ? nodeData.layout.measuredHeight : 40);
+      const initW =
+        typeof nodeData.layout?.width === 'number'
+          ? nodeData.layout.width
+          : typeof nodeData.layout?.measuredWidth === 'number'
+            ? nodeData.layout.measuredWidth
+            : 100;
+      const initH =
+        typeof nodeData.layout?.height === 'number'
+          ? nodeData.layout.height
+          : typeof nodeData.layout?.measuredHeight === 'number'
+            ? nodeData.layout.measuredHeight
+            : 40;
       frame.resize(Math.max(1, initW), Math.max(1, initH));
 
       // Asegurar modo de dimensionamiento inicial FIXED en Auto Layout para permitir hijos con FILL
@@ -326,156 +333,186 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
       if (nodeData.children && nodeData.children.length > 0) {
         for (const childData of nodeData.children) {
           const childNode = await buildFigmaNode(childData);
-          if (childNode) try {
-            frame.appendChild(childNode);
+          if (childNode)
+            try {
+              frame.appendChild(childNode);
 
-            // Ajustar sizing del hijo dentro del padre con Auto Layout
-            if (frame.layoutMode !== 'NONE') {
-              const layoutChild = childNode as any;
+              // Ajustar sizing del hijo dentro del padre con Auto Layout
+              if (frame.layoutMode !== 'NONE') {
+                const layoutChild = childNode as any;
 
-              if (childData.layout?.positioning === 'ABSOLUTE') {
-                try {
-                  // 1. En Figma un nodo ABSOLUTE no puede tener layoutSizingHorizontal = 'FILL'.
-                  // Debe tener dimensiones explícitas fijas en píxeles.
-                  const targetW = typeof childData.layout.width === 'number' && childData.layout.width > 0
-                    ? childData.layout.width
-                    : (childData.layout.measuredWidth || layoutChild.width || 100);
-                  const targetH = typeof childData.layout.height === 'number' && childData.layout.height > 0
-                    ? childData.layout.height
-                    : (childData.layout.measuredHeight || layoutChild.height || 100);
+                if (childData.layout?.positioning === 'ABSOLUTE') {
+                  try {
+                    // 1. En Figma un nodo ABSOLUTE no puede tener layoutSizingHorizontal = 'FILL'.
+                    // Debe tener dimensiones explícitas fijas en píxeles.
+                    const targetW =
+                      typeof childData.layout.width === 'number' && childData.layout.width > 0
+                        ? childData.layout.width
+                        : childData.layout.measuredWidth || layoutChild.width || 100;
+                    const targetH =
+                      typeof childData.layout.height === 'number' && childData.layout.height > 0
+                        ? childData.layout.height
+                        : childData.layout.measuredHeight || layoutChild.height || 100;
 
-                  if (targetW > 0 && targetH > 0 && typeof layoutChild.resize === 'function') {
-                    try { layoutChild.resize(targetW, targetH); } catch (_resErr) {}
-                  }
-
-                  // 2. Establecer layoutPositioning a ABSOLUTE en Figma
-                  if ('layoutPositioning' in layoutChild) {
-                    layoutChild.layoutPositioning = 'ABSOLUTE';
-                  }
-
-                  // 3. Posicionar en coordenadas exactas relativas al padre
-                  if (typeof childData.layout.x === 'number') childNode.x = childData.layout.x;
-                  if (typeof childData.layout.y === 'number') childNode.y = childData.layout.y;
-                } catch (absErr) {
-                  log.warn('Error configurando layoutPositioning ABSOLUTE', { error: errText(absErr) });
-                }
-              } else {
-                // Si el hijo es texto dentro de Auto Layout
-                if (childNode.type === 'TEXT' && childData.textData?.noWrap) {
-                  applyNoWrapSizing(childNode as TextNode, childData, true);
-                } else if (childNode.type === 'TEXT') {
-                  const tn = childNode as TextNode;
-                  const isMulti = childData.textData?.isMultiline || (childData.textData?.characters && childData.textData.characters.includes('\n'));
-
-                  if (childData.layout?.width === 'FILL') {
-                    // Texto que se expande al ancho del contenedor y envuelve en altura
-                    tn.textAutoResize = 'HEIGHT';
-                    try {
-                      tn.layoutSizingHorizontal = 'FILL';
-                    } catch (_e) {
-                      const fallbackW = childData.layout?.measuredWidth || frame.width;
-                      if (fallbackW > 0) {
-                        try { tn.resize(fallbackW, tn.height); } catch (_r) {}
-                      }
+                    if (targetW > 0 && targetH > 0 && typeof layoutChild.resize === 'function') {
+                      try {
+                        layoutChild.resize(targetW, targetH);
+                      } catch (_resErr) {}
                     }
-                  } else if (childData.layout?.width === 'HUG') {
-                    if (isMulti && frame.layoutMode === 'VERTICAL') {
-                      // Texto multilínea en contenedor vertical: FILL para que no se trunque horizontalmente
+
+                    // 2. Establecer layoutPositioning a ABSOLUTE en Figma
+                    if ('layoutPositioning' in layoutChild) {
+                      layoutChild.layoutPositioning = 'ABSOLUTE';
+                    }
+
+                    // 3. Posicionar en coordenadas exactas relativas al padre
+                    if (typeof childData.layout.x === 'number') childNode.x = childData.layout.x;
+                    if (typeof childData.layout.y === 'number') childNode.y = childData.layout.y;
+                  } catch (absErr) {
+                    log.warn('Error configurando layoutPositioning ABSOLUTE', { error: errText(absErr) });
+                  }
+                } else {
+                  // Si el hijo es texto dentro de Auto Layout
+                  if (childNode.type === 'TEXT' && childData.textData?.noWrap) {
+                    applyNoWrapSizing(childNode as TextNode, childData, true);
+                  } else if (childNode.type === 'TEXT') {
+                    const tn = childNode as TextNode;
+                    const isMulti =
+                      childData.textData?.isMultiline ||
+                      (childData.textData?.characters && childData.textData.characters.includes('\n'));
+
+                    if (childData.layout?.width === 'FILL') {
+                      // Texto que se expande al ancho del contenedor y envuelve en altura
                       tn.textAutoResize = 'HEIGHT';
                       try {
                         tn.layoutSizingHorizontal = 'FILL';
                       } catch (_e) {
                         const fallbackW = childData.layout?.measuredWidth || frame.width;
                         if (fallbackW > 0) {
-                          try { tn.resize(fallbackW, tn.height); } catch (_r) {}
+                          try {
+                            tn.resize(fallbackW, tn.height);
+                          } catch (_r) {}
                         }
                       }
-                    } else {
-                      // Texto de una línea (etiquetas de botón, badges, links cortos)
-                      tn.textAutoResize = 'WIDTH_AND_HEIGHT';
+                    } else if (childData.layout?.width === 'HUG') {
+                      if (isMulti && frame.layoutMode === 'VERTICAL') {
+                        // Texto multilínea en contenedor vertical: FILL para que no se trunque horizontalmente
+                        tn.textAutoResize = 'HEIGHT';
+                        try {
+                          tn.layoutSizingHorizontal = 'FILL';
+                        } catch (_e) {
+                          const fallbackW = childData.layout?.measuredWidth || frame.width;
+                          if (fallbackW > 0) {
+                            try {
+                              tn.resize(fallbackW, tn.height);
+                            } catch (_r) {}
+                          }
+                        }
+                      } else {
+                        // Texto de una línea (etiquetas de botón, badges, links cortos)
+                        tn.textAutoResize = 'WIDTH_AND_HEIGHT';
+                      }
+                    } else if (typeof childData.layout?.width === 'number') {
+                      try {
+                        tn.resize(Math.max(1, childData.layout.width), tn.height);
+                      } catch (_e) {}
+                      tn.textAutoResize = 'HEIGHT';
                     }
-                  } else if (typeof childData.layout?.width === 'number') {
-                    try { tn.resize(Math.max(1, childData.layout.width), tn.height); } catch (_e) {}
+                  } else {
+                    // Si el hijo es Frame u otro nodo con Auto Layout
+                    // Primero redimensionar dimensiones fijas explícitas para no sobreescribir FILL/HUG después
+                    const hasFixedW = typeof childData.layout?.width === 'number';
+                    const hasFixedH = typeof childData.layout?.height === 'number';
+                    if (hasFixedW || hasFixedH) {
+                      const targetW = hasFixedW ? Math.max(1, childData.layout!.width as number) : layoutChild.width;
+                      const targetH = hasFixedH ? Math.max(1, childData.layout!.height as number) : layoutChild.height;
+                      try {
+                        layoutChild.resize(targetW, targetH);
+                      } catch (_e) {}
+                    }
+
+                    // LUEGO asignar layoutSizing para que resize no lo resetee a FIXED
+                    try {
+                      if (childData.layout?.width === 'FILL' && 'layoutSizingHorizontal' in layoutChild) {
+                        layoutChild.layoutSizingHorizontal = 'FILL';
+                      } else if (childData.layout?.width === 'HUG' && 'layoutSizingHorizontal' in layoutChild) {
+                        layoutChild.layoutSizingHorizontal = 'HUG';
+                      } else if (hasFixedW && 'layoutSizingHorizontal' in layoutChild) {
+                        layoutChild.layoutSizingHorizontal = 'FIXED';
+                      }
+                    } catch (_e) {}
+
+                    try {
+                      if (childData.layout?.height === 'FILL' && 'layoutSizingVertical' in layoutChild) {
+                        layoutChild.layoutSizingVertical = 'FILL';
+                      } else if (childData.layout?.height === 'HUG' && 'layoutSizingVertical' in layoutChild) {
+                        layoutChild.layoutSizingVertical = 'HUG';
+                      } else if (hasFixedH && 'layoutSizingVertical' in layoutChild) {
+                        layoutChild.layoutSizingVertical = 'FIXED';
+                      }
+                    } catch (_e) {}
+                  }
+                }
+              } else {
+                // Posicionamiento en modo canvas libre (NONE)
+                if (typeof childData.layout?.x === 'number') childNode.x = childData.layout.x;
+                if (typeof childData.layout?.y === 'number') childNode.y = childData.layout.y;
+                if (childNode.type === 'FRAME' || childNode.type === 'COMPONENT') {
+                  const targetW =
+                    (typeof childData.layout?.width === 'number'
+                      ? childData.layout.width
+                      : childData.layout?.measuredWidth) || childNode.width;
+                  const targetH =
+                    (typeof childData.layout?.height === 'number'
+                      ? childData.layout.height
+                      : childData.layout?.measuredHeight) || childNode.height;
+                  if (targetW > 0 && targetH > 0 && (targetW !== childNode.width || targetH !== childNode.height)) {
+                    childNode.resize(targetW, targetH);
+                  }
+                } else if (childNode.type === 'TEXT' && childData.textData?.noWrap) {
+                  applyNoWrapSizing(childNode as TextNode, childData, false);
+                } else if (childNode.type === 'TEXT') {
+                  const tn = childNode as TextNode;
+                  const isMulti =
+                    childData.textData?.isMultiline ||
+                    (childData.textData?.characters && childData.textData.characters.includes('\n'));
+                  const targetW =
+                    typeof childData.layout?.width === 'number' && childData.layout.width > 0
+                      ? childData.layout.width
+                      : childData.layout?.measuredWidth || 0;
+                  if (targetW > 0 && (isMulti || childData.layout?.width !== 'HUG')) {
+                    tn.resize(targetW, tn.height);
                     tn.textAutoResize = 'HEIGHT';
+                  } else {
+                    tn.textAutoResize = 'WIDTH_AND_HEIGHT';
                   }
-                } else {
-                  // Si el hijo es Frame u otro nodo con Auto Layout
-                  // Primero redimensionar dimensiones fijas explícitas para no sobreescribir FILL/HUG después
-                  const hasFixedW = typeof childData.layout?.width === 'number';
-                  const hasFixedH = typeof childData.layout?.height === 'number';
-                  if (hasFixedW || hasFixedH) {
-                    const targetW = hasFixedW ? Math.max(1, childData.layout!.width as number) : layoutChild.width;
-                    const targetH = hasFixedH ? Math.max(1, childData.layout!.height as number) : layoutChild.height;
-                    try { layoutChild.resize(targetW, targetH); } catch (_e) {}
-                  }
-
-                  // LUEGO asignar layoutSizing para que resize no lo resetee a FIXED
-                  try {
-                    if (childData.layout?.width === 'FILL' && 'layoutSizingHorizontal' in layoutChild) {
-                      layoutChild.layoutSizingHorizontal = 'FILL';
-                    } else if (childData.layout?.width === 'HUG' && 'layoutSizingHorizontal' in layoutChild) {
-                      layoutChild.layoutSizingHorizontal = 'HUG';
-                    } else if (hasFixedW && 'layoutSizingHorizontal' in layoutChild) {
-                      layoutChild.layoutSizingHorizontal = 'FIXED';
-                    }
-                  } catch (_e) {}
-
-                  try {
-                    if (childData.layout?.height === 'FILL' && 'layoutSizingVertical' in layoutChild) {
-                      layoutChild.layoutSizingVertical = 'FILL';
-                    } else if (childData.layout?.height === 'HUG' && 'layoutSizingVertical' in layoutChild) {
-                      layoutChild.layoutSizingVertical = 'HUG';
-                    } else if (hasFixedH && 'layoutSizingVertical' in layoutChild) {
-                      layoutChild.layoutSizingVertical = 'FIXED';
-                    }
-                  } catch (_e) {}
                 }
               }
-            } else {
-              // Posicionamiento en modo canvas libre (NONE)
-              if (typeof childData.layout?.x === 'number') childNode.x = childData.layout.x;
-              if (typeof childData.layout?.y === 'number') childNode.y = childData.layout.y;
-              if (childNode.type === 'FRAME' || childNode.type === 'COMPONENT') {
-                const targetW = (typeof childData.layout?.width === 'number' ? childData.layout.width : childData.layout?.measuredWidth) || childNode.width;
-                const targetH = (typeof childData.layout?.height === 'number' ? childData.layout.height : childData.layout?.measuredHeight) || childNode.height;
-                if (targetW > 0 && targetH > 0 && (targetW !== childNode.width || targetH !== childNode.height)) {
-                  childNode.resize(targetW, targetH);
-                }
-              } else if (childNode.type === 'TEXT' && childData.textData?.noWrap) {
-                applyNoWrapSizing(childNode as TextNode, childData, false);
-              } else if (childNode.type === 'TEXT') {
-                const tn = childNode as TextNode;
-                const isMulti = childData.textData?.isMultiline || (childData.textData?.characters && childData.textData.characters.includes('\n'));
-                const targetW = typeof childData.layout?.width === 'number' && childData.layout.width > 0
-                  ? childData.layout.width
-                  : (childData.layout?.measuredWidth || 0);
-                if (targetW > 0 && (isMulti || childData.layout?.width !== 'HUG')) {
-                  tn.resize(targetW, tn.height);
-                  tn.textAutoResize = 'HEIGHT';
-                } else {
-                  tn.textAutoResize = 'WIDTH_AND_HEIGHT';
-                }
-              }
+            } catch (childErr: any) {
+              // Un hijo con error de dimensionado no debe abortar a sus hermanos
+              figma.ui.postMessage({
+                type: 'LOG',
+                level: 'warn',
+                message: `Ajuste de capa "${childData.name}" incompleto: ${childErr?.message || childErr}`,
+              });
             }
-          } catch (childErr: any) {
-            // Un hijo con error de dimensionado no debe abortar a sus hermanos
-            figma.ui.postMessage({
-              type: 'LOG',
-              level: 'warn',
-              message: `Ajuste de capa "${childData.name}" incompleto: ${childErr?.message || childErr}`
-            });
-          }
         }
       }
 
       // Configurar Sizing del propio frame padre
       const hasSelfFixedW = typeof nodeData.layout?.width === 'number' && nodeData.layout.width > 0;
       const hasSelfFixedH = typeof nodeData.layout?.height === 'number' && nodeData.layout.height > 0;
-      const targetFrameW = hasSelfFixedW ? (nodeData.layout!.width as number) : (nodeData.layout?.measuredWidth || frame.width);
-      const targetFrameH = hasSelfFixedH ? (nodeData.layout!.height as number) : (nodeData.layout?.measuredHeight || frame.height);
+      const targetFrameW = hasSelfFixedW
+        ? (nodeData.layout!.width as number)
+        : nodeData.layout?.measuredWidth || frame.width;
+      const targetFrameH = hasSelfFixedH
+        ? (nodeData.layout!.height as number)
+        : nodeData.layout?.measuredHeight || frame.height;
 
       if (targetFrameW > 0 && targetFrameH > 0 && (targetFrameW !== frame.width || targetFrameH !== frame.height)) {
-        try { frame.resize(targetFrameW, targetFrameH); } catch (_e) {}
+        try {
+          frame.resize(targetFrameW, targetFrameH);
+        } catch (_e) {}
       }
 
       if (frame.layoutMode !== 'NONE') {
@@ -512,13 +549,13 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
       figma.ui.postMessage({
         type: 'LOG',
         level: 'error',
-        message: `Error en capa "${nodeData.name}": ${error?.message || error}`
+        message: `Error en capa "${nodeData.name}": ${error?.message || error}`,
       });
     } catch (_logErr) {}
     // Safety Net: si falló la creación de un texto por fuentes o métricas, intentar crearlo con Inter Regular
     if (nodeData.type === 'TEXT' && nodeData.textData && !createdNode) {
       try {
-        await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+        await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
         const fb = figma.createText();
         fb.name = nodeData.name || 'Text';
         fb.characters = nodeData.textData.characters || ' ';
@@ -527,7 +564,7 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
           fb.fills = nodeData.styles.fills.map((f: any) => ({
             type: 'SOLID',
             color: { r: f.r, g: f.g, b: f.b },
-            opacity: f.a !== undefined ? f.a : 1
+            opacity: f.a !== undefined ? f.a : 1,
           }));
         } else {
           fb.fills = [{ type: 'SOLID', color: { r: 0.95, g: 0.95, b: 0.95 }, opacity: 1 }];

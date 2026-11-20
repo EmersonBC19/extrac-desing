@@ -49,7 +49,9 @@ export function generatePairingCode() {
     return `${s.slice(0, 4)}-${s.slice(4)}`;
 }
 export function normalizePairingCode(code) {
-    return String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    return String(code || '')
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, '');
 }
 /** Comparación en tiempo constante (no revela cuántos caracteres coinciden) */
 export function pairingCodeMatches(expected, provided) {

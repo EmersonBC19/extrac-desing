@@ -1,20 +1,38 @@
 import { describe, expect, it } from 'vitest';
 import * as B from '../../packages/figma-plugin/src/board/pure';
 
-const text = (characters: string, fontSize = 16) => ({ type: 'TEXT', name: 'Label', layout: {}, styles: { fills: [{ r: 0, g: 0, b: 0, a: 1 }] }, textData: { characters, fontSize, fontFamily: 'Inter', fontWeight: 400 } });
+const text = (characters: string, fontSize = 16) => ({
+  type: 'TEXT',
+  name: 'Label',
+  layout: {},
+  styles: { fills: [{ r: 0, g: 0, b: 0, a: 1 }] },
+  textData: { characters, fontSize, fontFamily: 'Inter', fontWeight: 400 },
+});
 const button = (label: string, color = { r: 0, g: 0.44, b: 0.89, a: 1 }, width = 171) => ({
-  type: 'FRAME', name: `Link / ${label}`,
-  layout: { mode: 'HORIZONTAL', measuredWidth: width, measuredHeight: 44, padding: { top: 11, right: 21, bottom: 11, left: 21 } },
+  type: 'FRAME',
+  name: `Link / ${label}`,
+  layout: {
+    mode: 'HORIZONTAL',
+    measuredWidth: width,
+    measuredHeight: 44,
+    padding: { top: 11, right: 21, bottom: 11, left: 21 },
+  },
   styles: { fills: [color], cornerRadius: 22 },
   children: [text(label)],
 });
 const card = (title: string, cta: string) => ({
-  type: 'FRAME', name: 'Card / Container',
+  type: 'FRAME',
+  name: 'Card / Container',
   layout: { mode: 'VERTICAL', measuredWidth: 300, measuredHeight: 200 },
   styles: { fills: [{ r: 1, g: 1, b: 1, a: 1 }] },
   children: [text(title, 24), button(cta)],
 });
-const page = (children: any[]) => ({ type: 'FRAME', name: 'Página', layout: { mode: 'VERTICAL', measuredWidth: 1440, measuredHeight: 3000 }, children });
+const page = (children: any[]) => ({
+  type: 'FRAME',
+  name: 'Página',
+  layout: { mode: 'VERTICAL', measuredWidth: 1440, measuredHeight: 3000 },
+  children,
+});
 
 describe('boardDetectComponents', () => {
   it('bloques repetidos con distinto texto → un componente con todas sus apariciones', () => {
@@ -29,7 +47,14 @@ describe('boardDetectComponents', () => {
   });
 
   it('distinto estilo (color) → componentes distintos', () => {
-    const groups = B.boardDetectComponents(page([button('A'), button('B'), button('C', { r: 1, g: 1, b: 1, a: 1 }), button('D', { r: 1, g: 1, b: 1, a: 1 })]));
+    const groups = B.boardDetectComponents(
+      page([
+        button('A'),
+        button('B'),
+        button('C', { r: 1, g: 1, b: 1, a: 1 }),
+        button('D', { r: 1, g: 1, b: 1, a: 1 }),
+      ]),
+    );
     expect(groups).toHaveLength(2);
   });
 

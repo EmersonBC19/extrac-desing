@@ -7,18 +7,22 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+const read = p => fs.readFileSync(path.join(ROOT, p), 'utf8');
 
 const prepared = new WeakSet();
 
 function backgroundSource() {
   const bg = read('packages/browser-extension/background.js');
-  const pick = (sig) => {
+  const pick = sig => {
     const i = bg.indexOf(sig);
     if (i < 0) throw new Error(`No se encontró "${sig}" en background.js`);
     return bg.slice(i, bg.indexOf('\n}\n', i) + 2);
   };
-  return [pick('function uint8ArrayToBase64'), pick('async function blobToDataUrl'), pick('async function captureRegions')].join('\n');
+  return [
+    pick('function uint8ArrayToBase64'),
+    pick('async function blobToDataUrl'),
+    pick('async function captureRegions'),
+  ].join('\n');
 }
 
 function uiNormalizerSource() {
@@ -33,7 +37,7 @@ function uiNormalizerSource() {
 async function prepareExtensionSim(page) {
   if (prepared.has(page)) return;
   prepared.add(page);
-  await page.exposeFunction('__nodeFetch', async (u) => {
+  await page.exposeFunction('__nodeFetch', async u => {
     try {
       const r = await fetch(u);
       if (!r.ok) return { success: false, error: 'HTTP ' + r.status };
@@ -45,14 +49,21 @@ async function prepareExtensionSim(page) {
       return { success: false, error: String(e) };
     }
   });
-  await page.exposeFunction('__nodeShot', async () => 'data:image/png;base64,' + (await page.screenshot()).toString('base64'));
+  await page.exposeFunction(
+    '__nodeShot',
+    async () => 'data:image/png;base64,' + (await page.screenshot()).toString('base64'),
+  );
 }
 
 /** Inyecta el extractor y el entorno simulado de la extensión en la página actual */
 async function injectExtension(page) {
   await prepareExtensionSim(page);
-  const env = backgroundSource() + '\nwindow.__bgCapture = captureRegions;\n' +
-    uiNormalizerSource() + '\nwindow.__normalizeTreeImages = normalizeTreeImages;\n' + `
+  const env =
+    backgroundSource() +
+    '\nwindow.__bgCapture = captureRegions;\n' +
+    uiNormalizerSource() +
+    '\nwindow.__normalizeTreeImages = normalizeTreeImages;\n' +
+    `
     window.chrome = { tabs: { captureVisibleTab: async () => await window.__nodeShot() }, runtime: { lastError: null, sendMessage(m, cb) {
       if (m.type === 'FETCH_IMAGE_AS_BASE64') window.__nodeFetch(m.url).then(cb);
       else if (m.type === 'CAPTURE_REGIONS') window.__bgCapture(0, m.rects, m.viewportWidth).then(crops => cb({ success: true, crops }), e => cb({ success: false, error: String(e) }));
@@ -60,8 +71,8 @@ async function injectExtension(page) {
     } } };
     window.__codeToFigmaCaptureRegions = (rects) => new Promise(res => chrome.runtime.sendMessage({ type: 'CAPTURE_REGIONS', rects, viewportWidth: innerWidth }, r => res(r.crops)));`;
   // evaluate + eval indirecto: funciona aunque el sitio tenga CSP estricta
-  await page.evaluate((code) => (0, eval)(code), env);
-  await page.evaluate((code) => (0, eval)(code), read('packages/browser-extension/extractor.js'));
+  await page.evaluate(code => (0, eval)(code), env);
+  await page.evaluate(code => (0, eval)(code), read('packages/browser-extension/extractor.js'));
 }
 
 /**
@@ -71,22 +82,25 @@ async function injectExtension(page) {
  */
 async function extract(page, selectorJs, opts = {}) {
   await injectExtension(page);
-  return page.evaluate(async ({ selectorJs, prescroll, normalize }) => {
-    const el = (0, eval)(selectorJs);
-    if (!el) throw new Error('Selector sin resultado: ' + selectorJs);
-    if (prescroll) {
-      const r0 = el.getBoundingClientRect();
-      for (let y = scrollY + r0.top; y < scrollY + r0.bottom; y += innerHeight * 0.8) {
-        scrollTo(0, y);
-        await new Promise(r => setTimeout(r, 250));
+  return page.evaluate(
+    async ({ selectorJs, prescroll, normalize }) => {
+      const el = (0, eval)(selectorJs);
+      if (!el) throw new Error('Selector sin resultado: ' + selectorJs);
+      if (prescroll) {
+        const r0 = el.getBoundingClientRect();
+        for (let y = scrollY + r0.top; y < scrollY + r0.bottom; y += innerHeight * 0.8) {
+          scrollTo(0, y);
+          await new Promise(r => setTimeout(r, 250));
+        }
       }
-    }
-    el.scrollIntoView({ block: 'start' });
-    await new Promise(r => setTimeout(r, 400));
-    const res = await window.__codeToFigmaExtract(el);
-    const stats = normalize ? await window.__normalizeTreeImages(res.rootNode) : null;
-    return { rootNode: res.rootNode, tokens: res.tokens, stats };
-  }, { selectorJs, prescroll: !!opts.prescroll, normalize: opts.normalize !== false });
+      el.scrollIntoView({ block: 'start' });
+      await new Promise(r => setTimeout(r, 400));
+      const res = await window.__codeToFigmaExtract(el);
+      const stats = normalize ? await window.__normalizeTreeImages(res.rootNode) : null;
+      return { rootNode: res.rootNode, tokens: res.tokens, stats };
+    },
+    { selectorJs, prescroll: !!opts.prescroll, normalize: opts.normalize !== false },
+  );
 }
 
 /** Lista plana de nodos (para buscar y contar en las aserciones) */
@@ -101,13 +115,26 @@ function flatten(root) {
 
 /** Dimensiones reales de cada imageData (decodificadas en el navegador) */
 async function imageDimensions(page, root) {
-  const datas = flatten(root).map(x => x.node).filter(n => n.imageData).map(n => n.imageData);
-  return page.evaluate(async (list) => Promise.all(list.map(async (src) => {
-    const im = new Image();
-    im.src = src;
-    try { await im.decode(); return { ok: true, w: im.naturalWidth, h: im.naturalHeight, mime: src.slice(5, src.indexOf(';')) }; }
-    catch (_e) { return { ok: false, mime: src.slice(5, 30) }; }
-  })), datas);
+  const datas = flatten(root)
+    .map(x => x.node)
+    .filter(n => n.imageData)
+    .map(n => n.imageData);
+  return page.evaluate(
+    async list =>
+      Promise.all(
+        list.map(async src => {
+          const im = new Image();
+          im.src = src;
+          try {
+            await im.decode();
+            return { ok: true, w: im.naturalWidth, h: im.naturalHeight, mime: src.slice(5, src.indexOf(';')) };
+          } catch (_e) {
+            return { ok: false, mime: src.slice(5, 30) };
+          }
+        }),
+      ),
+    datas,
+  );
 }
 
 module.exports = { ROOT, read, injectExtension, extract, flatten, imageDimensions, prepareExtensionSim };

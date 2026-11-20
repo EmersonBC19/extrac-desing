@@ -44,7 +44,7 @@ async function test() {
     console.log('Iniciando extracción con Playwright en Chromium...');
     const result = await extractor.extractFromUrl({
         htmlContent: testHtml,
-        selector: '.card'
+        selector: '.card',
     });
     console.log('Resultado UINode extraído:');
     console.log(JSON.stringify(result, null, 2));

@@ -49,7 +49,9 @@ export function generatePairingCode(): string {
 }
 
 export function normalizePairingCode(code: unknown): string {
-  return String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return String(code || '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
 }
 
 /** Comparación en tiempo constante (no revela cuántos caracteres coinciden) */
@@ -64,7 +66,10 @@ export function pairingCodeMatches(expected: string, provided: unknown): boolean
  * Código persistente en ~/.code-to-figma/pairing-code: la vinculación se hace UNA vez
  * (el plugin lo guarda) y sobrevive a reinicios del hub.
  */
-export function loadOrCreatePairingCode(dir = path.join(os.homedir(), '.code-to-figma')): { code: string; file: string } {
+export function loadOrCreatePairingCode(dir = path.join(os.homedir(), '.code-to-figma')): {
+  code: string;
+  file: string;
+} {
   const file = path.join(dir, 'pairing-code');
   try {
     const existing = fs.readFileSync(file, 'utf-8').trim();
@@ -79,7 +84,10 @@ export function loadOrCreatePairingCode(dir = path.join(os.homedir(), '.code-to-
 /** Limita intentos fallidos de vinculación (fuerza bruta desde una página con origen "null") */
 export class PairingRateLimiter {
   private failures: number[] = [];
-  constructor(private maxFailures = 5, private windowMs = 60_000) {}
+  constructor(
+    private maxFailures = 5,
+    private windowMs = 60_000,
+  ) {}
 
   isLocked(now = Date.now()): boolean {
     this.failures = this.failures.filter(t => now - t < this.windowMs);

@@ -42,7 +42,10 @@ export function fitAutoLayoutToGeometry(node: RawNode) {
   if (flow.length === 0) return;
   const boxes: Box[] = [];
   for (const c of flow) {
-    const x = c.layout.x, y = c.layout.y, w = dim(c, true), h = dim(c, false);
+    const x = c.layout.x,
+      y = c.layout.y,
+      w = dim(c, true),
+      h = dim(c, false);
     if (typeof x !== 'number' || typeof y !== 'number' || w == null || h == null) return;
     boxes.push({ x, y, w, h });
   }
@@ -67,26 +70,38 @@ export function fitAutoLayoutToGeometry(node: RawNode) {
     const pEnd = V ? P.bottom : P.right;
     const sum = sorted.reduce((a, b) => a + mainSize(b), 0);
     const step = sorted.length > 1 ? (MAIN - pStart - pEnd - sum) / (sorted.length - 1) : 0;
-    let cur = pStart, ok = step >= 0;
+    let cur = pStart,
+      ok = step >= 0;
     for (const b of sorted) {
-      if (Math.abs(main(b) - cur) > 2) { ok = false; break; }
+      if (Math.abs(main(b) - cur) > 2) {
+        ok = false;
+        break;
+      }
       cur += mainSize(b) + step;
     }
     const cStart = V ? P.left : P.top;
-    const cEnd = (V ? W - P.right : H - P.bottom);
+    const cEnd = V ? W - P.right : H - P.bottom;
     const ca = L.counterAxisAlignItems || 'MIN';
-    if (ok) ok = boxes.every(b => {
-      const exp = ca === 'CENTER' ? cStart + (cEnd - cStart - crossSize(b)) / 2 : ca === 'MAX' ? cEnd - crossSize(b) : cStart;
-      return Math.abs(cross(b) - exp) <= 2 || Math.abs(crossSize(b) - (cEnd - cStart)) <= 2;
-    });
+    if (ok)
+      ok = boxes.every(b => {
+        const exp =
+          ca === 'CENTER' ? cStart + (cEnd - cStart - crossSize(b)) / 2 : ca === 'MAX' ? cEnd - crossSize(b) : cStart;
+        return Math.abs(cross(b) - exp) <= 2 || Math.abs(crossSize(b) - (cEnd - cStart)) <= 2;
+      });
     if (ok) return;
   }
   const gaps: number[] = [];
   for (let i = 1; i < sorted.length; i++) gaps.push(main(sorted[i]) - (main(sorted[i - 1]) + mainSize(sorted[i - 1])));
 
   // Separaciones irregulares, solapes o desbordes: Auto Layout no puede reproducirlo → posiciones exactas
-  if (gaps.length && (Math.max(...gaps) - Math.min(...gaps) > 2 || Math.min(...gaps) < -1)) { L.mode = 'NONE'; return; }
-  if (lead < -1 || trail < -1) { L.mode = 'NONE'; return; }
+  if (gaps.length && (Math.max(...gaps) - Math.min(...gaps) > 2 || Math.min(...gaps) < -1)) {
+    L.mode = 'NONE';
+    return;
+  }
+  if (lead < -1 || trail < -1) {
+    L.mode = 'NONE';
+    return;
+  }
 
   const before = boxes.map(cross);
   const after = boxes.map(b => CROSS - (cross(b) + crossSize(b)));
@@ -97,11 +112,22 @@ export function fitAutoLayoutToGeometry(node: RawNode) {
   if (boxes.every((_, i) => Math.abs(before[i] - after[i]) <= 2)) {
     counter = 'CENTER';
     padBefore = padAfter = Math.min(...before);
+  } else if (same(before)) {
+    counter = 'MIN';
+    padBefore = before[0];
+    padAfter = Math.min(...after);
+  } else if (same(after)) {
+    counter = 'MAX';
+    padAfter = after[0];
+    padBefore = Math.min(...before);
+  } else {
+    L.mode = 'NONE';
+    return;
   }
-  else if (same(before)) { counter = 'MIN'; padBefore = before[0]; padAfter = Math.min(...after); }
-  else if (same(after)) { counter = 'MAX'; padAfter = after[0]; padBefore = Math.min(...before); }
-  else { L.mode = 'NONE'; return; }
-  if (padBefore < -1 || padAfter < -1) { L.mode = 'NONE'; return; }
+  if (padBefore < -1 || padAfter < -1) {
+    L.mode = 'NONE';
+    return;
+  }
 
   const r = (v: number) => Math.max(0, Math.round(v));
   // Hijos marcados FILL en el eje transversal que en la web NO ocupan todo el ancho/alto
@@ -135,13 +161,21 @@ export function fitWrapToGeometry(node: RawNode, W: number, H: number) {
     const v = h ? c.layout.width : c.layout.height;
     return typeof v === 'number' ? v : null;
   };
-  if (!kids.length || kids.some((c: RawNode) => typeof c.layout.x !== 'number' || typeof c.layout.y !== 'number' || sz(c, true) == null || sz(c, false) == null)) return;
+  if (
+    !kids.length ||
+    kids.some(
+      (c: RawNode) =>
+        typeof c.layout.x !== 'number' || typeof c.layout.y !== 'number' || sz(c, true) == null || sz(c, false) == null,
+    )
+  )
+    return;
 
   // Agrupar en filas por y
   const rows: Array<{ y: number; items: RawNode[] }> = [];
   for (const c of [...kids].sort((a, b) => a.layout.y - b.layout.y || a.layout.x - b.layout.x)) {
     const row = rows.find(r => Math.abs(r.y - c.layout.y) <= 2);
-    if (row) row.items.push(c); else rows.push({ y: c.layout.y, items: [c] });
+    if (row) row.items.push(c);
+    else rows.push({ y: c.layout.y, items: [c] });
   }
   rows.forEach(r => r.items.sort((a, b) => a.layout.x - b.layout.x));
   // Reordenar hijos: fila por fila (los absolutos al final, conservan su posición)
@@ -155,10 +189,12 @@ export function fitWrapToGeometry(node: RawNode, W: number, H: number) {
   }
 
   const gaps: number[] = [];
-  for (const r of rows) for (let i = 1; i < r.items.length; i++) {
-    const a = r.items[i - 1], b = r.items[i];
-    gaps.push(b.layout.x - (a.layout.x + sz(a, true)));
-  }
+  for (const r of rows)
+    for (let i = 1; i < r.items.length; i++) {
+      const a = r.items[i - 1],
+        b = r.items[i];
+      gaps.push(b.layout.x - (a.layout.x + sz(a, true)));
+    }
   const rowGaps: number[] = [];
   for (let i = 1; i < rows.length; i++) {
     const prevBottom = Math.max(...rows[i - 1].items.map(c => c.layout.y + sz(c, false)));
@@ -166,7 +202,13 @@ export function fitWrapToGeometry(node: RawNode, W: number, H: number) {
   }
   const uniform = (arr: number[]) => !arr.length || Math.max(...arr) - Math.min(...arr) <= 2;
   const starts = rows.map(r => r.items[0].layout.x);
-  if (!uniform(gaps) || !uniform(rowGaps) || !uniform(starts) || Math.min(...rowGaps) < -1 || (gaps.length && Math.min(...gaps) < -1)) {
+  if (
+    !uniform(gaps) ||
+    !uniform(rowGaps) ||
+    !uniform(starts) ||
+    Math.min(...rowGaps) < -1 ||
+    (gaps.length && Math.min(...gaps) < -1)
+  ) {
     L.mode = 'NONE';
     return;
   }
@@ -190,11 +232,17 @@ export function pseudoPosition(element: Element, ps: CSSStyleDeclaration, w: num
   const es = window.getComputedStyle(element);
   if (es.position === 'static') return null;
   const er = element.getBoundingClientRect();
-  const bl = parseFloat(es.borderLeftWidth) || 0, bt = parseFloat(es.borderTopWidth) || 0;
-  const br = parseFloat(es.borderRightWidth) || 0, bb = parseFloat(es.borderBottomWidth) || 0;
+  const bl = parseFloat(es.borderLeftWidth) || 0,
+    bt = parseFloat(es.borderTopWidth) || 0;
+  const br = parseFloat(es.borderRightWidth) || 0,
+    bb = parseFloat(es.borderBottomWidth) || 0;
   const px = (v: string) => (v && v.endsWith('px') ? parseFloat(v) : null);
-  let x = null, y = null;
-  const left = px(ps.left), right = px(ps.right), top = px(ps.top), bottom = px(ps.bottom);
+  let x = null,
+    y = null;
+  const left = px(ps.left),
+    right = px(ps.right),
+    top = px(ps.top),
+    bottom = px(ps.bottom);
   if (left !== null) x = bl + left;
   else if (right !== null) x = er.width - br - right - w;
   if (top !== null) y = bt + top;

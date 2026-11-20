@@ -36,7 +36,11 @@ export function createLogger(scope: string, options: { sinks: LogSink[]; level?:
     if (ORDER[level] < min) return;
     const record: LogRecord = { time: new Date().toISOString(), level, scope, message, ...(data ? { data } : {}) };
     for (const sink of options.sinks) {
-      try { sink(record); } catch (_e) { /* un sink roto no debe tumbar al llamador */ }
+      try {
+        sink(record);
+      } catch (_e) {
+        /* un sink roto no debe tumbar al llamador */
+      }
     }
   };
   return {
@@ -44,7 +48,7 @@ export function createLogger(scope: string, options: { sinks: LogSink[]; level?:
     info: (m, d) => emit('info', m, d),
     warn: (m, d) => emit('warn', m, d),
     error: (m, d) => emit('error', m, d),
-    child: (sub) => createLogger(`${scope}:${sub}`, options),
+    child: sub => createLogger(`${scope}:${sub}`, options),
   };
 }
 
@@ -59,7 +63,7 @@ export function formatLogRecord(r: LogRecord): string {
  * (el servidor MCP habla JSON-RPC por stdout: un console.log lo corrompe).
  */
 export function consoleSink(stream: 'auto' | 'stderr' = 'auto'): LogSink {
-  return (r) => {
+  return r => {
     const line = formatLogRecord(r);
     if (stream === 'stderr' || r.level === 'error') console.error(line);
     else if (r.level === 'warn') console.warn(line);

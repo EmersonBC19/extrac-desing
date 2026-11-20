@@ -59,7 +59,8 @@ exports.PAYLOAD_LIMITS = {
 const finite = z.number().finite();
 const sizing = z.union([finite, z.literal('FILL'), z.literal('HUG')]);
 const spacing = z.object({ top: finite, right: finite, bottom: finite, left: finite }).partial().passthrough();
-exports.UILayoutSchema = z.object({
+exports.UILayoutSchema = z
+    .object({
     mode: z.enum(['NONE', 'HORIZONTAL', 'VERTICAL']).optional(),
     width: sizing.optional(),
     height: sizing.optional(),
@@ -70,28 +71,36 @@ exports.UILayoutSchema = z.object({
     itemSpacing: finite.optional(),
     padding: spacing.optional(),
     positioning: z.enum(['AUTO', 'ABSOLUTE']).optional(),
-}).passthrough();
-exports.UITextSegmentSchema = z.object({
+})
+    .passthrough();
+exports.UITextSegmentSchema = z
+    .object({
     start: z.number().int().nonnegative(),
     end: z.number().int().nonnegative(),
-}).passthrough();
-exports.UITextDataSchema = z.object({
+})
+    .passthrough();
+exports.UITextDataSchema = z
+    .object({
     characters: z.string().max(exports.PAYLOAD_LIMITS.maxTextChars),
     fontSize: finite.optional(),
     fontFamily: z.string().max(200).optional(),
     segments: z.array(exports.UITextSegmentSchema).max(10_000).optional(),
-}).passthrough();
+})
+    .passthrough();
 /** SVG que Figma va a interpretar: sin scripts ni URLs javascript: */
-const svgContent = z.string()
+const svgContent = z
+    .string()
     .max(exports.PAYLOAD_LIMITS.maxSvgChars)
     .refine(s => !/<script[\s>]/i.test(s), 'SVG con <script>')
     .refine(s => !/javascript:/i.test(s), 'SVG con URL javascript:');
 /** Imagen embebida: solo data URI de imagen en base64 */
-const imageData = z.string()
+const imageData = z
+    .string()
     .max(exports.PAYLOAD_LIMITS.maxImageChars)
     .regex(/^data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=\s]*$/i, 'imageData debe ser data:image/...;base64');
 /** Un nodo SIN validar sus hijos (el árbol se recorre de forma iterativa, ver validateUINodeTree) */
-exports.UINodeShallowSchema = z.object({
+exports.UINodeShallowSchema = z
+    .object({
     id: z.string().max(200).optional(),
     type: z.enum(['FRAME', 'TEXT', 'SVG', 'COMPONENT', 'INSTANCE']),
     name: z.string().max(exports.PAYLOAD_LIMITS.maxNameChars).optional(),
@@ -101,7 +110,8 @@ exports.UINodeShallowSchema = z.object({
     svgContent: svgContent.optional(),
     imageData: imageData.optional(),
     children: z.array(z.unknown()).optional(),
-}).passthrough();
+})
+    .passthrough();
 /** Ruta legible en errores: en árboles profundos se conserva solo el tramo final */
 function shortPath(path) {
     return path.length > 160 ? 'rootNode…' + path.slice(-140) : path;
@@ -117,14 +127,20 @@ function validateUINodeTree(root) {
     while (stack.length) {
         const { node, depth, path } = stack.pop();
         if (depth > exports.PAYLOAD_LIMITS.maxDepth)
-            return { ok: false, error: `Árbol demasiado profundo (> ${exports.PAYLOAD_LIMITS.maxDepth} niveles) en ${shortPath(path)}` };
+            return {
+                ok: false,
+                error: `Árbol demasiado profundo (> ${exports.PAYLOAD_LIMITS.maxDepth} niveles) en ${shortPath(path)}`,
+            };
         if (++count > exports.PAYLOAD_LIMITS.maxNodes)
             return { ok: false, error: `Demasiados nodos (> ${exports.PAYLOAD_LIMITS.maxNodes})` };
         maxDepth = Math.max(maxDepth, depth);
         const parsed = exports.UINodeShallowSchema.safeParse(node);
         if (!parsed.success) {
             const issue = parsed.error.issues[0];
-            return { ok: false, error: `${shortPath(path)}${issue.path.length ? '.' + issue.path.join('.') : ''}: ${issue.message}` };
+            return {
+                ok: false,
+                error: `${shortPath(path)}${issue.path.length ? '.' + issue.path.join('.') : ''}: ${issue.message}`,
+            };
         }
         const children = parsed.data.children || [];
         for (let i = children.length - 1; i >= 0; i--) {
@@ -133,7 +149,8 @@ function validateUINodeTree(root) {
     }
     return { ok: true, nodeCount: count, maxDepth };
 }
-exports.WSRenderPayloadSchema = z.object({
+exports.WSRenderPayloadSchema = z
+    .object({
     rootNode: z.unknown(),
     tokens: z.object({}).passthrough().optional(),
     createAsComponent: z.boolean().optional(),
@@ -141,11 +158,15 @@ exports.WSRenderPayloadSchema = z.object({
     clearPage: z.boolean().optional(),
     pageName: z.string().max(200).optional(),
     sectionTitle: z.string().max(500).optional(),
-    source: z.object({
+    source: z
+        .object({
         url: z.string().max(4096).optional(),
         title: z.string().max(1000).optional(),
-    }).passthrough().optional(),
-}).passthrough();
+    })
+        .passthrough()
+        .optional(),
+})
+    .passthrough();
 /** Payload de RENDER_NODES completo: forma del sobre + árbol de nodos */
 function validateRenderPayload(payload) {
     const env = exports.WSRenderPayloadSchema.safeParse(payload);
@@ -156,7 +177,9 @@ function validateRenderPayload(payload) {
     return validateUINodeTree(env.data.rootNode);
 }
 /** Sobre mínimo de cualquier mensaje del bus */
-exports.WSMessageEnvelopeSchema = z.object({
+exports.WSMessageEnvelopeSchema = z
+    .object({
     type: z.string().min(1).max(64),
-}).passthrough();
+})
+    .passthrough();
 //# sourceMappingURL=schemas.js.map

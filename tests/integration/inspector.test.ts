@@ -24,28 +24,40 @@ async function openInspector(): Promise<Page> {
   await page.setContent(PAGE);
   await page.evaluate(() => {
     (window as any).__sent = [];
-    (window as any).chrome = { runtime: { lastError: null, sendMessage(m: any, cb: any) {
-      if (m.type === 'TRANSMIT_TO_FIGMA') (window as any).__sent.push(m.payload);
-      if (cb) cb({ success: true, status: { hubRunning: true, figmaConnected: true, figmaCount: 1 } });
-    } } };
+    (window as any).chrome = {
+      runtime: {
+        lastError: null,
+        sendMessage(m: any, cb: any) {
+          if (m.type === 'TRANSMIT_TO_FIGMA') (window as any).__sent.push(m.payload);
+          if (cb) cb({ success: true, status: { hubRunning: true, figmaConnected: true, figmaCount: 1 } });
+        },
+      },
+    };
   });
-  await page.evaluate((c) => (0, eval)(c), read('packages/browser-extension/extractor.js'));
-  await page.evaluate((c) => (0, eval)(c), read('packages/browser-extension/content.js'));
+  await page.evaluate(c => (0, eval)(c), read('packages/browser-extension/extractor.js'));
+  await page.evaluate(c => (0, eval)(c), read('packages/browser-extension/content.js'));
   return page;
 }
 
-const center = (page: Page, sel: string) => page.evaluate((s) => {
-  const r = document.querySelector(s)!.querySelector('p')!.getBoundingClientRect();
-  return [r.left + 10, r.top + r.height / 2] as [number, number];
-}, sel);
-const selectedIds = (page: Page) => page.evaluate(() => (window as any).__codeToFigmaInstance.selectedElements.map((e: Element) => e.id));
+const center = (page: Page, sel: string) =>
+  page.evaluate(s => {
+    const r = document.querySelector(s)!.querySelector('p')!.getBoundingClientRect();
+    return [r.left + 10, r.top + r.height / 2] as [number, number];
+  }, sel);
+const selectedIds = (page: Page) =>
+  page.evaluate(() => (window as any).__codeToFigmaInstance.selectedElements.map((e: Element) => e.id));
 const ctrl = process.platform === 'darwin' ? 'Meta' : 'Control';
 
 describe('inspector de la extensión', () => {
   it('Ctrl/⌘ + clic suma y quita componentes; clic simple cierra', async () => {
     const page = await openInspector();
     const [p1, p2] = [await center(page, '#c1'), await center(page, '#c2')];
-    const ctrlClick = async ([x, y]: [number, number]) => { await page.keyboard.down(ctrl); await page.mouse.click(x, y); await page.keyboard.up(ctrl); await page.waitForTimeout(200); };
+    const ctrlClick = async ([x, y]: [number, number]) => {
+      await page.keyboard.down(ctrl);
+      await page.mouse.click(x, y);
+      await page.keyboard.up(ctrl);
+      await page.waitForTimeout(200);
+    };
     await ctrlClick(p1);
     expect(await selectedIds(page)).toEqual(['c1']);
     await ctrlClick(p2); // el segundo clic cae sobre el fondo de selección: antes cerraba todo
@@ -71,7 +83,12 @@ describe('inspector de la extensión', () => {
 
   it('la elevación visual no altera las medidas exportadas', async () => {
     const page = await openInspector();
-    await page.evaluate(() => { const i = (window as any).__codeToFigmaInstance; const el = document.getElementById('c1'); i.selectedElements = [el]; i.elevateElements([el]); });
+    await page.evaluate(() => {
+      const i = (window as any).__codeToFigmaInstance;
+      const el = document.getElementById('c1');
+      i.selectedElements = [el];
+      i.elevateElements([el]);
+    });
     await page.waitForTimeout(500);
     const lifted = await page.evaluate(() => document.getElementById('c1')!.getBoundingClientRect().width);
     expect(lifted).toBeGreaterThan(348); // escalado mientras está elevado
@@ -84,7 +101,14 @@ describe('inspector de la extensión', () => {
 
   it('multi-selección y body se envían como tablero', async () => {
     const page = await openInspector();
-    const boardFor = (ids: string[]) => page.evaluate((ids) => (window as any).__codeToFigmaInstance.shouldBuildBoard(ids.map(id => id === 'body' ? document.body : document.getElementById(id))), ids);
+    const boardFor = (ids: string[]) =>
+      page.evaluate(
+        ids =>
+          (window as any).__codeToFigmaInstance.shouldBuildBoard(
+            ids.map(id => (id === 'body' ? document.body : document.getElementById(id))),
+          ),
+        ids,
+      );
     expect(await boardFor(['c1'])).toBe(false);
     expect(await boardFor(['c1', 'c2'])).toBe(true);
     expect(await boardFor(['body'])).toBe(true);
@@ -95,7 +119,11 @@ describe('inspector de la extensión', () => {
     const p1 = await center(page, '#c1');
     await page.mouse.click(...p1);
     await page.waitForTimeout(300);
-    const hudBox = () => page.evaluate(() => { const r = (window as any).__codeToFigmaInstance.hud.getBoundingClientRect(); return { top: Math.round(r.top), left: Math.round(r.left) }; });
+    const hudBox = () =>
+      page.evaluate(() => {
+        const r = (window as any).__codeToFigmaInstance.hud.getBoundingClientRect();
+        return { top: Math.round(r.top), left: Math.round(r.left) };
+      });
     const start = await hudBox();
     await page.mouse.move(start.left + 100, start.top + 15);
     await page.mouse.down();

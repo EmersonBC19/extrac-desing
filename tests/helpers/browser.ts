@@ -7,8 +7,12 @@ import { afterAll, beforeAll, inject } from 'vitest';
  */
 export function useBrowser(viewport = { width: 1440, height: 900 }) {
   let browser: Browser;
-  beforeAll(async () => { browser = await chromium.launch(); });
-  afterAll(async () => { await browser?.close(); });
+  beforeAll(async () => {
+    browser = await chromium.launch();
+  });
+  afterAll(async () => {
+    await browser?.close();
+  });
   return {
     async page(path?: string): Promise<Page> {
       const context = await browser.newContext({ viewport, bypassCSP: true });
@@ -16,7 +20,9 @@ export function useBrowser(viewport = { width: 1440, height: 900 }) {
       if (path) await page.goto(fixture(path), { waitUntil: 'networkidle' });
       return page;
     },
-    get browser() { return browser; },
+    get browser() {
+      return browser;
+    },
   };
 }
 

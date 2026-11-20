@@ -18,7 +18,7 @@ describe('imágenes (synthetic/index.html)', () => {
     for (const d of dims) {
       expect(d.ok).toBe(true);
       expect(['image/png', 'image/jpeg', 'image/gif']).toContain(d.mime); // WebP/SVG convertidos
-      expect(Math.max(d.w, d.h)).toBeLessThanOrEqual(4096);              // 5000 px reducido
+      expect(Math.max(d.w, d.h)).toBeLessThanOrEqual(4096); // 5000 px reducido
     }
     // El hero de 5000 px se reduce, no se descarta
     expect(dims.some((d: any) => d.w === 4096)).toBe(true);
@@ -78,7 +78,9 @@ describe('captura de pantalla para lo que el DOM no entrega (synthetic/shot.html
   it('iframe y canvas WebGL salen como imagen', async () => {
     const page = await B.page('synthetic/shot.html');
     const { rootNode } = await extract(page, ROOT);
-    const media = flatten(rootNode).map((x: any) => x.node).filter((n: any) => /^(Embed|Chart)/.test(n.name));
+    const media = flatten(rootNode)
+      .map((x: any) => x.node)
+      .filter((n: any) => /^(Embed|Chart)/.test(n.name));
     expect(media).toHaveLength(2);
     expect(media.every((n: any) => n.imageData)).toBe(true);
   });

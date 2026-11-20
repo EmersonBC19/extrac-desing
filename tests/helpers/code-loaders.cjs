@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+const read = p => fs.readFileSync(path.join(ROOT, p), 'utf8');
 
 /** Política de descarga de imágenes del service worker (background.js) */
 function loadImageFetchPolicy() {

@@ -1,9 +1,6 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js';
+import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { BrowserExtractor, SiteCrawler } from '@code-to-figma/core-extractor';
 import { FigmaWsHub } from './ws-hub.js';
 import { sendToFigma } from './figma-relay.js';
@@ -25,13 +22,13 @@ const extractor = new BrowserExtractor();
 const server = new Server(
   {
     name: 'code-to-figma-mcp',
-    version: '1.0.0'
+    version: '1.0.0',
   },
   {
     capabilities: {
-      tools: {}
-    }
-  }
+      tools: {},
+    },
+  },
 );
 
 // Registrar catálogo de herramientas MCP
@@ -40,85 +37,91 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     tools: [
       {
         name: 'render_html_to_figma',
-        description: 'Renderiza un fragmento de HTML/Tailwind/CSS en Chromium, extrae su geometría computada y lo plasma en el lienzo de Figma con Auto Layout nativo.',
+        description:
+          'Renderiza un fragmento de HTML/Tailwind/CSS en Chromium, extrae su geometría computada y lo plasma en el lienzo de Figma con Auto Layout nativo.',
         inputSchema: {
           type: 'object',
           properties: {
             html: {
               type: 'string',
-              description: 'Código HTML completo o fragmento, incluyendo clases de Tailwind o estilos CSS en línea.'
+              description: 'Código HTML completo o fragmento, incluyendo clases de Tailwind o estilos CSS en línea.',
             },
             selector: {
               type: 'string',
-              description: 'Selector CSS del elemento que se desea extraer (por defecto "body > *" o "body").'
-            }
+              description: 'Selector CSS del elemento que se desea extraer (por defecto "body > *" o "body").',
+            },
           },
-          required: ['html']
-        }
+          required: ['html'],
+        },
       },
       {
         name: 'render_url_to_figma',
-        description: 'Navega a una URL local o remota (ej. http://localhost:3000), extrae el componente seleccionado del DOM en vivo y lo envía a Figma.',
+        description:
+          'Navega a una URL local o remota (ej. http://localhost:3000), extrae el componente seleccionado del DOM en vivo y lo envía a Figma.',
         inputSchema: {
           type: 'object',
           properties: {
             url: {
               type: 'string',
-              description: 'La URL a inspeccionar (ej: http://localhost:3000/dashboard).'
+              description: 'La URL a inspeccionar (ej: http://localhost:3000/dashboard).',
             },
             selector: {
               type: 'string',
-              description: 'Selector CSS del componente a extraer (ej: "#modal-confirm", ".user-profile-card").'
-            }
+              description: 'Selector CSS del componente a extraer (ej: "#modal-confirm", ".user-profile-card").',
+            },
           },
-          required: ['url']
-        }
+          required: ['url'],
+        },
       },
       {
         name: 'inspect_ui_node',
-        description: 'Extrae y devuelve el árbol de datos UINode (JSON) de una URL o código HTML sin enviarlo a Figma, para inspección o validación.',
+        description:
+          'Extrae y devuelve el árbol de datos UINode (JSON) de una URL o código HTML sin enviarlo a Figma, para inspección o validación.',
         inputSchema: {
           type: 'object',
           properties: {
             url: { type: 'string', description: 'URL a inspeccionar.' },
             html: { type: 'string', description: 'Código HTML a inspeccionar.' },
-            selector: { type: 'string', description: 'Selector CSS.' }
-          }
-        }
+            selector: { type: 'string', description: 'Selector CSS.' },
+          },
+        },
       },
       {
         name: 'crawl_site_to_figma',
-        description: 'Recorre múltiples rutas o pestañas de navegación de una aplicación web y las dibuja todas en Figma organizadas horizontalmente o en páginas independientes.',
+        description:
+          'Recorre múltiples rutas o pestañas de navegación de una aplicación web y las dibuja todas en Figma organizadas horizontalmente o en páginas independientes.',
         inputSchema: {
           type: 'object',
           properties: {
             baseUrl: {
               type: 'string',
-              description: 'URL base del proyecto (ej: http://localhost:4200 o http://localhost:3000).'
+              description: 'URL base del proyecto (ej: http://localhost:4200 o http://localhost:3000).',
             },
             routes: {
               type: 'array',
               items: { type: 'string' },
-              description: 'Lista opcional de rutas específicas (ej: ["/dashboard", "/clientes", "/transferencias"]). Si se omite, auto-detecta las pestañas/enlaces.'
+              description:
+                'Lista opcional de rutas específicas (ej: ["/dashboard", "/clientes", "/transferencias"]). Si se omite, auto-detecta las pestañas/enlaces.',
             },
             pages: {
               type: 'boolean',
-              description: 'Si es true, crea cada pantalla en una página separada de Figma. Si es false (defecto), las alinea horizontalmente en el mismo lienzo.'
+              description:
+                'Si es true, crea cada pantalla en una página separada de Figma. Si es false (defecto), las alinea horizontalmente en el mismo lienzo.',
             },
             gap: {
               type: 'number',
-              description: 'Espacio en píxeles entre pantallas en el lienzo horizontal (por defecto 160).'
-            }
+              description: 'Espacio en píxeles entre pantallas en el lienzo horizontal (por defecto 160).',
+            },
           },
-          required: ['baseUrl']
-        }
-      }
-    ]
+          required: ['baseUrl'],
+        },
+      },
+    ],
   };
 });
 
 // Manejo de llamadas a herramientas
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
+server.setRequestHandler(CallToolRequestSchema, async request => {
   const { name, arguments: args } = request.params;
 
   try {
@@ -146,34 +149,42 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       const uiNode = await extractor.extractFromUrl({
         htmlContent: fullHtml,
-        selector
+        selector,
       });
 
-      const delivery = await sendToFigma(hub, {
-        type: 'RENDER_NODES',
-        payload: {
-          rootNode: uiNode,
-          clearPage: false
-        }
-      }, HUB_URL);
+      const delivery = await sendToFigma(
+        hub,
+        {
+          type: 'RENDER_NODES',
+          payload: {
+            rootNode: uiNode,
+            clearPage: false,
+          },
+        },
+        HUB_URL,
+      );
       const sent = delivery.sent;
 
       return {
         content: [
           {
             type: 'text',
-            text: JSON.stringify({
-              success: true,
-              componentName: uiNode.name,
-              nodeType: uiNode.type,
-              connectedPlugins: delivery.plugins,
-              sentToFigma: sent,
-              message: sent 
-                ? `¡Componente "${uiNode.name}" renderizado y transmitido a Figma con éxito!`
-                : `Componente procesado, pero no se detectó ningún plugin de Figma conectado en ws://localhost:8080. Abre el plugin en Figma para recibirlo.`
-            }, null, 2)
-          }
-        ]
+            text: JSON.stringify(
+              {
+                success: true,
+                componentName: uiNode.name,
+                nodeType: uiNode.type,
+                connectedPlugins: delivery.plugins,
+                sentToFigma: sent,
+                message: sent
+                  ? `¡Componente "${uiNode.name}" renderizado y transmitido a Figma con éxito!`
+                  : `Componente procesado, pero no se detectó ningún plugin de Figma conectado en ws://localhost:8080. Abre el plugin en Figma para recibirlo.`,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
       };
     }
 
@@ -183,34 +194,42 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       const uiNode = await extractor.extractFromUrl({
         url,
-        selector
+        selector,
       });
 
-      const delivery = await sendToFigma(hub, {
-        type: 'RENDER_NODES',
-        payload: {
-          rootNode: uiNode,
-          clearPage: false
-        }
-      }, HUB_URL);
+      const delivery = await sendToFigma(
+        hub,
+        {
+          type: 'RENDER_NODES',
+          payload: {
+            rootNode: uiNode,
+            clearPage: false,
+          },
+        },
+        HUB_URL,
+      );
       const sent = delivery.sent;
 
       return {
         content: [
           {
             type: 'text',
-            text: JSON.stringify({
-              success: true,
-              componentName: uiNode.name,
-              url,
-              selector,
-              sentToFigma: sent,
-              message: sent 
-                ? `¡Elemento "${selector}" de ${url} extraído y enviado a Figma!`
-                : `Elemento extraído con éxito, pero ningún plugin de Figma está escuchando en ws://localhost:8080.`
-            }, null, 2)
-          }
-        ]
+            text: JSON.stringify(
+              {
+                success: true,
+                componentName: uiNode.name,
+                url,
+                selector,
+                sentToFigma: sent,
+                message: sent
+                  ? `¡Elemento "${selector}" de ${url} extraído y enviado a Figma!`
+                  : `Elemento extraído con éxito, pero ningún plugin de Figma está escuchando en ws://localhost:8080.`,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
       };
     }
 
@@ -222,16 +241,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const uiNode = await extractor.extractFromUrl({
         url,
         htmlContent,
-        selector
+        selector,
       });
 
       return {
         content: [
           {
             type: 'text',
-            text: JSON.stringify(uiNode, null, 2)
-          }
-        ]
+            text: JSON.stringify(uiNode, null, 2),
+          },
+        ],
       };
     }
 
@@ -251,17 +270,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         logger: log.child('crawler'),
         onScreen: async (screen, index) => {
           const posX = index * (width + gap);
-          await sendToFigma(hub, {
-            type: 'RENDER_NODES',
-            payload: {
-              rootNode: screen.rootNode,
-              clearPage: false,
-              targetCanvasPosition: pages ? undefined : { x: posX, y: 0 },
-              pageName: pages ? screen.title : undefined
-            }
-          }, HUB_URL);
+          await sendToFigma(
+            hub,
+            {
+              type: 'RENDER_NODES',
+              payload: {
+                rootNode: screen.rootNode,
+                clearPage: false,
+                targetCanvasPosition: pages ? undefined : { x: posX, y: 0 },
+                pageName: pages ? screen.title : undefined,
+              },
+            },
+            HUB_URL,
+          );
           await new Promise(r => setTimeout(r, 600));
-        }
+        },
       });
 
       await crawler.close();
@@ -270,14 +293,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         content: [
           {
             type: 'text',
-            text: JSON.stringify({
-              success: true,
-              totalScreens: screens.length,
-              screens: screens.map(s => ({ title: s.title, route: s.routeOrTab })),
-              message: `Se han exportado ${screens.length} pantallas a Figma con éxito.`
-            }, null, 2)
-          }
-        ]
+            text: JSON.stringify(
+              {
+                success: true,
+                totalScreens: screens.length,
+                screens: screens.map(s => ({ title: s.title, route: s.routeOrTab })),
+                message: `Se han exportado ${screens.length} pantallas a Figma con éxito.`,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
       };
     }
 
@@ -288,9 +315,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       content: [
         {
           type: 'text',
-          text: `Error ejecutando ${name}: ${err.message}`
-        }
-      ]
+          text: `Error ejecutando ${name}: ${err.message}`,
+        },
+      ],
     };
   }
 });
@@ -302,7 +329,7 @@ async function run() {
   log.info('Servidor MCP code-to-figma conectado vía STDIO');
 }
 
-run().catch((err) => {
+run().catch(err => {
   log.error('Fallo iniciando servidor MCP', { error: String(err?.stack || err) });
   process.exit(1);
 });

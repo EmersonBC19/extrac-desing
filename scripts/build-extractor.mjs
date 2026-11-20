@@ -28,7 +28,7 @@ const result = await build({
   format: 'iife',
   target: 'es2020',
   platform: 'browser',
-  charset: 'utf8',          // conservar ¹ ² ⁰ … tal cual en lugar de escapes \u
+  charset: 'utf8', // conservar ¹ ² ⁰ … tal cual en lugar de escapes \u
   legalComments: 'none',
   banner: { js: BANNER },
   write: false,
@@ -40,7 +40,9 @@ const code = result.outputFiles[0].text.replace(/\r\n/g, '\n');
 if (process.argv.includes('--check')) {
   const current = readFileSync(OUT, 'utf8').replace(/\r\n/g, '\n');
   if (current !== code) {
-    console.error('✗ packages/browser-extension/extractor.js no está al día con core-extractor/src/browser.\n  Ejecuta: npm run build:extractor');
+    console.error(
+      '✗ packages/browser-extension/extractor.js no está al día con core-extractor/src/browser.\n  Ejecuta: npm run build:extractor',
+    );
     process.exit(1);
   }
   console.log('✓ extractor.js al día');

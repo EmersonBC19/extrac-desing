@@ -5,32 +5,32 @@
  * - Fetches images as base64 with extension privileges (immune to website CSP & CORS)
  */
 
-chrome.action.onClicked.addListener(async (tab) => {
+chrome.action.onClicked.addListener(async tab => {
   if (!tab.id || !tab.url) return;
 
   // Do not inject on restricted Chrome internal URLs
   if (
-    tab.url.startsWith("chrome://") ||
-    tab.url.startsWith("chrome-extension://") ||
-    tab.url.startsWith("https://chromewebstore.google.com")
+    tab.url.startsWith('chrome://') ||
+    tab.url.startsWith('chrome-extension://') ||
+    tab.url.startsWith('https://chromewebstore.google.com')
   ) {
-    console.warn("[CodeToFigma] No se puede ejecutar en paginas internas de Chrome.");
+    console.warn('[CodeToFigma] No se puede ejecutar en paginas internas de Chrome.');
     return;
   }
 
   try {
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      files: ["extractor.js", "content.js"]
+      files: ['extractor.js', 'content.js'],
     });
   } catch (err) {
-    console.error("[CodeToFigma] Error al inyectar script:", err);
+    console.error('[CodeToFigma] Error al inyectar script:', err);
   }
 });
 
 // Helper: Convert Uint8Array to base64 Data URL cleanly in chunks
 function uint8ArrayToBase64(bytes) {
-  let binary = "";
+  let binary = '';
   const len = bytes.byteLength;
   const chunkSize = 8192;
   for (let i = 0; i < len; i += chunkSize) {
@@ -47,23 +47,38 @@ function uint8ArrayToBase64(bytes) {
 
 /** ¿Host de red local / privada? (solo literales: el service worker no resuelve DNS) */
 function isPrivateHost(hostname) {
-  const h = (hostname || "").toLowerCase().replace(/^\[|\]$/g, "");
-  if (h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local") || h.endsWith(".internal") || h.endsWith(".lan")) return true;
-  if (h === "::1" || h === "0.0.0.0" || h.startsWith("fe80:") || /^f[cd][0-9a-f]{2}:/.test(h)) return true;
+  const h = (hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+  if (
+    h === 'localhost' ||
+    h.endsWith('.localhost') ||
+    h.endsWith('.local') ||
+    h.endsWith('.internal') ||
+    h.endsWith('.lan')
+  )
+    return true;
+  if (h === '::1' || h === '0.0.0.0' || h.startsWith('fe80:') || /^f[cd][0-9a-f]{2}:/.test(h)) return true;
   const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (!m) return false;
   const [a, b] = [Number(m[1]), Number(m[2])];
-  return a === 127 || a === 10 || a === 0 || (a === 172 && b >= 16 && b <= 31) ||
-         (a === 192 && b === 168) || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127);
+  return (
+    a === 127 ||
+    a === 10 ||
+    a === 0 ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 169 && b === 254) ||
+    (a === 100 && b >= 64 && b <= 127)
+  );
 }
 
 /** Dominio "registrable" aproximado (últimas 2 etiquetas; 3 para dominios tipo .com.co / .co.uk) */
 function siteOf(hostname) {
-  const parts = (hostname || "").toLowerCase().split(".").filter(Boolean);
-  if (parts.length <= 2) return parts.join(".");
+  const parts = (hostname || '').toLowerCase().split('.').filter(Boolean);
+  if (parts.length <= 2) return parts.join('.');
   const sld = parts[parts.length - 2];
-  const twoLevelTld = ["com", "co", "org", "net", "gov", "edu", "gob", "ac"].includes(sld) && parts[parts.length - 1].length === 2;
-  return parts.slice(twoLevelTld ? -3 : -2).join(".");
+  const twoLevelTld =
+    ['com', 'co', 'org', 'net', 'gov', 'edu', 'gob', 'ac'].includes(sld) && parts[parts.length - 1].length === 2;
+  return parts.slice(twoLevelTld ? -3 : -2).join('.');
 }
 
 /**
@@ -74,36 +89,42 @@ function siteOf(hostname) {
  */
 function imageFetchPolicy(url, tabUrl) {
   let target;
-  try { target = new URL(url); } catch (_e) { return { allowed: false, reason: "URL inválida" }; }
-  if (target.protocol === "data:") return { allowed: true, credentials: false };
-  if (target.protocol !== "http:" && target.protocol !== "https:") {
+  try {
+    target = new URL(url);
+  } catch (_e) {
+    return { allowed: false, reason: 'URL inválida' };
+  }
+  if (target.protocol === 'data:') return { allowed: true, credentials: false };
+  if (target.protocol !== 'http:' && target.protocol !== 'https:') {
     return { allowed: false, reason: `Protocolo no permitido (${target.protocol})` };
   }
   let tab = null;
-  try { tab = tabUrl ? new URL(tabUrl) : null; } catch (_e) {}
+  try {
+    tab = tabUrl ? new URL(tabUrl) : null;
+  } catch (_e) {}
   const tabIsPrivate = tab ? isPrivateHost(tab.hostname) : false;
   if (isPrivateHost(target.hostname) && !tabIsPrivate) {
-    return { allowed: false, reason: "Recurso de red local referenciado por un sitio público" };
+    return { allowed: false, reason: 'Recurso de red local referenciado por un sitio público' };
   }
   const sameSite = !!tab && siteOf(tab.hostname) === siteOf(target.hostname);
   return { allowed: true, credentials: sameSite };
 }
 
 async function fetchImageBase64(url, tabUrl) {
-  if (!url) throw new Error("URL no proporcionada");
-  if (url.startsWith("data:")) return url;
+  if (!url) throw new Error('URL no proporcionada');
+  if (url.startsWith('data:')) return url;
 
   const policy = imageFetchPolicy(url, tabUrl);
   if (!policy.allowed) throw new Error(`Descarga bloqueada: ${policy.reason}`);
 
   // Cookies solo para imágenes del mismo sitio (plataformas con login, intranets)
-  const res = await fetch(url, { credentials: policy.credentials ? "include" : "omit" });
+  const res = await fetch(url, { credentials: policy.credentials ? 'include' : 'omit' });
   if (!res.ok) {
     throw new Error(`HTTP error ${res.status}`);
   }
   const blob = await res.blob();
-  let mime = (blob.type || "").toLowerCase();
-  if (mime && !mime.startsWith("image/")) {
+  let mime = (blob.type || '').toLowerCase();
+  if (mime && !mime.startsWith('image/')) {
     throw new Error(`Respuesta no es imagen (${mime})`);
   }
   if (!mime) mime = guessMimeFromUrl(url);
@@ -113,11 +134,18 @@ async function fetchImageBase64(url, tabUrl) {
 }
 
 function guessMimeFromUrl(url) {
-  const ext = (url.split("?")[0].split("#")[0].split(".").pop() || "").toLowerCase();
-  return {
-    jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif",
-    webp: "image/webp", avif: "image/avif", svg: "image/svg+xml"
-  }[ext] || "image/png";
+  const ext = (url.split('?')[0].split('#')[0].split('.').pop() || '').toLowerCase();
+  return (
+    {
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      png: 'image/png',
+      gif: 'image/gif',
+      webp: 'image/webp',
+      avif: 'image/avif',
+      svg: 'image/svg+xml',
+    }[ext] || 'image/png'
+  );
 }
 
 async function blobToDataUrl(blob) {
@@ -130,7 +158,7 @@ async function blobToDataUrl(blob) {
  * Para medios que el DOM no entrega: video cross-origin, WebGL, iframes, imágenes bloqueadas.
  */
 async function captureRegions(windowId, rects, viewportWidth) {
-  const shot = await chrome.tabs.captureVisibleTab(windowId, { format: "png" });
+  const shot = await chrome.tabs.captureVisibleTab(windowId, { format: 'png' });
   const bitmap = await createImageBitmap(await (await fetch(shot)).blob());
   const k = bitmap.width / (viewportWidth || bitmap.width);
   const vw = bitmap.width / k;
@@ -139,21 +167,32 @@ async function captureRegions(windowId, rects, viewportWidth) {
   const out = [];
   for (const r of rects || []) {
     try {
-      const l = Math.max(0, r.left), t = Math.max(0, r.top);
-      const rr = Math.min(vw, r.left + r.width), bb = Math.min(vh, r.top + r.height);
-      if (rr - l < 1 || bb - t < 1) { out.push(null); continue; }
+      const l = Math.max(0, r.left),
+        t = Math.max(0, r.top);
+      const rr = Math.min(vw, r.left + r.width),
+        bb = Math.min(vh, r.top + r.height);
+      if (rr - l < 1 || bb - t < 1) {
+        out.push(null);
+        continue;
+      }
       const cw = Math.max(1, Math.round(r.width * k));
       const ch = Math.max(1, Math.round(r.height * k));
       const s = Math.min(1, 4096 / Math.max(cw, ch)); // límite de Figma: 4096px por lado
       const canvas = new OffscreenCanvas(Math.max(1, Math.round(cw * s)), Math.max(1, Math.round(ch * s)));
-      const ctx = canvas.getContext("2d");
+      const ctx = canvas.getContext('2d');
       ctx.drawImage(
         bitmap,
-        l * k, t * k, (rr - l) * k, (bb - t) * k,
-        (l - r.left) * k * s, (t - r.top) * k * s, (rr - l) * k * s, (bb - t) * k * s
+        l * k,
+        t * k,
+        (rr - l) * k,
+        (bb - t) * k,
+        (l - r.left) * k * s,
+        (t - r.top) * k * s,
+        (rr - l) * k * s,
+        (bb - t) * k * s,
       );
       const full = l <= r.left + 1 && t <= r.top + 1 && rr >= r.left + r.width - 1 && bb >= r.top + r.height - 1;
-      const blob = await canvas.convertToBlob(full ? { type: "image/jpeg", quality: 0.9 } : { type: "image/png" });
+      const blob = await canvas.convertToBlob(full ? { type: 'image/jpeg', quality: 0.9 } : { type: 'image/png' });
       out.push(await blobToDataUrl(blob));
     } catch (_e) {
       out.push(null);
@@ -168,35 +207,40 @@ function sendToWebSocketHub(data) {
   return new Promise((resolve, reject) => {
     let ws;
     try {
-      ws = new WebSocket("ws://localhost:8080");
+      ws = new WebSocket('ws://localhost:8080');
     } catch (err) {
-      return reject(new Error("No se pudo instanciar WebSocket: " + err.message));
+      return reject(new Error('No se pudo instanciar WebSocket: ' + err.message));
     }
 
     let settled = false;
     const timeout = setTimeout(() => {
       if (settled) return;
       settled = true;
-      try { ws.close(); } catch (_) {}
-      reject(new Error("Tiempo de espera agotado al conectar a ws://localhost:8080"));
+      try {
+        ws.close();
+      } catch (_) {}
+      reject(new Error('Tiempo de espera agotado al conectar a ws://localhost:8080'));
     }, 6000);
 
     ws.onopen = () => {
-      const payload = (data && data.rootNode) ? {
-        rootNode: data.rootNode,
-        tokens: data.tokens,
-        createAsComponent: data.createAsComponent,
-        board: data.board === true,   // landing completa / multi-selección → tablero design system
-        source: data.source,          // { url, title } para nombrar la página del tablero
-        clearPage: false
-      } : {
-        rootNode: data,
-        clearPage: false
-      };
+      const payload =
+        data && data.rootNode
+          ? {
+              rootNode: data.rootNode,
+              tokens: data.tokens,
+              createAsComponent: data.createAsComponent,
+              board: data.board === true, // landing completa / multi-selección → tablero design system
+              source: data.source, // { url, title } para nombrar la página del tablero
+              clearPage: false,
+            }
+          : {
+              rootNode: data,
+              clearPage: false,
+            };
 
       const msg = {
-        type: "RENDER_NODES",
-        payload
+        type: 'RENDER_NODES',
+        payload,
       };
       ws.send(JSON.stringify(msg));
 
@@ -208,29 +252,31 @@ function sendToWebSocketHub(data) {
           settled = true;
           clearTimeout(timeout);
           setTimeout(() => {
-            try { ws.close(); } catch (_) {}
+            try {
+              ws.close();
+            } catch (_) {}
             resolve(true);
           }, 150);
         }
       }, 50);
     };
 
-    ws.onerror = (_err) => {
+    ws.onerror = _err => {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
-      reject(new Error("Hub no detectado en ws://localhost:8080"));
+      reject(new Error('Hub no detectado en ws://localhost:8080'));
     };
   });
 }
 
 // Check if WebSocket Hub and Figma plugin are live
 function checkHubStatus() {
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     let ws;
     let settled = false;
     try {
-      ws = new WebSocket("ws://localhost:8080");
+      ws = new WebSocket('ws://localhost:8080');
     } catch (err) {
       return resolve({ hubRunning: false, figmaConnected: false, figmaCount: 0 });
     }
@@ -238,41 +284,49 @@ function checkHubStatus() {
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
-      try { ws.close(); } catch (_) {}
+      try {
+        ws.close();
+      } catch (_) {}
       resolve({ hubRunning: false, figmaConnected: false, figmaCount: 0 });
     }, 1500);
 
     ws.onopen = () => {
       try {
-        ws.send(JSON.stringify({ type: "GET_STATUS" }));
+        ws.send(JSON.stringify({ type: 'GET_STATUS' }));
       } catch (_) {}
       // If no reply after 500ms but onopen succeeded, hub is at least running
       setTimeout(() => {
         if (!settled) {
           settled = true;
           clearTimeout(timer);
-          try { ws.close(); } catch (_) {}
+          try {
+            ws.close();
+          } catch (_) {}
           resolve({ hubRunning: true, figmaConnected: true, figmaCount: 1 });
         }
       }, 500);
     };
 
-    ws.onmessage = (event) => {
+    ws.onmessage = event => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       try {
         const msg = JSON.parse(event.data);
-        if (msg.type === "STATUS_RESPONSE") {
-          try { ws.close(); } catch (_) {}
+        if (msg.type === 'STATUS_RESPONSE') {
+          try {
+            ws.close();
+          } catch (_) {}
           return resolve({
             hubRunning: true,
             figmaConnected: !!msg.payload?.figmaConnected,
-            figmaCount: msg.payload?.figmaCount || 0
+            figmaCount: msg.payload?.figmaCount || 0,
           });
         }
       } catch (_) {}
-      try { ws.close(); } catch (_) {}
+      try {
+        ws.close();
+      } catch (_) {}
       resolve({ hubRunning: true, figmaConnected: true, figmaCount: 1 });
     };
 
@@ -288,33 +342,32 @@ function checkHubStatus() {
 // Mensajes del content script (catálogo: packages/contracts/src/messages.ts, canal "extension").
 // Cada manejador devuelve una promesa; su resultado se fusiona en { success: true, ... }.
 const MESSAGE_HANDLERS = {
-  TRANSMIT_TO_FIGMA: (message) =>
-    sendToWebSocketHub(message.payload).then(() => ({})),
+  TRANSMIT_TO_FIGMA: message => sendToWebSocketHub(message.payload).then(() => ({})),
 
-  CHECK_FIGMA_STATUS: () =>
-    checkHubStatus().then((status) => ({ status })),
+  CHECK_FIGMA_STATUS: () => checkHubStatus().then(status => ({ status })),
 
   CAPTURE_REGIONS: (message, sender) => {
     const windowId = sender && sender.tab ? sender.tab.windowId : undefined;
-    return captureRegions(windowId, message.rects, message.viewportWidth).then((crops) => ({ crops }));
+    return captureRegions(windowId, message.rects, message.viewportWidth).then(crops => ({ crops }));
   },
 
   // La pestaña que pide la imagen la da Chrome (no el mensaje): la página no puede falsearla
   FETCH_IMAGE_AS_BASE64: (message, sender) => {
     const tabUrl = sender && sender.tab ? sender.tab.url : undefined;
-    return fetchImageBase64(message.url, tabUrl).then((base64) => ({ base64 }));
+    return fetchImageBase64(message.url, tabUrl).then(base64 => ({ base64 }));
   },
 };
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const type = message && message.type;
-  const handler = typeof type === "string" && Object.prototype.hasOwnProperty.call(MESSAGE_HANDLERS, type)
-    ? MESSAGE_HANDLERS[type]
-    : null;
+  const handler =
+    typeof type === 'string' && Object.prototype.hasOwnProperty.call(MESSAGE_HANDLERS, type)
+      ? MESSAGE_HANDLERS[type]
+      : null;
   if (!handler) return false; // no es para nosotros
   Promise.resolve()
     .then(() => handler(message, sender))
-    .then((result) => sendResponse({ success: true, ...result }))
-    .catch((err) => sendResponse({ success: false, error: (err && err.message) || String(err) }));
+    .then(result => sendResponse({ success: true, ...result }))
+    .catch(err => sendResponse({ success: false, error: (err && err.message) || String(err) }));
   return true; // respuesta asíncrona: mantener abierto el canal
 });

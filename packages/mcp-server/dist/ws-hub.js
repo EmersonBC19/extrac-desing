@@ -11,7 +11,10 @@ const PORT = parseInt(process.env.WS_PORT || '8080', 10);
 /** Solo escuchar en la propia máquina (antes: todas las interfaces de red) */
 const HOST = process.env.WS_HOST || '127.0.0.1';
 /** IDs de extensión permitidos (opcional, separados por coma). Vacío = cualquier extensión local */
-const ALLOWED_EXTENSION_IDS = (process.env.CTF_EXTENSION_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+const ALLOWED_EXTENSION_IDS = (process.env.CTF_EXTENSION_IDS || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
 /** Guardar el último RENDER_NODES en disco solo si se pide explícitamente (puede contener datos privados) */
 const DEBUG_CAPTURE = process.env.CTF_DEBUG_CAPTURE === '1';
 /** Tope de tamaño por mensaje (payloads con imágenes base64) */
@@ -84,7 +87,9 @@ export class FigmaWsHub {
         });
         this.wss.on('listening', () => {
             this.log.info(`⚡ Figma WebSocket Hub en ws://${HOST}:${port}`);
-            this.log.info(`🔑 Código de vinculación para el plugin de Figma: ${this.pairing.code}`, { archivo: this.pairing.file });
+            this.log.info(`🔑 Código de vinculación para el plugin de Figma: ${this.pairing.code}`, {
+                archivo: this.pairing.file,
+            });
             if (DEBUG_CAPTURE)
                 this.log.info('🐞 CTF_DEBUG_CAPTURE=1: se guardará el último render en scratch/captured-last-payload.json');
             this.log.info('Esperando conexión del Plugin de Figma...');
@@ -93,7 +98,12 @@ export class FigmaWsHub {
     }
     onConnection(ws, req) {
         const originClass = req.__ctfOrigin || 'needs-pairing';
-        const state = { originClass, authenticated: originClass !== 'needs-pairing', isFigma: false, pairingTimer: null };
+        const state = {
+            originClass,
+            authenticated: originClass !== 'needs-pairing',
+            isFigma: false,
+            pairingTimer: null,
+        };
         // Clientes con origen "null" (plugin de Figma) deben vincularse a tiempo
         if (!state.authenticated) {
             this.send(ws, { type: 'AUTH_REQUIRED' });
@@ -102,7 +112,7 @@ export class FigmaWsHub {
                     ws.close(4401, 'Vinculación requerida');
             }, PAIRING_TIMEOUT_MS);
         }
-        ws.on('message', (raw) => {
+        ws.on('message', raw => {
             try {
                 const parsed = HubInboundSchema.safeParse(JSON.parse(raw.toString()));
                 if (!parsed.success) {
@@ -131,15 +141,15 @@ export class FigmaWsHub {
                 this.otherClients.delete(ws);
             }
         });
-        ws.on('error', (err) => this.log.error('Error en socket', { error: err.message }));
+        ws.on('error', err => this.log.error('Error en socket', { error: err.message }));
     }
     // ── Manejadores (uno por tipo de mensaje entrante; ver MESSAGE_CATALOG en contracts) ──────
     handlers = {
         REGISTER_CLIENT: (ws, state, msg) => this.onRegister(ws, state, msg),
         REGISTER: (ws, state, msg) => this.onRegister(ws, state, msg),
-        GET_STATUS: (ws) => this.sendStatus(ws),
-        PING: (ws) => this.sendStatus(ws),
-        GET_VIEWS_CATALOG: (ws) => this.send(ws, { type: 'VIEWS_CATALOG', payload: { views: this.getCatalog() } }),
+        GET_STATUS: ws => this.sendStatus(ws),
+        PING: ws => this.sendStatus(ws),
+        GET_VIEWS_CATALOG: ws => this.send(ws, { type: 'VIEWS_CATALOG', payload: { views: this.getCatalog() } }),
         REQUEST_VIEW_RENDER: (ws, _state, msg) => this.handleViewRender(ws, msg),
         RENDER_NODES: (ws, _state, msg) => {
             // Validación en tiempo de ejecución: nada malformado ni desmesurado llega a Figma
@@ -153,12 +163,19 @@ export class FigmaWsHub {
             this.lastRenderPayload = renderMsg;
             if (DEBUG_CAPTURE)
                 this.saveDebugCapture(msg.payload);
-            this.log.info(`Render recibido. Transmitiendo a ${this.figmaSockets.size} plugin(s) de Figma`, { nodos: check.nodeCount });
+            this.log.info(`Render recibido. Transmitiendo a ${this.figmaSockets.size} plugin(s) de Figma`, {
+                nodos: check.nodeCount,
+            });
             this.broadcastToFigma(renderMsg);
         },
         RENDER_SUCCESS: (_ws, _state, msg) => {
             this.log.info('Render completado en Figma', { nodeId: msg.nodeId, name: msg.name, durationMs: msg.durationMs });
-            this.broadcastToClients({ type: 'RENDER_SUCCESS', nodeId: msg.nodeId, name: msg.name, durationMs: msg.durationMs });
+            this.broadcastToClients({
+                type: 'RENDER_SUCCESS',
+                nodeId: msg.nodeId,
+                name: msg.name,
+                durationMs: msg.durationMs,
+            });
         },
         RENDER_ERROR: (_ws, _state, msg) => {
             this.log.error('Error reportado por el plugin de Figma', { error: msg.error });
@@ -190,7 +207,8 @@ export class FigmaWsHub {
                 clearTimeout(state.pairingTimer);
             this.send(ws, { type: 'AUTH_OK' });
         }
-        const isFigmaPlugin = msg.clientType === 'FIGMA_PLUGIN' || msg.role === 'plugin' ||
+        const isFigmaPlugin = msg.clientType === 'FIGMA_PLUGIN' ||
+            msg.role === 'plugin' ||
             (typeof msg.client === 'string' && msg.client.toLowerCase().includes('figma'));
         if (isFigmaPlugin) {
             state.isFigma = true;
@@ -227,19 +245,26 @@ export class FigmaWsHub {
         const viewsDir = path.resolve(process.cwd(), 'scratch/views');
         const targetFile = path.join(viewsDir, `${viewId}.json`);
         const fallbackDash = path.resolve(process.cwd(), 'scratch/dashboard_tree.json');
-        const fileToLoad = fs.existsSync(targetFile) ? targetFile : (viewId === 'dashboard' && fs.existsSync(fallbackDash) ? fallbackDash : null);
+        const fileToLoad = fs.existsSync(targetFile)
+            ? targetFile
+            : viewId === 'dashboard' && fs.existsSync(fallbackDash)
+                ? fallbackDash
+                : null;
         if (fileToLoad) {
             const rootNode = JSON.parse(fs.readFileSync(fileToLoad, 'utf-8'));
             const renderMsg = {
                 type: 'RENDER_NODES',
-                payload: { rootNode, pageName: useSeparatePage ? pageName : undefined, clearPage: false }
+                payload: { rootNode, pageName: useSeparatePage ? pageName : undefined, clearPage: false },
             };
             this.lastRenderPayload = renderMsg;
             this.broadcastToFigma(renderMsg);
             return;
         }
         this.log.info(`La vista "${viewId}" no está en caché. Iniciando extracción automática`);
-        this.send(ws, { type: 'EXTRACT_PROGRESS', payload: { status: 'EXTRACTING', viewId, message: `Extrayendo vista ${viewId} del navegador...` } });
+        this.send(ws, {
+            type: 'EXTRACT_PROGRESS',
+            payload: { status: 'EXTRACTING', viewId, message: `Extrayendo vista ${viewId} del navegador...` },
+        });
         const scriptPath = path.resolve(process.cwd(), 'scratch/extract-single-view.ts');
         let tsxCli;
         try {
@@ -249,7 +274,7 @@ export class FigmaWsHub {
             this.send(ws, { type: 'RENDER_ERROR', error: 'tsx no está instalado' });
             return;
         }
-        execFile(process.execPath, [tsxCli, scriptPath, viewId, route, name, useSeparatePage ? pageName : ''], { shell: false, timeout: 5 * 60_000 }, (err) => {
+        execFile(process.execPath, [tsxCli, scriptPath, viewId, route, name, useSeparatePage ? pageName : ''], { shell: false, timeout: 5 * 60_000 }, err => {
             if (err) {
                 this.log.error('Error extrayendo vista', { viewId, error: err.message });
                 this.send(ws, { type: 'RENDER_ERROR', error: `Error al extraer vista ${viewId}: ${err.message}` });

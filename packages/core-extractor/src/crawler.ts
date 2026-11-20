@@ -70,28 +70,33 @@ export class SiteCrawler {
     try {
       await page.waitForSelector(
         '.spinner, mat-spinner, .loader, [role="progressbar"], .ngx-spinner, .loading, .mat-progress-spinner, .mat-mdc-progress-spinner, .sk-spinner',
-        { state: 'detached', timeout: 3500 }
+        { state: 'detached', timeout: 3500 },
       );
     } catch (_e) {}
 
     // 3. Esperar que el contenido de la vista esté realmente poblado
     try {
-      await page.waitForFunction(() => {
-        // Verificar que no haya spinners o skeletons activos
-        const hasSpinner = !!document.querySelector(
-          '.spinner, mat-spinner, .loader, [role="progressbar"], .ngx-spinner, .loading, .mat-progress-spinner'
-        );
-        if (hasSpinner) return false;
+      await page.waitForFunction(
+        () => {
+          // Verificar que no haya spinners o skeletons activos
+          const hasSpinner = !!document.querySelector(
+            '.spinner, mat-spinner, .loader, [role="progressbar"], .ngx-spinner, .loading, .mat-progress-spinner',
+          );
+          if (hasSpinner) return false;
 
-        // Comprobar si hay elementos de contenido significativos
-        const container = document.querySelector('main, router-outlet + *, app-root .content, .main-content, app-sidebar ~ *') || document.body;
-        const text = (container.textContent || '').trim();
-        const interactiveOrContentEls = container.querySelectorAll(
-          'table, mat-table, tr, td, .card, form, input, button, h1, h2, h3, h4, p, span, [class*="card"], [class*="item"]'
-        );
+          // Comprobar si hay elementos de contenido significativos
+          const container =
+            document.querySelector('main, router-outlet + *, app-root .content, .main-content, app-sidebar ~ *') ||
+            document.body;
+          const text = (container.textContent || '').trim();
+          const interactiveOrContentEls = container.querySelectorAll(
+            'table, mat-table, tr, td, .card, form, input, button, h1, h2, h3, h4, p, span, [class*="card"], [class*="item"]',
+          );
 
-        return interactiveOrContentEls.length >= 2 || text.length > 30;
-      }, { timeout: 5000 });
+          return interactiveOrContentEls.length >= 2 || text.length > 30;
+        },
+        { timeout: 5000 },
+      );
     } catch (_e) {}
 
     // 4. Esperar fuentes tipográficas
@@ -137,10 +142,13 @@ export class SiteCrawler {
         log.info('=============================================================\n');
 
         try {
-          await page.waitForURL((url) => {
-            const path = url.pathname.toLowerCase();
-            return !path.endsWith('/login') && path !== '/' && path !== '';
-          }, { timeout: 120000 });
+          await page.waitForURL(
+            url => {
+              const path = url.pathname.toLowerCase();
+              return !path.endsWith('/login') && path !== '/' && path !== '';
+            },
+            { timeout: 120000 },
+          );
           log.info(`✅ ¡Login detectado en ruta: ${page.url()}!`);
           log.info('Esperando a que carguen los datos y menús...');
           await page.waitForTimeout(2500);
@@ -159,7 +167,7 @@ export class SiteCrawler {
           rootNode: dsNode,
           group: 'Design System',
           routeKey: '_DESIGN_SYSTEM_',
-          variantType: 'DESIGN_SYSTEM'
+          variantType: 'DESIGN_SYSTEM',
         };
         results.push(dsResult);
         if (options.onScreen) {
@@ -174,7 +182,7 @@ export class SiteCrawler {
         targets = options.routes.map(r => ({
           route: r,
           title: r.replace(/[/_-]/g, ' ').trim(),
-          group: 'Personalizado'
+          group: 'Personalizado',
         }));
       } else {
         log.info('🤖 Auto-detectando todas las secciones, submódulos y vistas del sistema...');
@@ -194,15 +202,11 @@ export class SiteCrawler {
                     const grp = m.name || 'General';
                     if (m.submodules && m.submodules.length > 0) {
                       for (const s of m.submodules) {
-                        const r = s.module_route.startsWith('/') 
-                          ? s.module_route 
-                          : `/administration/${s.module_route}`;
+                        const r = s.module_route.startsWith('/') ? s.module_route : `/administration/${s.module_route}`;
                         list.push({ route: r, title: s.name, group: grp });
                       }
                     } else {
-                      const r = m.module_route.startsWith('/') 
-                        ? m.module_route 
-                        : `/administration/${m.module_route}`;
+                      const r = m.module_route.startsWith('/') ? m.module_route : `/administration/${m.module_route}`;
                       list.push({ route: r, title: m.name, group: grp });
                     }
                   }
@@ -227,7 +231,8 @@ export class SiteCrawler {
             const items: { route: string; title: string; group: string }[] = [];
             const origin = window.location.origin;
             document.querySelectorAll('nav.sidebar-nav > a.sidebar-item, aside a, nav a').forEach(a => {
-              const href = a.getAttribute('href') || a.getAttribute('routerLink') || a.getAttribute('ng-reflect-router-link');
+              const href =
+                a.getAttribute('href') || a.getAttribute('routerLink') || a.getAttribute('ng-reflect-router-link');
               const title = a.textContent?.trim() || 'Dashboard';
               if (href && !href.startsWith('#') && !href.startsWith('javascript:')) {
                 try {
@@ -245,7 +250,9 @@ export class SiteCrawler {
             if (!discoveredMap.has(item.route)) discoveredMap.set(item.route, item);
           }
 
-          const accordionHandles = await page.$$('nav.sidebar-nav > div.sidebar-item, aside [class*="item"]:not(a), nav [class*="item"]:not(a)');
+          const accordionHandles = await page.$$(
+            'nav.sidebar-nav > div.sidebar-item, aside [class*="item"]:not(a), nav [class*="item"]:not(a)',
+          );
           for (const acc of accordionHandles) {
             try {
               const rawText = await acc.innerText();
@@ -253,12 +260,15 @@ export class SiteCrawler {
               await acc.click();
               await page.waitForTimeout(300);
 
-              const subItems = await page.evaluate((grp) => {
+              const subItems = await page.evaluate(grp => {
                 const items: { route: string; title: string; group: string }[] = [];
                 const origin = window.location.origin;
                 const subLinks = document.querySelectorAll('.sidebar-sublist a, .sidebar-subitem');
                 subLinks.forEach(el => {
-                  const href = el.getAttribute('href') || el.getAttribute('routerLink') || el.getAttribute('ng-reflect-router-link');
+                  const href =
+                    el.getAttribute('href') ||
+                    el.getAttribute('routerLink') ||
+                    el.getAttribute('ng-reflect-router-link');
                   const title = el.textContent?.trim() || 'Submódulo';
                   if (href && !href.startsWith('#') && !href.startsWith('javascript:')) {
                     try {
@@ -292,14 +302,26 @@ export class SiteCrawler {
           { route: '/administration/remote-download/groups', title: 'Grupos', group: 'Descarga Remota' },
           { route: '/administration/remote-download/groups/new', title: 'Nuevo Grupo', group: 'Descarga Remota' },
           { route: '/administration/remote-download/terminals', title: 'Terminales', group: 'Descarga Remota' },
-          { route: '/administration/remote-download/terminals/move', title: 'Mover Terminales', group: 'Descarga Remota' },
-          { route: '/administration/remote-download/applications', title: 'Carga de Aplicaciones', group: 'Descarga Remota' },
+          {
+            route: '/administration/remote-download/terminals/move',
+            title: 'Mover Terminales',
+            group: 'Descarga Remota',
+          },
+          {
+            route: '/administration/remote-download/applications',
+            title: 'Carga de Aplicaciones',
+            group: 'Descarga Remota',
+          },
           { route: '/administration/tcp', title: 'Configuración TCP', group: 'Descarga Remota' },
-          { route: '/administration/descarga-remota/geolocalizacion', title: 'Geolocalizar Terminales', group: 'Descarga Remota' },
+          {
+            route: '/administration/descarga-remota/geolocalizacion',
+            title: 'Geolocalizar Terminales',
+            group: 'Descarga Remota',
+          },
           { route: '/administration/email-providers', title: 'Proveedores de Correo', group: 'Configuración' },
           { route: '/administration/change-password', title: 'Cambiar Contraseña', group: 'Configuración' },
           { route: '/administration/mfa', title: 'MFA', group: 'Configuración' },
-          { route: '/administration/codigo-barras', title: 'Código de Barras', group: 'Código de Barras' }
+          { route: '/administration/codigo-barras', title: 'Código de Barras', group: 'Código de Barras' },
         ];
 
         for (const item of POLARIS_CATALOG) {
@@ -324,21 +346,25 @@ export class SiteCrawler {
       // 4. Proceso de navegación, extracción de pantallas, sub-pestañas y modales
       for (let i = 0; i < targets.length; i++) {
         const target = targets[i];
-        const fullUrl = target.route.startsWith('http') 
-          ? target.route 
+        const fullUrl = target.route.startsWith('http')
+          ? target.route
           : `${baseObj.origin}${target.route.startsWith('/') ? target.route : '/' + target.route}`;
 
-        log.info(`\n[${i + 1}/${targets.length}] 📂 Extrayendo [${target.group}] -> "${target.title}" (${target.route})...`);
+        log.info(
+          `\n[${i + 1}/${targets.length}] 📂 Extrayendo [${target.group}] -> "${target.title}" (${target.route})...`,
+        );
 
         try {
           if (page.url() !== fullUrl) {
             // Intento 1: Navegación SPA por clic en enlace de sidebar
-            const clicked = await page.evaluate((targetRoute) => {
+            const clicked = await page.evaluate(targetRoute => {
               try {
                 const clean = targetRoute.replace(/^\/administration\//, '').replace(/^\//, '');
 
                 // Desplegar acordeones de menú si están contraídos
-                const accordions = Array.from(document.querySelectorAll('aside [class*="item"], nav [class*="item"], .sidebar-item'));
+                const accordions = Array.from(
+                  document.querySelectorAll('aside [class*="item"], nav [class*="item"], .sidebar-item'),
+                );
                 for (const acc of accordions) {
                   const sub = acc.nextElementSibling || acc.querySelector('.sidebar-sublist');
                   if (sub && window.getComputedStyle(sub).display === 'none') {
@@ -346,9 +372,17 @@ export class SiteCrawler {
                   }
                 }
 
-                const links = Array.from(document.querySelectorAll('a, [routerlink], [ng-reflect-router-link], [role="menuitem"], .sidebar-subitem, .sidebar-item'));
+                const links = Array.from(
+                  document.querySelectorAll(
+                    'a, [routerlink], [ng-reflect-router-link], [role="menuitem"], .sidebar-subitem, .sidebar-item',
+                  ),
+                );
                 for (const link of links) {
-                  const href = link.getAttribute('href') || link.getAttribute('routerlink') || link.getAttribute('ng-reflect-router-link') || '';
+                  const href =
+                    link.getAttribute('href') ||
+                    link.getAttribute('routerlink') ||
+                    link.getAttribute('ng-reflect-router-link') ||
+                    '';
                   if (href.includes(targetRoute) || (clean.length > 2 && href.includes(clean))) {
                     (link as HTMLElement).click();
                     return true;
@@ -408,7 +442,7 @@ export class SiteCrawler {
               }
               return node;
             },
-            { scriptCode: getBrowserExtractorScript(), sel: contentSelector, screenName: screenTitle }
+            { scriptCode: getBrowserExtractorScript(), sel: contentSelector, screenName: screenTitle },
           );
 
           function countTreeNodes(n: any): number {
@@ -429,7 +463,7 @@ export class SiteCrawler {
               rootNode: uiNode as UINode,
               group: target.group,
               routeKey: target.route,
-              variantType: 'BASE'
+              variantType: 'BASE',
             };
 
             results.push(screenResult);
@@ -441,9 +475,13 @@ export class SiteCrawler {
 
           // ⚡ A. Exploración interactiva de sub-pestañas internas (Tabs)
           if (options.exploreTabs !== false) {
-            const subTabs = await page.$$('[role="tab"], .mat-mdc-tab, .mat-tab-label, .nav-tabs button, .nav-tabs a, button[role="tab"]');
+            const subTabs = await page.$$(
+              '[role="tab"], .mat-mdc-tab, .mat-tab-label, .nav-tabs button, .nav-tabs a, button[role="tab"]',
+            );
             if (subTabs.length > 1) {
-              log.info(`   🔎 Detectadas ${subTabs.length} pestañas interactivas en esta pantalla. Extrayendo vistas...`);
+              log.info(
+                `   🔎 Detectadas ${subTabs.length} pestañas interactivas en esta pantalla. Extrayendo vistas...`,
+              );
               for (let t = 1; t < Math.min(subTabs.length, 5); t++) {
                 try {
                   const tabHandle = subTabs[t];
@@ -465,7 +503,7 @@ export class SiteCrawler {
                       }
                       return node;
                     },
-                    { scriptCode: getBrowserExtractorScript(), sel: contentSelector, screenName: tabScreenTitle }
+                    { scriptCode: getBrowserExtractorScript(), sel: contentSelector, screenName: tabScreenTitle },
                   );
 
                   if (tabNode) {
@@ -477,7 +515,7 @@ export class SiteCrawler {
                       rootNode: tabNode as UINode,
                       group: target.group,
                       routeKey: target.route,
-                      variantType: 'TAB'
+                      variantType: 'TAB',
                     };
                     results.push(tabResult);
                     if (options.onScreen) {
@@ -503,30 +541,30 @@ export class SiteCrawler {
 
                 const combinedInfo = `${text} ${cls} ${aria} ${title}`.toLowerCase();
 
-                const isModalTrigger = 
-                  combinedInfo.includes('nuevo') || 
-                  combinedInfo.includes('nueva') || 
-                  combinedInfo.includes('crear') || 
-                  combinedInfo.includes('agregar') || 
-                  combinedInfo.includes('añadir') || 
-                  combinedInfo.includes('filtro') || 
-                  combinedInfo.includes('opciones') || 
-                  combinedInfo.includes('asignar') || 
-                  combinedInfo.includes('configurar') || 
-                  combinedInfo.includes('subir') || 
-                  combinedInfo.includes('importar') || 
-                  combinedInfo.includes('mover') || 
+                const isModalTrigger =
+                  combinedInfo.includes('nuevo') ||
+                  combinedInfo.includes('nueva') ||
+                  combinedInfo.includes('crear') ||
+                  combinedInfo.includes('agregar') ||
+                  combinedInfo.includes('añadir') ||
+                  combinedInfo.includes('filtro') ||
+                  combinedInfo.includes('opciones') ||
+                  combinedInfo.includes('asignar') ||
+                  combinedInfo.includes('configurar') ||
+                  combinedInfo.includes('subir') ||
+                  combinedInfo.includes('importar') ||
+                  combinedInfo.includes('mover') ||
                   combinedInfo.includes('detalle') ||
                   combinedInfo.includes('modal') ||
                   combinedInfo.includes('dialog');
 
-                const isDangerousOrNav = 
-                  combinedInfo.includes('eliminar') || 
-                  combinedInfo.includes('borrar') || 
-                  combinedInfo.includes('delete') || 
-                  combinedInfo.includes('logout') || 
-                  combinedInfo.includes('salir') || 
-                  combinedInfo.includes('cerrar sesión') || 
+                const isDangerousOrNav =
+                  combinedInfo.includes('eliminar') ||
+                  combinedInfo.includes('borrar') ||
+                  combinedInfo.includes('delete') ||
+                  combinedInfo.includes('logout') ||
+                  combinedInfo.includes('salir') ||
+                  combinedInfo.includes('cerrar sesión') ||
                   combinedInfo.includes('cancelar');
 
                 if (isModalTrigger && !isDangerousOrNav) {
@@ -537,22 +575,32 @@ export class SiteCrawler {
             }
 
             if (triggersToClick.length > 0) {
-              log.info(`   🗂️ Detectados ${triggersToClick.length} disparadores de diálogo/modal. Mapeando vistas modales con fondo...`);
+              log.info(
+                `   🗂️ Detectados ${triggersToClick.length} disparadores de diálogo/modal. Mapeando vistas modales con fondo...`,
+              );
               for (let m = 0; m < Math.min(triggersToClick.length, 5); m++) {
                 try {
                   const trigger = triggersToClick[m];
                   await trigger.handle.click();
                   try {
-                    await page.waitForSelector('.cdk-overlay-pane, [role="dialog"], .modal.show, .modal-dialog, .dialog-container, .mat-mdc-dialog-container', { timeout: 3500 });
+                    await page.waitForSelector(
+                      '.cdk-overlay-pane, [role="dialog"], .modal.show, .modal-dialog, .dialog-container, .mat-mdc-dialog-container',
+                      { timeout: 3500 },
+                    );
                   } catch (_e) {}
                   await page.waitForTimeout(600);
 
-                  const hasDialog = await page.$('.cdk-overlay-pane, [role="dialog"], .modal.show, .modal-dialog, .dialog-container, .mat-mdc-dialog-container');
+                  const hasDialog = await page.$(
+                    '.cdk-overlay-pane, [role="dialog"], .modal.show, .modal-dialog, .dialog-container, .mat-mdc-dialog-container',
+                  );
                   if (hasDialog) {
-                    const modalTitle = await page.evaluate(() => {
-                      const h = document.querySelector('.cdk-overlay-pane h1, .cdk-overlay-pane h2, .cdk-overlay-pane h3, [role="dialog"] h1, [role="dialog"] h2, .modal-title, .dialog-title, .title');
-                      return h?.textContent?.trim() || null;
-                    }) || trigger.label;
+                    const modalTitle =
+                      (await page.evaluate(() => {
+                        const h = document.querySelector(
+                          '.cdk-overlay-pane h1, .cdk-overlay-pane h2, .cdk-overlay-pane h3, [role="dialog"] h1, [role="dialog"] h2, .modal-title, .dialog-title, .title',
+                        );
+                        return h?.textContent?.trim() || null;
+                      })) || trigger.label;
 
                     log.info(`      ✨ [Modal Capturado con Fondo] "${modalTitle}"`);
                     const modalScreenTitle = `${target.group} / ${target.title} [Modal: ${modalTitle}]`;
@@ -571,7 +619,7 @@ export class SiteCrawler {
                         }
                         return node;
                       },
-                      { scriptCode: getBrowserExtractorScript(), sel: contentSelector, screenName: modalScreenTitle }
+                      { scriptCode: getBrowserExtractorScript(), sel: contentSelector, screenName: modalScreenTitle },
                     );
 
                     if (modalNode) {
@@ -583,7 +631,7 @@ export class SiteCrawler {
                         rootNode: modalNode as UINode,
                         group: target.group,
                         routeKey: target.route,
-                        variantType: 'MODAL'
+                        variantType: 'MODAL',
                       };
                       results.push(modalResult);
                       if (options.onScreen) {
@@ -594,9 +642,13 @@ export class SiteCrawler {
                     // Cerrar el modal para volver al estado limpio
                     await page.keyboard.press('Escape');
                     await page.waitForTimeout(300);
-                    const closeBtn = await page.$('.btn-close, .modal-close, button:has-text("Cancelar"), button:has-text("Cerrar"), [aria-label="Close"], .close');
+                    const closeBtn = await page.$(
+                      '.btn-close, .modal-close, button:has-text("Cancelar"), button:has-text("Cerrar"), [aria-label="Close"], .close',
+                    );
                     if (closeBtn) {
-                      try { await closeBtn.click(); } catch (_e) {}
+                      try {
+                        await closeBtn.click();
+                      } catch (_e) {}
                       await page.waitForTimeout(300);
                     }
                   }
@@ -606,12 +658,10 @@ export class SiteCrawler {
               }
             }
           }
-
         } catch (routeErr: any) {
           log.warn(`Advertencia extrayendo ruta "${target.route}"`, { error: routeErr.message });
         }
       }
-
     } finally {
       try {
         await page.close().catch(() => {});

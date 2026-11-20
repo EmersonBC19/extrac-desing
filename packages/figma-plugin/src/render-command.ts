@@ -9,7 +9,11 @@ import { guardRenderPayload } from './validation';
  * Comando RENDER_NODES: valida el payload, crea tokens, dibuja (o arma el tablero) y coloca el
  * resultado en el lienzo. Lanza si algo falla; quien lo llama responde RENDER_ERROR a la UI.
  */
-export async function renderNodesCommand(rawPayload: unknown, post: (m: PluginSandboxMessage) => void, log: Logger): Promise<void> {
+export async function renderNodesCommand(
+  rawPayload: unknown,
+  post: (m: PluginSandboxMessage) => void,
+  log: Logger,
+): Promise<void> {
   const payload: any = rawPayload;
   const rootNode = payload?.rootNode || (Array.isArray(payload?.nodes) ? payload.nodes[0] : null);
   if (!payload || !rootNode) {
@@ -51,11 +55,13 @@ export async function renderNodesCommand(rawPayload: unknown, post: (m: PluginSa
         const existing = figma.getLocalPaintStyles().find(s => s.name === cleanName);
         const style = existing || figma.createPaintStyle();
         style.name = cleanName;
-        style.paints = [{
-          type: 'SOLID',
-          color: { r: rgba.r, g: rgba.g, b: rgba.b },
-          opacity: rgba.a !== undefined ? rgba.a : 1
-        }];
+        style.paints = [
+          {
+            type: 'SOLID',
+            color: { r: rgba.r, g: rgba.g, b: rgba.b },
+            opacity: rgba.a !== undefined ? rgba.a : 1,
+          },
+        ];
         createdTokensCount++;
       } catch (_tokErr) {}
     }
@@ -63,7 +69,7 @@ export async function renderNodesCommand(rawPayload: unknown, post: (m: PluginSa
 
   // ⚡ Optimización Ultra-Lite: Pre-calentar fuentes tipográficas antes de pintar (Inter Regular siempre garantizada)
   try {
-    await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+    await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
   } catch (_e) {}
   await prewarmFonts(payload.rootNode);
 
@@ -79,41 +85,56 @@ export async function renderNodesCommand(rawPayload: unknown, post: (m: PluginSa
     } catch (boardErr: any) {
       // Exportar nunca debe quedar bloqueado: limpiar restos del tablero y dibujar en modo normal
       setBoardCtx(null);
-      try { figma.currentPage = pageBefore; } catch (_e) { try { await (figma as any).setCurrentPageAsync(pageBefore); } catch (_e2) {} }
+      try {
+        figma.currentPage = pageBefore;
+      } catch (_e) {
+        try {
+          await (figma as any).setCurrentPageAsync(pageBefore);
+        } catch (_e2) {}
+      }
       for (const p of [...figma.root.children]) {
-        if (!pagesBefore.has(p.id)) { try { p.remove(); } catch (_e) {} }
+        if (!pagesBefore.has(p.id)) {
+          try {
+            p.remove();
+          } catch (_e) {}
+        }
       }
       for (const c of [...pageBefore.children]) {
-        if (!nodesBefore.has(c.id)) { try { c.remove(); } catch (_e) {} }
+        if (!nodesBefore.has(c.id)) {
+          try {
+            c.remove();
+          } catch (_e) {}
+        }
       }
       log.error('Tablero falló', { error: String(boardErr?.message || boardErr) });
       post({
-        type: 'LOG', level: 'error',
-        message: `No se pudo organizar como tablero (${boardErr?.message || boardErr}). Se dibuja en modo normal.`
+        type: 'LOG',
+        level: 'error',
+        message: `No se pudo organizar como tablero (${boardErr?.message || boardErr}). Se dibuja en modo normal.`,
       });
     }
-  if (board) {
-    figma.currentPage.selection = [board.main];
-    post({
-      type: 'LOG',
-      level: 'success',
-      message: `Tablero creado en "${board.page.name}": ${board.components} componentes enlazados, secciones y estilos organizados`
-    });
-    post({
-      type: 'RENDER_SUCCESS',
-      nodeId: board.main.id,
-      name: board.main.name,
-      nodeCount: board.nodeCount,
-      pageName: board.page.name,
-      width: Math.round(board.main.width),
-      height: Math.round(board.main.height),
-      nodeType: board.main.type,
-      tokensCount: createdTokensCount,
-      rawPayload: payload.rootNode,
-      durationMs: Date.now() - boardStart
-    });
-    return;
-  }
+    if (board) {
+      figma.currentPage.selection = [board.main];
+      post({
+        type: 'LOG',
+        level: 'success',
+        message: `Tablero creado en "${board.page.name}": ${board.components} componentes enlazados, secciones y estilos organizados`,
+      });
+      post({
+        type: 'RENDER_SUCCESS',
+        nodeId: board.main.id,
+        name: board.main.name,
+        nodeCount: board.nodeCount,
+        pageName: board.page.name,
+        width: Math.round(board.main.width),
+        height: Math.round(board.main.height),
+        nodeType: board.main.type,
+        tokensCount: createdTokensCount,
+        rawPayload: payload.rootNode,
+        durationMs: Date.now() - boardStart,
+      });
+      return;
+    }
   }
 
   const totalNodeCount = countNodes(payload.rootNode);
@@ -153,8 +174,8 @@ export async function renderNodesCommand(rawPayload: unknown, post: (m: PluginSa
       if (otherChildren.length === 0 || placementMode === 'CENTER') {
         // Primer elemento en la página o centrado explícito
         const center = figma.viewport.center;
-        rootFigmaNode.x = Math.round(center.x - (rootFigmaNode.width / 2));
-        rootFigmaNode.y = Math.round(center.y - (rootFigmaNode.height / 2));
+        rootFigmaNode.x = Math.round(center.x - rootFigmaNode.width / 2);
+        rootFigmaNode.y = Math.round(center.y - rootFigmaNode.height / 2);
       } else if (placementMode === 'BELOW') {
         // Colocar DEBAJO (Vertical):
         // Si el usuario tenía un elemento seleccionado antes de renderizar, colocar debajo de ese;
@@ -215,7 +236,7 @@ export async function renderNodesCommand(rawPayload: unknown, post: (m: PluginSa
       nodeType: rootFigmaNode.type,
       tokensCount: createdTokensCount,
       rawPayload: payload.rootNode,
-      durationMs
+      durationMs,
     });
   } else {
     throw new Error('No se pudo generar el nodo raíz');

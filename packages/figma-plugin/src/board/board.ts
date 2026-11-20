@@ -21,7 +21,9 @@ export async function buildBoardInstance(nodeData: any, master: ComponentNode): 
       const tn = figTexts[i];
       if (tn.characters === want) continue;
       try {
-        const fonts = tn.characters.length ? tn.getRangeAllFontNames(0, tn.characters.length) : [tn.fontName as FontName];
+        const fonts = tn.characters.length
+          ? tn.getRangeAllFontNames(0, tn.characters.length)
+          : [tn.fontName as FontName];
         for (const f of fonts) await figma.loadFontAsync(f);
         tn.characters = want || ' ';
       } catch (_e) {}
@@ -30,21 +32,28 @@ export async function buildBoardInstance(nodeData: any, master: ComponentNode): 
 
   // Imágenes: emparejadas en orden DFS
   const dataImgs = boardCollect(nodeData, (x: any) => !!x.imageData);
-  const figImgs = inst.findAll(n => 'fills' in n && Array.isArray((n as any).fills) &&
-    ((n as any).fills as Paint[]).some(p => p.type === 'IMAGE')) as (SceneNode & MinimalFillsMixin)[];
+  const figImgs = inst.findAll(
+    n => 'fills' in n && Array.isArray((n as any).fills) && ((n as any).fills as Paint[]).some(p => p.type === 'IMAGE'),
+  ) as (SceneNode & MinimalFillsMixin)[];
   if (dataImgs.length === figImgs.length) {
     for (let i = 0; i < figImgs.length; i++) {
       try {
         const image = figma.createImage(base64ToBytes(dataImgs[i].imageData));
         figImgs[i].fills = (figImgs[i].fills as Paint[]).map(p =>
-          p.type === 'IMAGE' ? { ...(p as ImagePaint), imageHash: image.hash } : p);
+          p.type === 'IMAGE' ? { ...(p as ImagePaint), imageHash: image.hash } : p,
+        );
       } catch (_e) {}
     }
   }
 
-  const w = nodeData.layout?.measuredWidth ?? (typeof nodeData.layout?.width === 'number' ? nodeData.layout.width : inst.width);
-  const h = nodeData.layout?.measuredHeight ?? (typeof nodeData.layout?.height === 'number' ? nodeData.layout.height : inst.height);
-  try { if (w > 0 && h > 0) inst.resize(w, h); } catch (_e) {}
+  const w =
+    nodeData.layout?.measuredWidth ?? (typeof nodeData.layout?.width === 'number' ? nodeData.layout.width : inst.width);
+  const h =
+    nodeData.layout?.measuredHeight ??
+    (typeof nodeData.layout?.height === 'number' ? nodeData.layout.height : inst.height);
+  try {
+    if (w > 0 && h > 0) inst.resize(w, h);
+  } catch (_e) {}
   return inst;
 }
 
@@ -94,7 +103,13 @@ export function boardHeadingOf(n: SceneNode): string {
   return s.length > 48 ? s.slice(0, 47) + '…' : s;
 }
 
-export async function boardLabel(text: string, size: number, weight: number, color: RGB, opacity = 1): Promise<TextNode> {
+export async function boardLabel(
+  text: string,
+  size: number,
+  weight: number,
+  color: RGB,
+  opacity = 1,
+): Promise<TextNode> {
   const font = await loadFontSafely('Inter', weight);
   const t = figma.createText();
   t.fontName = font;
@@ -119,11 +134,21 @@ export function boardNewSection(name: string): SectionNode | FrameNode {
 /** Ajusta el tamaño de la Section a su contenido + margen interno */
 export function boardFitSection(sec: SectionNode | FrameNode, pad = 100) {
   const kids = sec.children as SceneNode[];
-  if (!kids.length) { try { (sec as any).resizeWithoutConstraints(400, 200); } catch (_e) {} return; }
+  if (!kids.length) {
+    try {
+      (sec as any).resizeWithoutConstraints(400, 200);
+    } catch (_e) {}
+    return;
+  }
   const maxR = Math.max(...kids.map(k => k.x + k.width));
   const maxB = Math.max(...kids.map(k => k.y + k.height));
-  try { (sec as any).resizeWithoutConstraints(Math.max(400, maxR + pad), Math.max(200, maxB + pad)); }
-  catch (_e) { try { (sec as FrameNode).resize(Math.max(400, maxR + pad), Math.max(200, maxB + pad)); } catch (_e2) {} }
+  try {
+    (sec as any).resizeWithoutConstraints(Math.max(400, maxR + pad), Math.max(200, maxB + pad));
+  } catch (_e) {
+    try {
+      (sec as FrameNode).resize(Math.max(400, maxR + pad), Math.max(200, maxB + pad));
+    } catch (_e2) {}
+  }
 }
 
 export function insideInstance(n: BaseNode): boolean {
@@ -160,11 +185,16 @@ export async function boardBuildStyles(scope: SceneNode[], stylesSec: SectionNod
     if (!tGroups.has(key)) tGroups.set(key, { font: f, size: tn.fontSize as number, lh, nodes: [] });
     tGroups.get(key)!.nodes.push(tn);
   }
-  const typeScale = [...tGroups.values()].sort((a, b) => b.size - a.size || b.nodes.length - a.nodes.length).slice(0, 24);
+  const typeScale = [...tGroups.values()]
+    .sort((a, b) => b.size - a.size || b.nodes.length - a.nodes.length)
+    .slice(0, 24);
 
   let y = PAD;
   const title = await boardLabel('Tipografía', 32, 700, { r: 0.1, g: 0.1, b: 0.12 });
-  stylesSec.appendChild(title); title.x = PAD; title.y = y; y += 70;
+  stylesSec.appendChild(title);
+  title.x = PAD;
+  title.y = y;
+  y += 70;
   for (const g of typeScale) {
     try {
       const st = figma.createTextStyle();
@@ -172,16 +202,30 @@ export async function boardBuildStyles(scope: SceneNode[], stylesSec: SectionNod
       st.fontName = g.font;
       st.fontSize = g.size;
       st.lineHeight = g.lh;
-      for (const tn of g.nodes) { try { tn.textStyleId = st.id; } catch (_e) {} }
+      for (const tn of g.nodes) {
+        try {
+          tn.textStyleId = st.id;
+        } catch (_e) {}
+      }
       const sample = figma.createText();
       sample.fontName = g.font;
       sample.characters = `${Math.round(g.size)} · ${g.font.family} ${g.font.style} — Aa Bb 123`;
       sample.fontSize = Math.min(g.size, 72);
-      try { sample.textStyleId = st.id; } catch (_e) {}
+      try {
+        sample.textStyleId = st.id;
+      } catch (_e) {}
       sample.fontSize = Math.min(g.size, 72);
-      stylesSec.appendChild(sample); sample.x = PAD; sample.y = y;
-      const meta = await boardLabel(`${st.name.split('/').slice(-1)[0]} · ${g.nodes.length} usos`, 12, 400, { r: 0.45, g: 0.45, b: 0.5 });
-      stylesSec.appendChild(meta); meta.x = PAD; meta.y = y + sample.height + 6;
+      stylesSec.appendChild(sample);
+      sample.x = PAD;
+      sample.y = y;
+      const meta = await boardLabel(`${st.name.split('/').slice(-1)[0]} · ${g.nodes.length} usos`, 12, 400, {
+        r: 0.45,
+        g: 0.45,
+        b: 0.5,
+      });
+      stylesSec.appendChild(meta);
+      meta.x = PAD;
+      meta.y = y + sample.height + 6;
       y += sample.height + 48;
     } catch (_e) {}
   }
@@ -190,7 +234,8 @@ export async function boardBuildStyles(scope: SceneNode[], stylesSec: SectionNod
   const cGroups = new Map<string, { paint: SolidPaint; nodes: (SceneNode & MinimalFillsMixin)[] }>();
   for (const n of [...fillNodes, ...textNodes]) {
     const fills = (n as any).fills;
-    if (!Array.isArray(fills) || fills.length !== 1 || fills[0].type !== 'SOLID' || fills[0].visible === false) continue;
+    if (!Array.isArray(fills) || fills.length !== 1 || fills[0].type !== 'SOLID' || fills[0].visible === false)
+      continue;
     const p = fills[0] as SolidPaint;
     const key = boardColorKey({ ...p.color, a: p.opacity ?? 1 });
     if (!cGroups.has(key)) cGroups.set(key, { paint: p, nodes: [] });
@@ -201,26 +246,43 @@ export async function boardBuildStyles(scope: SceneNode[], stylesSec: SectionNod
   const cx = 1100;
   let cy = PAD;
   const ctitle = await boardLabel('Colores', 32, 700, { r: 0.1, g: 0.1, b: 0.12 });
-  stylesSec.appendChild(ctitle); ctitle.x = cx; ctitle.y = cy; cy += 70;
+  stylesSec.appendChild(ctitle);
+  ctitle.x = cx;
+  ctitle.y = cy;
+  cy += 70;
   let col = 0;
   for (const [hex, g] of palette) {
     try {
       const st = figma.createPaintStyle();
       st.name = `${prefix}/Color/${hex}`;
       st.paints = [g.paint];
-      for (const n of g.nodes) { try { (n as any).fillStyleId = st.id; } catch (_e) {} }
+      for (const n of g.nodes) {
+        try {
+          (n as any).fillStyleId = st.id;
+        } catch (_e) {}
+      }
       const sw = figma.createRectangle();
       sw.resize(120, 120);
       sw.cornerRadius = 12;
       sw.fills = [g.paint];
       sw.strokes = [{ type: 'SOLID', color: { r: 0, g: 0, b: 0 }, opacity: 0.08 }];
-      try { sw.fillStyleId = st.id; } catch (_e) {}
-      const x = cx + col * 150, yy = cy;
-      stylesSec.appendChild(sw); sw.x = x; sw.y = yy;
+      try {
+        sw.fillStyleId = st.id;
+      } catch (_e) {}
+      const x = cx + col * 150,
+        yy = cy;
+      stylesSec.appendChild(sw);
+      sw.x = x;
+      sw.y = yy;
       const lbl = await boardLabel(`${hex}\n${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
-      stylesSec.appendChild(lbl); lbl.x = x; lbl.y = yy + 128;
+      stylesSec.appendChild(lbl);
+      lbl.x = x;
+      lbl.y = yy + 128;
       col++;
-      if (col === 6) { col = 0; cy += 190; }
+      if (col === 6) {
+        col = 0;
+        cy += 190;
+      }
     } catch (_e) {}
   }
 }
@@ -228,11 +290,15 @@ export async function boardBuildStyles(scope: SceneNode[], stylesSec: SectionNod
 /**
  * Construye el tablero completo. Devuelve el nodo de la vista completa (para el mensaje de éxito).
  */
-export async function buildDesignBoard(payload: any): Promise<{ main: SceneNode; nodeCount: number; components: number; page: PageNode }> {
+export async function buildDesignBoard(
+  payload: any,
+): Promise<{ main: SceneNode; nodeCount: number; components: number; page: PageNode }> {
   const root = payload.rootNode;
   root.type = 'FRAME'; // el tablero gestiona sus propios componentes
   let host = 'Landing';
-  try { host = new URL(payload.source?.url || '').hostname.replace(/^www\./, '') || host; } catch (_e) {}
+  try {
+    host = new URL(payload.source?.url || '').hostname.replace(/^www\./, '') || host;
+  } catch (_e) {}
   const prefix = host;
 
   // El tablero se arma en la PÁGINA ACTUAL, a la derecha de lo que ya hay. No se crean ni se
@@ -242,7 +308,8 @@ export async function buildDesignBoard(payload: any): Promise<{ main: SceneNode;
   const others = page.children;
   const originX = others.length ? Math.round(Math.max(...others.map(c => c.x + c.width)) + 400) : 0;
   const originY = others.length ? Math.round(Math.min(...others.map(c => c.y))) : 0;
-  const progress = (message: string) => figma.ui.postMessage({ type: 'LOG', level: 'info', message: `Tablero · ${message}` });
+  const progress = (message: string) =>
+    figma.ui.postMessage({ type: 'LOG', level: 'info', message: `Tablero · ${message}` });
 
   // 1. Detectar componentes repetidos y construir los maestros
   const groups = boardDetectComponents(root);
@@ -250,13 +317,18 @@ export async function buildDesignBoard(payload: any): Promise<{ main: SceneNode;
   page.appendChild(compSec);
   const ctx: BoardContext = { masters: new Map() };
   setBoardCtx(ctx);
-  let gx = 100, gy = 100, rowH = 0;
+  let gx = 100,
+    gy = 100,
+    rowH = 0;
   const MAX_ROW = 2600;
   for (const g of groups) {
     let built: SceneNode | null = null;
     try {
       const data = JSON.parse(JSON.stringify(g.occurrences[0]));
-      (function strip(n: any) { delete n.__cg; (n.children || []).forEach(strip); })(data);
+      (function strip(n: any) {
+        delete n.__cg;
+        (n.children || []).forEach(strip);
+      })(data);
       data.type = 'COMPONENT';
       data.name = g.name;
       data.layout = { ...data.layout, positioning: 'AUTO', x: 0, y: 0 };
@@ -265,17 +337,32 @@ export async function buildDesignBoard(payload: any): Promise<{ main: SceneNode;
       const master = built as ComponentNode;
       compSec.appendChild(master);
       master.description = `${g.occurrences.length} usos en ${host}`;
-      if (gx > 100 && gx + master.width > MAX_ROW) { gx = 100; gy += rowH + 140; rowH = 0; }
-      master.x = gx; master.y = gy + 40;
+      if (gx > 100 && gx + master.width > MAX_ROW) {
+        gx = 100;
+        gy += rowH + 140;
+        rowH = 0;
+      }
+      master.x = gx;
+      master.y = gy + 40;
       const lbl = await boardLabel(`${g.name} · ${g.occurrences.length} usos`, 16, 600, { r: 0.33, g: 0.2, b: 0.8 });
-      compSec.appendChild(lbl); lbl.x = gx; lbl.y = gy;
+      compSec.appendChild(lbl);
+      lbl.x = gx;
+      lbl.y = gy;
       gx += master.width + 120;
       rowH = Math.max(rowH, master.height + 40);
       ctx.masters.set(g.id, master);
     } catch (compErr: any) {
       // Sin maestro, sus usos se dibujan como copias normales
-      if (built && !built.removed) { try { built.remove(); } catch (_e) {} }
-      figma.ui.postMessage({ type: 'LOG', level: 'warn', message: `Componente "${g.name}" omitido: ${compErr?.message || compErr}` });
+      if (built && !built.removed) {
+        try {
+          built.remove();
+        } catch (_e) {}
+      }
+      figma.ui.postMessage({
+        type: 'LOG',
+        level: 'warn',
+        message: `Componente "${g.name}" omitido: ${compErr?.message || compErr}`,
+      });
     }
   }
 
@@ -289,7 +376,8 @@ export async function buildDesignBoard(payload: any): Promise<{ main: SceneNode;
   setBoardCtx(null);
   if (!full) throw new Error('No se pudo generar la vista completa');
   fullSec.appendChild(full);
-  full.x = 100; full.y = 100;
+  full.x = 100;
+  full.y = 100;
   progress(`vista completa lista (${Math.round(full.width)}×${Math.round(full.height)})`);
 
   // 3. Sub-vistas: cada bloque principal, en columna con su título
@@ -307,15 +395,26 @@ export async function buildDesignBoard(payload: any): Promise<{ main: SceneNode;
       const heading = boardHeadingOf(picked[i]);
       const title = `${String(i + 1).padStart(2, '0')} · ${picked[i].name}` + (heading ? ` — ${heading}` : '');
       const lbl = await boardLabel(title, 20, 600, { r: 0.1, g: 0.1, b: 0.12 });
-      subSec.appendChild(lbl); lbl.x = 100; lbl.y = sy;
+      subSec.appendChild(lbl);
+      lbl.x = 100;
+      lbl.y = sy;
       clone = picked[i].clone();
       subSec.appendChild(clone);
-      clone.x = 100; clone.y = sy + 44;
+      clone.x = 100;
+      clone.y = sy + 44;
       sy += 44 + clone.height + 140;
       subOk++;
     } catch (subErr: any) {
-      if (clone && clone.parent !== subSec) { try { clone.remove(); } catch (_e) {} }
-      figma.ui.postMessage({ type: 'LOG', level: 'warn', message: `Sub-vista "${picked[i].name}" omitida: ${subErr?.message || subErr}` });
+      if (clone && clone.parent !== subSec) {
+        try {
+          clone.remove();
+        } catch (_e) {}
+      }
+      figma.ui.postMessage({
+        type: 'LOG',
+        level: 'warn',
+        message: `Sub-vista "${picked[i].name}" omitida: ${subErr?.message || subErr}`,
+      });
     }
   }
   progress(`${subOk}/${picked.length} sub-vistas`);
@@ -323,15 +422,23 @@ export async function buildDesignBoard(payload: any): Promise<{ main: SceneNode;
   // 4. Estilos (texto + color) vinculados a las capas
   const stylesSec = boardNewSection('04 · Estilos');
   page.appendChild(stylesSec);
-  await boardBuildStyles([full, ...compSec.children.filter(c => c.type === 'COMPONENT') as SceneNode[]], stylesSec, prefix);
+  await boardBuildStyles(
+    [full, ...(compSec.children.filter(c => c.type === 'COMPONENT') as SceneNode[])],
+    stylesSec,
+    prefix,
+  );
 
   // 5. Disposición horizontal: 01 → 02 → 03 → 04
   const order = [fullSec, subSec, compSec, stylesSec];
   for (const s of order) boardFitSection(s);
   let x = originX;
   for (const s of order) {
-    if (s.children.length === 0) { s.remove(); continue; }
-    s.x = x; s.y = originY;
+    if (s.children.length === 0) {
+      s.remove();
+      continue;
+    }
+    s.x = x;
+    s.y = originY;
     x += s.width + 240;
   }
 

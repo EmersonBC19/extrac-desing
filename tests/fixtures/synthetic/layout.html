@@ -1,49 +1,182 @@
 <!doctype html>
-<html lang="es"><head><meta charset="utf-8"><title>Casos de layout</title>
-<style>
-  body { margin: 0; font-family: Arial, sans-serif; }
-  #root { width: 1000px; padding: 20px; display: flex; flex-direction: column; gap: 32px; }
-  .box { background: rgb(230, 236, 245); border-radius: 8px; }
-  .c { background: rgb(60, 90, 200); color: #fff; height: 40px; }
-  /* margen fuera del padding: el primer hijo no empieza en el borde */
-  #margin { display: flex; flex-direction: column; gap: 24px; width: 520px; }
-  #margin .first { margin-top: 12px; height: 12px; }
-  /* icono centrado con grid + place-items */
-  #icon { width: 50px; height: 50px; border-radius: 50%; background: rgb(31, 143, 58); display: grid; place-items: center; }
-  #icon i { width: 27px; height: 27px; background: #fff; border-radius: 50%; }
-  /* fila con gap */
-  #row { display: flex; gap: 10px; }
-  #row .c { width: 120px; }
-  /* separaciones irregulares (márgenes distintos) */
-  #irregular { display: flex; }
-  #irregular .c { width: 100px; }
-  #irregular .c:nth-child(2) { margin-left: 10px; }
-  #irregular .c:nth-child(3) { margin-left: 50px; }
-  /* orden visual distinto al del DOM */
-  #reverse { display: flex; flex-direction: column-reverse; gap: 12px; width: 400px; }
-  #reverse .c { height: 30px; }
-  /* cuadrícula uniforme con wrap */
-  #wrap { display: flex; flex-wrap: wrap; gap: 10px; width: 390px; }
-  #wrap .c { width: 120px; }
-  /* space-between */
-  #between { display: flex; justify-content: space-between; width: 600px; }
-  #between .c { width: 100px; }
-  /* bloque centrado con max-width (marcado como ancho completo pero más angosto) */
-  #narrow { display: flex; flex-direction: column; align-items: center; width: 800px; }
-  #narrow p { max-width: 400px; margin: 0; text-align: center; font-size: 16px; line-height: 24px; }
-  #narrow h3 { margin: 0 0 12px; font-size: 24px; line-height: 30px; width: 100%; text-align: center; }
-  /* pseudo-elemento absoluto con inset negativo */
-  #pseudo { position: relative; width: 300px; height: 150px; background: rgb(30, 41, 59); border-radius: 12px; }
-  #pseudo::before { content: ""; position: absolute; inset: -6px; border-radius: 18px; background: linear-gradient(135deg, rgba(245, 196, 0, 0.4), rgba(31, 143, 58, 0.4)); }
-</style></head>
-<body><div id="root">
-  <div id="margin" class="box"><div class="c first"></div><div class="c"></div><div class="c"></div></div>
-  <div id="icon"><i></i></div>
-  <div id="row"><div class="c"></div><div class="c"></div><div class="c"></div></div>
-  <div id="irregular"><div class="c"></div><div class="c"></div><div class="c"></div></div>
-  <div id="reverse"><div class="c" data-dom="1"></div><div class="c" data-dom="2"></div></div>
-  <div id="wrap"><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div></div>
-  <div id="between"><div class="c"></div><div class="c"></div><div class="c"></div></div>
-  <div id="narrow"><h3>Título de la sección</h3><p>Un párrafo centrado con ancho máximo, más angosto que su contenedor, que no debe estirarse.</p></div>
-  <div id="pseudo"></div>
-</div></body></html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>Casos de layout</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+      }
+      #root {
+        width: 1000px;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 32px;
+      }
+      .box {
+        background: rgb(230, 236, 245);
+        border-radius: 8px;
+      }
+      .c {
+        background: rgb(60, 90, 200);
+        color: #fff;
+        height: 40px;
+      }
+      /* margen fuera del padding: el primer hijo no empieza en el borde */
+      #margin {
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+        width: 520px;
+      }
+      #margin .first {
+        margin-top: 12px;
+        height: 12px;
+      }
+      /* icono centrado con grid + place-items */
+      #icon {
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        background: rgb(31, 143, 58);
+        display: grid;
+        place-items: center;
+      }
+      #icon i {
+        width: 27px;
+        height: 27px;
+        background: #fff;
+        border-radius: 50%;
+      }
+      /* fila con gap */
+      #row {
+        display: flex;
+        gap: 10px;
+      }
+      #row .c {
+        width: 120px;
+      }
+      /* separaciones irregulares (márgenes distintos) */
+      #irregular {
+        display: flex;
+      }
+      #irregular .c {
+        width: 100px;
+      }
+      #irregular .c:nth-child(2) {
+        margin-left: 10px;
+      }
+      #irregular .c:nth-child(3) {
+        margin-left: 50px;
+      }
+      /* orden visual distinto al del DOM */
+      #reverse {
+        display: flex;
+        flex-direction: column-reverse;
+        gap: 12px;
+        width: 400px;
+      }
+      #reverse .c {
+        height: 30px;
+      }
+      /* cuadrícula uniforme con wrap */
+      #wrap {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        width: 390px;
+      }
+      #wrap .c {
+        width: 120px;
+      }
+      /* space-between */
+      #between {
+        display: flex;
+        justify-content: space-between;
+        width: 600px;
+      }
+      #between .c {
+        width: 100px;
+      }
+      /* bloque centrado con max-width (marcado como ancho completo pero más angosto) */
+      #narrow {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: 800px;
+      }
+      #narrow p {
+        max-width: 400px;
+        margin: 0;
+        text-align: center;
+        font-size: 16px;
+        line-height: 24px;
+      }
+      #narrow h3 {
+        margin: 0 0 12px;
+        font-size: 24px;
+        line-height: 30px;
+        width: 100%;
+        text-align: center;
+      }
+      /* pseudo-elemento absoluto con inset negativo */
+      #pseudo {
+        position: relative;
+        width: 300px;
+        height: 150px;
+        background: rgb(30, 41, 59);
+        border-radius: 12px;
+      }
+      #pseudo::before {
+        content: '';
+        position: absolute;
+        inset: -6px;
+        border-radius: 18px;
+        background: linear-gradient(135deg, rgba(245, 196, 0, 0.4), rgba(31, 143, 58, 0.4));
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div id="margin" class="box">
+        <div class="c first"></div>
+        <div class="c"></div>
+        <div class="c"></div>
+      </div>
+      <div id="icon"><i></i></div>
+      <div id="row">
+        <div class="c"></div>
+        <div class="c"></div>
+        <div class="c"></div>
+      </div>
+      <div id="irregular">
+        <div class="c"></div>
+        <div class="c"></div>
+        <div class="c"></div>
+      </div>
+      <div id="reverse">
+        <div class="c" data-dom="1"></div>
+        <div class="c" data-dom="2"></div>
+      </div>
+      <div id="wrap">
+        <div class="c"></div>
+        <div class="c"></div>
+        <div class="c"></div>
+        <div class="c"></div>
+        <div class="c"></div>
+      </div>
+      <div id="between">
+        <div class="c"></div>
+        <div class="c"></div>
+        <div class="c"></div>
+      </div>
+      <div id="narrow">
+        <h3>Título de la sección</h3>
+        <p>Un párrafo centrado con ancho máximo, más angosto que su contenedor, que no debe estirarse.</p>
+      </div>
+      <div id="pseudo"></div>
+    </div>
+  </body>
+</html>

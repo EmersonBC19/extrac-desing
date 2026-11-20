@@ -1,31 +1,110 @@
 <!doctype html>
-<html lang="es"><head><meta charset="utf-8"><title>Casos de texto</title>
-<style>
-  body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: rgb(29, 29, 31); }
-  #root { width: 900px; padding: 24px; display: flex; flex-direction: column; gap: 24px; }
-  /* Párrafo del tile del Watch: texto inline + superíndice dentro de un enlace */
-  #inline { width: 330px; margin: 0; text-align: center; font-size: 21px; line-height: 25px; }
-  #inline .fn a { color: inherit; text-decoration: none; }
-  /* Superíndice con OpenType (como Apple), sin <sup> ni vertical-align */
-  #numr .fn { font-feature-settings: "numr"; }
-  #rich { margin: 0; font-size: 16px; line-height: 24px; }
-  #rich a { color: rgb(0, 102, 204); text-decoration: underline; }
-  #clamp { width: 220px; margin: 0; font-size: 16px; line-height: 22px; display: -webkit-box;
-    -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; }
-  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
-    clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-  #upper { margin: 0; text-transform: uppercase; letter-spacing: 2px; font-size: 12px; line-height: 12px; }
-  #br { margin: 0; font-size: 16px; line-height: 20px; }
-  #button { display: inline-flex; align-items: center; padding: 11px 21px; border-radius: 22px;
-    background: rgb(0, 113, 227); color: #fff; font-size: 17px; line-height: 22px; width: fit-content; }
-</style></head>
-<body><div id="root">
-  <p id="inline">Con la detección de frecuencia cardiaca más precisa en un wearable.<sup class="fn"><a href="#n1">1</a></sup></p>
-  <p id="numr">Autonomía de hasta 24 horas.<span class="fn">2</span></p>
-  <p id="rich">Texto con <a href="#">un enlace azul</a> y una palabra en <strong>negrita</strong> dentro del mismo párrafo.</p>
-  <p id="clamp">Este párrafo largo se corta a dos líneas con line-clamp, así que la tercera línea y las siguientes no deben exportarse a Figma.</p>
-  <h2 id="sronly" style="margin:0">iPad <span class="sr-only">texto solo para lectores de pantalla</span>mini</h2>
-  <p id="upper">software para ingeniería aplicada</p>
-  <p id="br">Primera línea<br>Segunda línea</p>
-  <a id="button" href="#">Más información</a>
-</div></body></html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>Casos de texto</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, Helvetica, sans-serif;
+        color: rgb(29, 29, 31);
+      }
+      #root {
+        width: 900px;
+        padding: 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+      }
+      /* Párrafo del tile del Watch: texto inline + superíndice dentro de un enlace */
+      #inline {
+        width: 330px;
+        margin: 0;
+        text-align: center;
+        font-size: 21px;
+        line-height: 25px;
+      }
+      #inline .fn a {
+        color: inherit;
+        text-decoration: none;
+      }
+      /* Superíndice con OpenType (como Apple), sin <sup> ni vertical-align */
+      #numr .fn {
+        font-feature-settings: 'numr';
+      }
+      #rich {
+        margin: 0;
+        font-size: 16px;
+        line-height: 24px;
+      }
+      #rich a {
+        color: rgb(0, 102, 204);
+        text-decoration: underline;
+      }
+      #clamp {
+        width: 220px;
+        margin: 0;
+        font-size: 16px;
+        line-height: 22px;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+      #upper {
+        margin: 0;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        font-size: 12px;
+        line-height: 12px;
+      }
+      #br {
+        margin: 0;
+        font-size: 16px;
+        line-height: 20px;
+      }
+      #button {
+        display: inline-flex;
+        align-items: center;
+        padding: 11px 21px;
+        border-radius: 22px;
+        background: rgb(0, 113, 227);
+        color: #fff;
+        font-size: 17px;
+        line-height: 22px;
+        width: fit-content;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <p id="inline">
+        Con la detección de frecuencia cardiaca más precisa en un wearable.<sup class="fn"><a href="#n1">1</a></sup>
+      </p>
+      <p id="numr">Autonomía de hasta 24 horas.<span class="fn">2</span></p>
+      <p id="rich">
+        Texto con <a href="#">un enlace azul</a> y una palabra en <strong>negrita</strong> dentro del mismo párrafo.
+      </p>
+      <p id="clamp">
+        Este párrafo largo se corta a dos líneas con line-clamp, así que la tercera línea y las siguientes no deben
+        exportarse a Figma.
+      </p>
+      <h2 id="sronly" style="margin: 0">iPad <span class="sr-only">texto solo para lectores de pantalla</span>mini</h2>
+      <p id="upper">software para ingeniería aplicada</p>
+      <p id="br">Primera línea<br />Segunda línea</p>
+      <a id="button" href="#">Más información</a>
+    </div>
+  </body>
+</html>

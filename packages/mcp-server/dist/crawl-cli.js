@@ -20,7 +20,7 @@ function parseArgs() {
         exploreModals: true,
         includeDesignSystem: true,
         contentSelector: 'body',
-        clear: true
+        clear: true,
     };
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
@@ -104,13 +104,13 @@ async function main() {
             ws.send(JSON.stringify({ type: 'REGISTER_CLIENT', clientType: 'CLI_OR_MCP' }));
             resolve();
         });
-        ws.on('error', (err) => {
+        ws.on('error', err => {
             log.error(`No se pudo conectar a ${HUB_URL}. ¿El Hub está corriendo? (npm run start:hub)`);
             reject(err);
         });
     });
     // Escuchar respuestas del plugin de Figma
-    ws.on('message', (data) => {
+    ws.on('message', data => {
         try {
             const msg = JSON.parse(data.toString());
             if (msg.type === 'RENDER_SUCCESS' && renderResolve) {
@@ -129,8 +129,8 @@ async function main() {
         ws.send(JSON.stringify(msg));
         logRenderWait();
         const start = Date.now();
-        return new Promise((resolve) => {
-            renderResolve = (result) => {
+        return new Promise(resolve => {
+            renderResolve = result => {
                 logRenderDone(result.name, Date.now() - start);
                 resolve(result);
             };
@@ -172,7 +172,7 @@ async function main() {
                     moduleQueues.set(mod, []);
                 }
                 moduleQueues.get(mod).push({ screen, module: mod });
-            }
+            },
         });
         // ── 4. Resumen de lo recolectado ──
         const totalScreens = Array.from(moduleQueues.values()).reduce((sum, q) => sum + q.length, 0) + (dsScreen ? 1 : 0);
@@ -202,7 +202,7 @@ async function main() {
                 rootNode: dsScreen.screen.rootNode,
                 clearPage: options.clear && isFirstTransmission,
                 targetCanvasPosition: { x: 0, y: 0 },
-                groupName: 'Design System'
+                groupName: 'Design System',
             }, 10000);
             isFirstTransmission = false;
         }
@@ -230,7 +230,7 @@ async function main() {
                     continue;
                 // Ordenar: BASE primero, luego TAB, luego MODAL
                 const sorted = routeScreens.sort((a, b) => {
-                    const order = { 'BASE': 0, 'TAB': 1, 'MODAL': 2 };
+                    const order = { BASE: 0, TAB: 1, MODAL: 2 };
                     return (order[a.screen.variantType || 'BASE'] || 0) - (order[b.screen.variantType || 'BASE'] || 0);
                 });
                 let colX = options.pages ? 0 : NAV_ORIGIN_X;
@@ -247,7 +247,7 @@ async function main() {
                         targetCanvasPosition: { x: colX, y: currentCanvasY },
                         pageName: options.pages ? moduleName : undefined,
                         groupName: moduleName,
-                        sectionTitle
+                        sectionTitle,
                     };
                     if (isFirstTransmission) {
                         isFirstTransmission = false;
@@ -282,7 +282,7 @@ async function main() {
         process.exit(exitCode);
     }
 }
-main().catch((err) => {
+main().catch(err => {
     log.error('Fallo del CLI', { error: String(err?.message || err) });
     process.exit(1);
 });

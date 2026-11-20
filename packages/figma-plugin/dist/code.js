@@ -6077,13 +6077,21 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     let maxDepth = 0;
     while (stack.length) {
       const { node: node2, depth, path } = stack.pop();
-      if (depth > PAYLOAD_LIMITS.maxDepth) return { ok: false, error: `Árbol demasiado profundo (> ${PAYLOAD_LIMITS.maxDepth} niveles) en ${shortPath(path)}` };
-      if (++count > PAYLOAD_LIMITS.maxNodes) return { ok: false, error: `Demasiados nodos (> ${PAYLOAD_LIMITS.maxNodes})` };
+      if (depth > PAYLOAD_LIMITS.maxDepth)
+        return {
+          ok: false,
+          error: `Árbol demasiado profundo (> ${PAYLOAD_LIMITS.maxDepth} niveles) en ${shortPath(path)}`
+        };
+      if (++count > PAYLOAD_LIMITS.maxNodes)
+        return { ok: false, error: `Demasiados nodos (> ${PAYLOAD_LIMITS.maxNodes})` };
       maxDepth = Math.max(maxDepth, depth);
       const parsed = UINodeShallowSchema.safeParse(node2);
       if (!parsed.success) {
         const issue2 = parsed.error.issues[0];
-        return { ok: false, error: `${shortPath(path)}${issue2.path.length ? "." + issue2.path.join(".") : ""}: ${issue2.message}` };
+        return {
+          ok: false,
+          error: `${shortPath(path)}${issue2.path.length ? "." + issue2.path.join(".") : ""}: ${issue2.message}`
+        };
       }
       const children = parsed.data.children || [];
       for (let i = children.length - 1; i >= 0; i--) {
@@ -6394,7 +6402,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     const S = n.styles || {};
     if (n.type === "TEXT") {
       const t = n.textData || {};
-      sig = ["T", t.fontFamily, t.fontSize, t.fontWeight, t.textAlign, (S.fills || []).map(boardColorKey).join(",")].join("|");
+      sig = ["T", t.fontFamily, t.fontSize, t.fontWeight, t.textAlign, (S.fills || []).map(boardColorKey).join(",")].join(
+        "|"
+      );
     } else if (n.type === "SVG") {
       sig = "S|" + boardHash(n.svgContent || "") + "|" + L.width + "x" + L.height;
     } else {
@@ -6508,12 +6518,16 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       }
     }
     const dataImgs = boardCollect(nodeData, (x) => !!x.imageData);
-    const figImgs = inst.findAll((n) => "fills" in n && Array.isArray(n.fills) && n.fills.some((p) => p.type === "IMAGE"));
+    const figImgs = inst.findAll(
+      (n) => "fills" in n && Array.isArray(n.fills) && n.fills.some((p) => p.type === "IMAGE")
+    );
     if (dataImgs.length === figImgs.length) {
       for (let i = 0; i < figImgs.length; i++) {
         try {
           const image = figma.createImage(base64ToBytes(dataImgs[i].imageData));
-          figImgs[i].fills = figImgs[i].fills.map((p) => p.type === "IMAGE" ? { ...p, imageHash: image.hash } : p);
+          figImgs[i].fills = figImgs[i].fills.map(
+            (p) => p.type === "IMAGE" ? { ...p, imageHash: image.hash } : p
+          );
         } catch (_e) {
         }
       }
@@ -6657,7 +6671,11 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         stylesSec.appendChild(sample);
         sample.x = PAD;
         sample.y = y;
-        const meta2 = await boardLabel(`${st.name.split("/").slice(-1)[0]} · ${g.nodes.length} usos`, 12, 400, { r: 0.45, g: 0.45, b: 0.5 });
+        const meta2 = await boardLabel(`${st.name.split("/").slice(-1)[0]} · ${g.nodes.length} usos`, 12, 400, {
+          r: 0.45,
+          g: 0.45,
+          b: 0.5
+        });
         stylesSec.appendChild(meta2);
         meta2.x = PAD;
         meta2.y = y + sample.height + 6;
@@ -6668,7 +6686,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     const cGroups = /* @__PURE__ */ new Map();
     for (const n of [...fillNodes, ...textNodes]) {
       const fills = n.fills;
-      if (!Array.isArray(fills) || fills.length !== 1 || fills[0].type !== "SOLID" || fills[0].visible === false) continue;
+      if (!Array.isArray(fills) || fills.length !== 1 || fills[0].type !== "SOLID" || fills[0].visible === false)
+        continue;
       const p = fills[0];
       const key = boardColorKey({ ...p.color, a: p.opacity ?? 1 });
       if (!cGroups.has(key)) cGroups.set(key, { paint: p, nodes: [] });
@@ -6779,7 +6798,11 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
           } catch (_e) {
           }
         }
-        figma.ui.postMessage({ type: "LOG", level: "warn", message: `Componente "${g.name}" omitido: ${compErr?.message || compErr}` });
+        figma.ui.postMessage({
+          type: "LOG",
+          level: "warn",
+          message: `Componente "${g.name}" omitido: ${compErr?.message || compErr}`
+        });
       }
     }
     progress(`${ctx.masters.size} componentes creados`);
@@ -6821,13 +6844,21 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
           } catch (_e) {
           }
         }
-        figma.ui.postMessage({ type: "LOG", level: "warn", message: `Sub-vista "${picked[i].name}" omitida: ${subErr?.message || subErr}` });
+        figma.ui.postMessage({
+          type: "LOG",
+          level: "warn",
+          message: `Sub-vista "${picked[i].name}" omitida: ${subErr?.message || subErr}`
+        });
       }
     }
     progress(`${subOk}/${picked.length} sub-vistas`);
     const stylesSec = boardNewSection("04 · Estilos");
     page.appendChild(stylesSec);
-    await boardBuildStyles([full, ...compSec.children.filter((c) => c.type === "COMPONENT")], stylesSec, prefix);
+    await boardBuildStyles(
+      [full, ...compSec.children.filter((c) => c.type === "COMPONENT")],
+      stylesSec,
+      prefix
+    );
     const order = [fullSec, subSec, compSec, stylesSec];
     for (const s of order) boardFitSection(s);
     let x = originX;
@@ -6858,11 +6889,13 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
         }
         if (seg.fontSize && seg.fontSize > 0) tn.setRangeFontSize(start, end, seg.fontSize);
         if (seg.color) {
-          tn.setRangeFills(start, end, [{
-            type: "SOLID",
-            color: { r: seg.color.r, g: seg.color.g, b: seg.color.b },
-            opacity: seg.color.a !== void 0 ? seg.color.a : 1
-          }]);
+          tn.setRangeFills(start, end, [
+            {
+              type: "SOLID",
+              color: { r: seg.color.r, g: seg.color.g, b: seg.color.b },
+              opacity: seg.color.a !== void 0 ? seg.color.a : 1
+            }
+          ]);
         }
         if (seg.underline) tn.setRangeTextDecoration(start, end, "UNDERLINE");
         else if (seg.strike) tn.setRangeTextDecoration(start, end, "STRIKETHROUGH");
@@ -6922,7 +6955,11 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
       try {
         return await buildBoardInstance(nodeData, boardCtx.masters.get(cg));
       } catch (instErr) {
-        figma.ui.postMessage({ type: "LOG", level: "warn", message: `Instancia "${nodeData.name}" no creada, se dibuja como copia: ${instErr?.message || instErr}` });
+        figma.ui.postMessage({
+          type: "LOG",
+          level: "warn",
+          message: `Instancia "${nodeData.name}" no creada, se dibuja como copia: ${instErr?.message || instErr}`
+        });
       }
     }
     try {
@@ -6931,10 +6968,7 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
           await figma.loadFontAsync({ family: "Inter", style: "Regular" });
         } catch (_e) {
         }
-        const font = await loadFontSafely(
-          nodeData.textData.fontFamily,
-          nodeData.textData.fontWeight
-        );
+        const font = await loadFontSafely(nodeData.textData.fontFamily, nodeData.textData.fontWeight);
         const textNode = figma.createText();
         try {
           textNode.fontName = font;
@@ -7066,11 +7100,7 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
               scaleMode: nodeData.styles?.imageScaleMode || "FILL",
               imageHash: image.hash
             };
-            frame.fills = [
-              ...baseFills.map(cssFillToPaint),
-              imagePaint,
-              ...overlayFills.map(cssFillToPaint)
-            ];
+            frame.fills = [...baseFills.map(cssFillToPaint), imagePaint, ...overlayFills.map(cssFillToPaint)];
           } catch (_imgErr) {
             log.warn("Error decodificando imagen base64", { error: errText(_imgErr) });
             figma.ui.postMessage({
@@ -7085,11 +7115,13 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
         }
         if (nodeData.styles?.strokes && nodeData.styles.strokes.length > 0) {
           const stroke = nodeData.styles.strokes[0];
-          frame.strokes = [{
-            type: "SOLID",
-            color: { r: stroke.r, g: stroke.g, b: stroke.b },
-            opacity: stroke.a !== void 0 ? stroke.a : 1
-          }];
+          frame.strokes = [
+            {
+              type: "SOLID",
+              color: { r: stroke.r, g: stroke.g, b: stroke.b },
+              opacity: stroke.a !== void 0 ? stroke.a : 1
+            }
+          ];
           frame.strokeAlign = "INSIDE";
           if (nodeData.styles?.borderSides) {
             const bs = nodeData.styles.borderSides;
@@ -7164,49 +7196,36 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
         if (nodeData.children && nodeData.children.length > 0) {
           for (const childData of nodeData.children) {
             const childNode = await buildFigmaNode(childData);
-            if (childNode) try {
-              frame.appendChild(childNode);
-              if (frame.layoutMode !== "NONE") {
-                const layoutChild = childNode;
-                if (childData.layout?.positioning === "ABSOLUTE") {
-                  try {
-                    const targetW = typeof childData.layout.width === "number" && childData.layout.width > 0 ? childData.layout.width : childData.layout.measuredWidth || layoutChild.width || 100;
-                    const targetH = typeof childData.layout.height === "number" && childData.layout.height > 0 ? childData.layout.height : childData.layout.measuredHeight || layoutChild.height || 100;
-                    if (targetW > 0 && targetH > 0 && typeof layoutChild.resize === "function") {
-                      try {
-                        layoutChild.resize(targetW, targetH);
-                      } catch (_resErr) {
-                      }
-                    }
-                    if ("layoutPositioning" in layoutChild) {
-                      layoutChild.layoutPositioning = "ABSOLUTE";
-                    }
-                    if (typeof childData.layout.x === "number") childNode.x = childData.layout.x;
-                    if (typeof childData.layout.y === "number") childNode.y = childData.layout.y;
-                  } catch (absErr) {
-                    log.warn("Error configurando layoutPositioning ABSOLUTE", { error: errText(absErr) });
-                  }
-                } else {
-                  if (childNode.type === "TEXT" && childData.textData?.noWrap) {
-                    applyNoWrapSizing(childNode, childData, true);
-                  } else if (childNode.type === "TEXT") {
-                    const tn = childNode;
-                    const isMulti = childData.textData?.isMultiline || childData.textData?.characters && childData.textData.characters.includes("\n");
-                    if (childData.layout?.width === "FILL") {
-                      tn.textAutoResize = "HEIGHT";
-                      try {
-                        tn.layoutSizingHorizontal = "FILL";
-                      } catch (_e) {
-                        const fallbackW = childData.layout?.measuredWidth || frame.width;
-                        if (fallbackW > 0) {
-                          try {
-                            tn.resize(fallbackW, tn.height);
-                          } catch (_r) {
-                          }
+            if (childNode)
+              try {
+                frame.appendChild(childNode);
+                if (frame.layoutMode !== "NONE") {
+                  const layoutChild = childNode;
+                  if (childData.layout?.positioning === "ABSOLUTE") {
+                    try {
+                      const targetW = typeof childData.layout.width === "number" && childData.layout.width > 0 ? childData.layout.width : childData.layout.measuredWidth || layoutChild.width || 100;
+                      const targetH = typeof childData.layout.height === "number" && childData.layout.height > 0 ? childData.layout.height : childData.layout.measuredHeight || layoutChild.height || 100;
+                      if (targetW > 0 && targetH > 0 && typeof layoutChild.resize === "function") {
+                        try {
+                          layoutChild.resize(targetW, targetH);
+                        } catch (_resErr) {
                         }
                       }
-                    } else if (childData.layout?.width === "HUG") {
-                      if (isMulti && frame.layoutMode === "VERTICAL") {
+                      if ("layoutPositioning" in layoutChild) {
+                        layoutChild.layoutPositioning = "ABSOLUTE";
+                      }
+                      if (typeof childData.layout.x === "number") childNode.x = childData.layout.x;
+                      if (typeof childData.layout.y === "number") childNode.y = childData.layout.y;
+                    } catch (absErr) {
+                      log.warn("Error configurando layoutPositioning ABSOLUTE", { error: errText(absErr) });
+                    }
+                  } else {
+                    if (childNode.type === "TEXT" && childData.textData?.noWrap) {
+                      applyNoWrapSizing(childNode, childData, true);
+                    } else if (childNode.type === "TEXT") {
+                      const tn = childNode;
+                      const isMulti = childData.textData?.isMultiline || childData.textData?.characters && childData.textData.characters.includes("\n");
+                      if (childData.layout?.width === "FILL") {
                         tn.textAutoResize = "HEIGHT";
                         try {
                           tn.layoutSizingHorizontal = "FILL";
@@ -7219,79 +7238,93 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
                             }
                           }
                         }
-                      } else {
-                        tn.textAutoResize = "WIDTH_AND_HEIGHT";
+                      } else if (childData.layout?.width === "HUG") {
+                        if (isMulti && frame.layoutMode === "VERTICAL") {
+                          tn.textAutoResize = "HEIGHT";
+                          try {
+                            tn.layoutSizingHorizontal = "FILL";
+                          } catch (_e) {
+                            const fallbackW = childData.layout?.measuredWidth || frame.width;
+                            if (fallbackW > 0) {
+                              try {
+                                tn.resize(fallbackW, tn.height);
+                              } catch (_r) {
+                              }
+                            }
+                          }
+                        } else {
+                          tn.textAutoResize = "WIDTH_AND_HEIGHT";
+                        }
+                      } else if (typeof childData.layout?.width === "number") {
+                        try {
+                          tn.resize(Math.max(1, childData.layout.width), tn.height);
+                        } catch (_e) {
+                        }
+                        tn.textAutoResize = "HEIGHT";
                       }
-                    } else if (typeof childData.layout?.width === "number") {
+                    } else {
+                      const hasFixedW = typeof childData.layout?.width === "number";
+                      const hasFixedH = typeof childData.layout?.height === "number";
+                      if (hasFixedW || hasFixedH) {
+                        const targetW = hasFixedW ? Math.max(1, childData.layout.width) : layoutChild.width;
+                        const targetH = hasFixedH ? Math.max(1, childData.layout.height) : layoutChild.height;
+                        try {
+                          layoutChild.resize(targetW, targetH);
+                        } catch (_e) {
+                        }
+                      }
                       try {
-                        tn.resize(Math.max(1, childData.layout.width), tn.height);
+                        if (childData.layout?.width === "FILL" && "layoutSizingHorizontal" in layoutChild) {
+                          layoutChild.layoutSizingHorizontal = "FILL";
+                        } else if (childData.layout?.width === "HUG" && "layoutSizingHorizontal" in layoutChild) {
+                          layoutChild.layoutSizingHorizontal = "HUG";
+                        } else if (hasFixedW && "layoutSizingHorizontal" in layoutChild) {
+                          layoutChild.layoutSizingHorizontal = "FIXED";
+                        }
                       } catch (_e) {
                       }
+                      try {
+                        if (childData.layout?.height === "FILL" && "layoutSizingVertical" in layoutChild) {
+                          layoutChild.layoutSizingVertical = "FILL";
+                        } else if (childData.layout?.height === "HUG" && "layoutSizingVertical" in layoutChild) {
+                          layoutChild.layoutSizingVertical = "HUG";
+                        } else if (hasFixedH && "layoutSizingVertical" in layoutChild) {
+                          layoutChild.layoutSizingVertical = "FIXED";
+                        }
+                      } catch (_e) {
+                      }
+                    }
+                  }
+                } else {
+                  if (typeof childData.layout?.x === "number") childNode.x = childData.layout.x;
+                  if (typeof childData.layout?.y === "number") childNode.y = childData.layout.y;
+                  if (childNode.type === "FRAME" || childNode.type === "COMPONENT") {
+                    const targetW = (typeof childData.layout?.width === "number" ? childData.layout.width : childData.layout?.measuredWidth) || childNode.width;
+                    const targetH = (typeof childData.layout?.height === "number" ? childData.layout.height : childData.layout?.measuredHeight) || childNode.height;
+                    if (targetW > 0 && targetH > 0 && (targetW !== childNode.width || targetH !== childNode.height)) {
+                      childNode.resize(targetW, targetH);
+                    }
+                  } else if (childNode.type === "TEXT" && childData.textData?.noWrap) {
+                    applyNoWrapSizing(childNode, childData, false);
+                  } else if (childNode.type === "TEXT") {
+                    const tn = childNode;
+                    const isMulti = childData.textData?.isMultiline || childData.textData?.characters && childData.textData.characters.includes("\n");
+                    const targetW = typeof childData.layout?.width === "number" && childData.layout.width > 0 ? childData.layout.width : childData.layout?.measuredWidth || 0;
+                    if (targetW > 0 && (isMulti || childData.layout?.width !== "HUG")) {
+                      tn.resize(targetW, tn.height);
                       tn.textAutoResize = "HEIGHT";
-                    }
-                  } else {
-                    const hasFixedW = typeof childData.layout?.width === "number";
-                    const hasFixedH = typeof childData.layout?.height === "number";
-                    if (hasFixedW || hasFixedH) {
-                      const targetW = hasFixedW ? Math.max(1, childData.layout.width) : layoutChild.width;
-                      const targetH = hasFixedH ? Math.max(1, childData.layout.height) : layoutChild.height;
-                      try {
-                        layoutChild.resize(targetW, targetH);
-                      } catch (_e) {
-                      }
-                    }
-                    try {
-                      if (childData.layout?.width === "FILL" && "layoutSizingHorizontal" in layoutChild) {
-                        layoutChild.layoutSizingHorizontal = "FILL";
-                      } else if (childData.layout?.width === "HUG" && "layoutSizingHorizontal" in layoutChild) {
-                        layoutChild.layoutSizingHorizontal = "HUG";
-                      } else if (hasFixedW && "layoutSizingHorizontal" in layoutChild) {
-                        layoutChild.layoutSizingHorizontal = "FIXED";
-                      }
-                    } catch (_e) {
-                    }
-                    try {
-                      if (childData.layout?.height === "FILL" && "layoutSizingVertical" in layoutChild) {
-                        layoutChild.layoutSizingVertical = "FILL";
-                      } else if (childData.layout?.height === "HUG" && "layoutSizingVertical" in layoutChild) {
-                        layoutChild.layoutSizingVertical = "HUG";
-                      } else if (hasFixedH && "layoutSizingVertical" in layoutChild) {
-                        layoutChild.layoutSizingVertical = "FIXED";
-                      }
-                    } catch (_e) {
+                    } else {
+                      tn.textAutoResize = "WIDTH_AND_HEIGHT";
                     }
                   }
                 }
-              } else {
-                if (typeof childData.layout?.x === "number") childNode.x = childData.layout.x;
-                if (typeof childData.layout?.y === "number") childNode.y = childData.layout.y;
-                if (childNode.type === "FRAME" || childNode.type === "COMPONENT") {
-                  const targetW = (typeof childData.layout?.width === "number" ? childData.layout.width : childData.layout?.measuredWidth) || childNode.width;
-                  const targetH = (typeof childData.layout?.height === "number" ? childData.layout.height : childData.layout?.measuredHeight) || childNode.height;
-                  if (targetW > 0 && targetH > 0 && (targetW !== childNode.width || targetH !== childNode.height)) {
-                    childNode.resize(targetW, targetH);
-                  }
-                } else if (childNode.type === "TEXT" && childData.textData?.noWrap) {
-                  applyNoWrapSizing(childNode, childData, false);
-                } else if (childNode.type === "TEXT") {
-                  const tn = childNode;
-                  const isMulti = childData.textData?.isMultiline || childData.textData?.characters && childData.textData.characters.includes("\n");
-                  const targetW = typeof childData.layout?.width === "number" && childData.layout.width > 0 ? childData.layout.width : childData.layout?.measuredWidth || 0;
-                  if (targetW > 0 && (isMulti || childData.layout?.width !== "HUG")) {
-                    tn.resize(targetW, tn.height);
-                    tn.textAutoResize = "HEIGHT";
-                  } else {
-                    tn.textAutoResize = "WIDTH_AND_HEIGHT";
-                  }
-                }
+              } catch (childErr) {
+                figma.ui.postMessage({
+                  type: "LOG",
+                  level: "warn",
+                  message: `Ajuste de capa "${childData.name}" incompleto: ${childErr?.message || childErr}`
+                });
               }
-            } catch (childErr) {
-              figma.ui.postMessage({
-                type: "LOG",
-                level: "warn",
-                message: `Ajuste de capa "${childData.name}" incompleto: ${childErr?.message || childErr}`
-              });
-            }
           }
         }
         const hasSelfFixedW = typeof nodeData.layout?.width === "number" && nodeData.layout.width > 0;
@@ -7405,11 +7438,13 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
           const existing = figma.getLocalPaintStyles().find((s) => s.name === cleanName);
           const style = existing || figma.createPaintStyle();
           style.name = cleanName;
-          style.paints = [{
-            type: "SOLID",
-            color: { r: rgba.r, g: rgba.g, b: rgba.b },
-            opacity: rgba.a !== void 0 ? rgba.a : 1
-          }];
+          style.paints = [
+            {
+              type: "SOLID",
+              color: { r: rgba.r, g: rgba.g, b: rgba.b },
+              opacity: rgba.a !== void 0 ? rgba.a : 1
+            }
+          ];
           createdTokensCount++;
         } catch (_tokErr) {
         }
@@ -7683,7 +7718,11 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
           node2.remove();
           figma.currentPage.selection = [comp];
           figma.viewport.scrollAndZoomIntoView([comp]);
-          post({ type: "LOG", message: `Frame "${comp.name}" convertido a Componente nativo de Figma`, level: "success" });
+          post({
+            type: "LOG",
+            message: `Frame "${comp.name}" convertido a Componente nativo de Figma`,
+            level: "success"
+          });
         }
       } catch (convErr) {
         post({ type: "LOG", message: `Error al convertir a componente: ${convErr.message}`, level: "error" });

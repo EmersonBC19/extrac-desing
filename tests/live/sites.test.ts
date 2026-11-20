@@ -44,7 +44,10 @@ describe('casos concretos de las sesiones de trabajo', () => {
     const page = await open('https://www.apple.com/co/');
     const gallery = await extract(page, "document.querySelector('.section-endless-entertainment-gallery')");
     expect((await imageDimensions(page, gallery.rootNode)).length).toBe(9);
-    const tile = await extract(page, "[...document.querySelectorAll('.tile-wrapper')].find(t => /mano llena/i.test(t.textContent))");
+    const tile = await extract(
+      page,
+      "[...document.querySelectorAll('.tile-wrapper')].find(t => /mano llena/i.test(t.textContent))",
+    );
     const dims = await imageDimensions(page, tile.rootNode);
     expect(dims.length).toBeGreaterThanOrEqual(2);
     expect(dims.every((d: any) => d.ok && Math.max(d.w, d.h) <= 4096)).toBe(true);

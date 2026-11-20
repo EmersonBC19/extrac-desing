@@ -9,7 +9,7 @@
 import WebSocket from 'ws';
 /** Envía RENDER_NODES a un hub ya en marcha y responde si había plugins de Figma conectados */
 export function relayToExternalHub(url, message, timeoutMs = 4000) {
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
         let settled = false;
         const done = (r) => {
             if (settled)
@@ -28,7 +28,7 @@ export function relayToExternalHub(url, message, timeoutMs = 4000) {
             ws.send(JSON.stringify({ type: 'REGISTER_CLIENT', clientType: 'CLI_OR_MCP', client: 'code-to-figma-mcp' }));
             ws.send(JSON.stringify({ type: 'GET_STATUS' }));
         });
-        ws.on('message', (raw) => {
+        ws.on('message', raw => {
             let msg;
             try {
                 msg = JSON.parse(raw.toString());

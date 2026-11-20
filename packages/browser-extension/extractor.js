@@ -37,7 +37,10 @@
   function extractBgUrl(bgStr) {
     if (!bgStr || bgStr === "none" || !bgStr.includes("url(") && !/image-set\(/i.test(bgStr)) return null;
     if (/image-set\(/i.test(bgStr)) {
-      const opts = [...bgStr.matchAll(/(?:url\(\s*['"]?([^'")]+)['"]?\s*\)|['"]([^'"]+)['"])\s*([\d.]+)x/gi)].map((m2) => ({ url: m2[1] || m2[2], d: parseFloat(m2[3]) || 1 }));
+      const opts = [...bgStr.matchAll(/(?:url\(\s*['"]?([^'")]+)['"]?\s*\)|['"]([^'"]+)['"])\s*([\d.]+)x/gi)].map((m2) => ({
+        url: m2[1] || m2[2],
+        d: parseFloat(m2[3]) || 1
+      }));
       if (opts.length) {
         opts.sort((a, b) => b.d - a.d);
         return opts[0].url;
@@ -116,7 +119,8 @@
         if (isVisuallyHidden(cs, c.getBoundingClientRect())) continue;
         if (cs.display !== "inline") return false;
         const bg = cs.backgroundColor;
-        if (bg && bg !== "transparent" && !/rgba\([^)]*,\s*0\)$/.test(bg) || cs.backgroundImage !== "none") return false;
+        if (bg && bg !== "transparent" && !/rgba\([^)]*,\s*0\)$/.test(bg) || cs.backgroundImage !== "none")
+          return false;
         if (parseFloat(cs.borderTopWidth) > 0 && cs.borderTopStyle !== "none") return false;
         if (!check(c)) return false;
       }
@@ -130,8 +134,42 @@
     const a = m[4] === void 0 ? 1 : m[4].endsWith("%") ? parseFloat(m[4]) / 100 : parseFloat(m[4]);
     return { r: +m[1] / 255, g: +m[2] / 255, b: +m[3] / 255, a };
   }
-  var SUP_MAP = { "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹", "+": "⁺", "-": "⁻", "=": "⁼", "(": "⁽", ")": "⁾", "n": "ⁿ", "i": "ⁱ" };
-  var SUB_MAP = { "0": "₀", "1": "₁", "2": "₂", "3": "₃", "4": "₄", "5": "₅", "6": "₆", "7": "₇", "8": "₈", "9": "₉", "+": "₊", "-": "₋", "=": "₌", "(": "₍", ")": "₎" };
+  var SUP_MAP = {
+    "0": "⁰",
+    "1": "¹",
+    "2": "²",
+    "3": "³",
+    "4": "⁴",
+    "5": "⁵",
+    "6": "⁶",
+    "7": "⁷",
+    "8": "⁸",
+    "9": "⁹",
+    "+": "⁺",
+    "-": "⁻",
+    "=": "⁼",
+    "(": "⁽",
+    ")": "⁾",
+    n: "ⁿ",
+    i: "ⁱ"
+  };
+  var SUB_MAP = {
+    "0": "₀",
+    "1": "₁",
+    "2": "₂",
+    "3": "₃",
+    "4": "₄",
+    "5": "₅",
+    "6": "₆",
+    "7": "₇",
+    "8": "₈",
+    "9": "₉",
+    "+": "₊",
+    "-": "₋",
+    "=": "₌",
+    "(": "₍",
+    ")": "₎"
+  };
   function scriptPosition(el, root) {
     for (let e = el; e && e !== root.parentElement; e = e.parentElement) {
       const tag = e.localName;
@@ -186,7 +224,16 @@
         _tt: cs.textTransform,
         _ws: cs.whiteSpace
       };
-      st.key = [st.fontFamily, st.fontWeight, st.fontSize, st.italic, st.color && [st.color.r, st.color.g, st.color.b, st.color.a].join(","), st.underline, st.strike, st.baseline].join("|");
+      st.key = [
+        st.fontFamily,
+        st.fontWeight,
+        st.fontSize,
+        st.italic,
+        st.color && [st.color.r, st.color.g, st.color.b, st.color.a].join(","),
+        st.underline,
+        st.strike,
+        st.baseline
+      ].join("|");
       styleKeyCache.set(el, st);
       return st;
     }
@@ -380,10 +427,11 @@
       const cStart = V ? P.left : P.top;
       const cEnd = V ? W - P.right : H - P.bottom;
       const ca = L.counterAxisAlignItems || "MIN";
-      if (ok) ok = boxes.every((b) => {
-        const exp = ca === "CENTER" ? cStart + (cEnd - cStart - crossSize(b)) / 2 : ca === "MAX" ? cEnd - crossSize(b) : cStart;
-        return Math.abs(cross(b) - exp) <= 2 || Math.abs(crossSize(b) - (cEnd - cStart)) <= 2;
-      });
+      if (ok)
+        ok = boxes.every((b) => {
+          const exp = ca === "CENTER" ? cStart + (cEnd - cStart - crossSize(b)) / 2 : ca === "MAX" ? cEnd - crossSize(b) : cStart;
+          return Math.abs(cross(b) - exp) <= 2 || Math.abs(crossSize(b) - (cEnd - cStart)) <= 2;
+        });
       if (ok) return;
     }
     const gaps = [];
@@ -441,7 +489,10 @@
       const v = h ? c.layout.width : c.layout.height;
       return typeof v === "number" ? v : null;
     };
-    if (!kids.length || kids.some((c) => typeof c.layout.x !== "number" || typeof c.layout.y !== "number" || sz(c, true) == null || sz(c, false) == null)) return;
+    if (!kids.length || kids.some(
+      (c) => typeof c.layout.x !== "number" || typeof c.layout.y !== "number" || sz(c, true) == null || sz(c, false) == null
+    ))
+      return;
     const rows = [];
     for (const c of [...kids].sort((a, b) => a.layout.y - b.layout.y || a.layout.x - b.layout.x)) {
       const row = rows.find((r2) => Math.abs(r2.y - c.layout.y) <= 2);
@@ -457,10 +508,11 @@
       return;
     }
     const gaps = [];
-    for (const r2 of rows) for (let i = 1; i < r2.items.length; i++) {
-      const a = r2.items[i - 1], b = r2.items[i];
-      gaps.push(b.layout.x - (a.layout.x + sz(a, true)));
-    }
+    for (const r2 of rows)
+      for (let i = 1; i < r2.items.length; i++) {
+        const a = r2.items[i - 1], b = r2.items[i];
+        gaps.push(b.layout.x - (a.layout.x + sz(a, true)));
+      }
     const rowGaps = [];
     for (let i = 1; i < rows.length; i++) {
       const prevBottom = Math.max(...rows[i - 1].items.map((c) => c.layout.y + sz(c, false)));
@@ -601,10 +653,20 @@
         if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
         else if (h.length === 4) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2] + h[3] + h[3];
         if (h.length === 6) {
-          return { r: parseInt(h.slice(0, 2), 16) / 255, g: parseInt(h.slice(2, 4), 16) / 255, b: parseInt(h.slice(4, 6), 16) / 255, a: 1 };
+          return {
+            r: parseInt(h.slice(0, 2), 16) / 255,
+            g: parseInt(h.slice(2, 4), 16) / 255,
+            b: parseInt(h.slice(4, 6), 16) / 255,
+            a: 1
+          };
         }
         if (h.length === 8) {
-          return { r: parseInt(h.slice(0, 2), 16) / 255, g: parseInt(h.slice(2, 4), 16) / 255, b: parseInt(h.slice(4, 6), 16) / 255, a: parseInt(h.slice(6, 8), 16) / 255 };
+          return {
+            r: parseInt(h.slice(0, 2), 16) / 255,
+            g: parseInt(h.slice(2, 4), 16) / 255,
+            b: parseInt(h.slice(4, 6), 16) / 255,
+            a: parseInt(h.slice(6, 8), 16) / 255
+          };
         }
       }
       try {
@@ -859,7 +921,9 @@
       if (tag === "label") return "Label / " + (el.textContent?.trim().slice(0, 15) || "Text");
       const childrenList = Array.from(el.children);
       const hasDirectLabel = childrenList.some((c) => c.tagName.toLowerCase() === "label");
-      const hasDirectInput = childrenList.some((c) => ["input", "select", "textarea"].includes(c.tagName.toLowerCase()) || c.querySelector("input, select, textarea"));
+      const hasDirectInput = childrenList.some(
+        (c) => ["input", "select", "textarea"].includes(c.tagName.toLowerCase()) || c.querySelector("input, select, textarea")
+      );
       if (hasDirectLabel && hasDirectInput && childrenList.length <= 4) {
         const lbl = el.querySelector("label")?.textContent?.trim();
         return "Input Group" + (lbl ? " (" + lbl.slice(0, 15) + ")" : "");
@@ -874,13 +938,17 @@
       const isCard = el.className && typeof el.className === "string" && el.className.includes("card") || tag === "article";
       if (isCard) return "Card / Container";
       if (tag === "nav" || el.getAttribute("role") === "navigation") return "Navigation / Bar";
-      if (tag === "aside" || el.className && typeof el.className === "string" && el.className.includes("sidebar")) return "Sidebar";
-      if (tag === "header" || el.className && typeof el.className === "string" && el.className.includes("header")) return "Header / Navbar";
+      if (tag === "aside" || el.className && typeof el.className === "string" && el.className.includes("sidebar"))
+        return "Sidebar";
+      if (tag === "header" || el.className && typeof el.className === "string" && el.className.includes("header"))
+        return "Header / Navbar";
       if (tag === "form") return "Form / Container";
       const rawClass = typeof el.className === "string" ? el.className.trim() : "";
       if (rawClass) {
         const cleanClasses = rawClass.split(/\\s+/).filter((c) => {
-          return !/^(mb-|mt-|ml-|mr-|p-|px-|py-|w-|h-|flex|grid|block|inline|relative|absolute|text-|bg-|border-|rounded-|ng-|mat-|cursor-|transition-|duration-|hover:|focus:)/.test(c);
+          return !/^(mb-|mt-|ml-|mr-|p-|px-|py-|w-|h-|flex|grid|block|inline|relative|absolute|text-|bg-|border-|rounded-|ng-|mat-|cursor-|transition-|duration-|hover:|focus:)/.test(
+            c
+          );
         });
         if (cleanClasses.length > 0) {
           const c0 = cleanClasses[0];
@@ -937,7 +1005,10 @@
           const sHex = "#" + Math.round(ps.r * 255).toString(16).padStart(2, "0") + Math.round(ps.g * 255).toString(16).padStart(2, "0") + Math.round(ps.b * 255).toString(16).padStart(2, "0");
           cv.setAttribute("stroke", sHex);
           if (ps.a < 1) cv.setAttribute("stroke-opacity", String(ps.a));
-          cv.setAttribute("stroke-width", vs.strokeWidth && vs.strokeWidth !== "0px" ? vs.strokeWidth : svgCompStyle.strokeWidth || "2");
+          cv.setAttribute(
+            "stroke-width",
+            vs.strokeWidth && vs.strokeWidth !== "0px" ? vs.strokeWidth : svgCompStyle.strokeWidth || "2"
+          );
           cv.setAttribute("stroke-linecap", vs.strokeLinecap || "round");
           cv.setAttribute("stroke-linejoin", vs.strokeLinejoin || "round");
         }
@@ -961,7 +1032,15 @@
         id: currentId,
         name: getSemanticName(element, tagName, style, rect),
         type: "SVG",
-        layout: { mode: "NONE", padding: { top: 0, right: 0, bottom: 0, left: 0 }, itemSpacing: 0, width: w, height: h, x: relX, y: relY },
+        layout: {
+          mode: "NONE",
+          padding: { top: 0, right: 0, bottom: 0, left: 0 },
+          itemSpacing: 0,
+          width: w,
+          height: h,
+          x: relX,
+          y: relY
+        },
         styles: { fills: [] },
         svgContent: raw
       };
@@ -1360,7 +1439,20 @@
         }
       }
       let textWidth = "HUG";
-      const isBlockTag = ["p", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "li", "div", "section", "article"].includes(tagName);
+      const isBlockTag = [
+        "p",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "blockquote",
+        "li",
+        "div",
+        "section",
+        "article"
+      ].includes(tagName);
       const isParentVertical = parentLayout && parentLayout.mode === "VERTICAL";
       const isParentHorizontal = parentLayout && parentLayout.mode === "HORIZONTAL";
       if (isParentVertical) {
@@ -1408,7 +1500,11 @@
     let initialWidth;
     let initialHeight;
     if (isWholePage) {
-      const docH = Math.max(measuredH, document.documentElement.scrollHeight || 0, document.body ? document.body.scrollHeight : 0);
+      const docH = Math.max(
+        measuredH,
+        document.documentElement.scrollHeight || 0,
+        document.body ? document.body.scrollHeight : 0
+      );
       initialWidth = measuredW > 0 ? measuredW : vpW || 1440;
       initialHeight = docH > 0 ? Math.round(docH) : vpH || 900;
     } else if (isRoot) {
@@ -1434,7 +1530,9 @@
         counterAlign = "CENTER";
       }
     }
-    const isSearchOrFullWidth = initialWidth === "FILL" || parentRect && Math.abs(measuredW - (parentRect.width - (parentLayout?.padding?.left || 0) - (parentLayout?.padding?.right || 0))) <= 8 || typeof element.className === "string" && element.className.includes("search");
+    const isSearchOrFullWidth = initialWidth === "FILL" || parentRect && Math.abs(
+      measuredW - (parentRect.width - (parentLayout?.padding?.left || 0) - (parentLayout?.padding?.right || 0))
+    ) <= 8 || typeof element.className === "string" && element.className.includes("search");
     if ((tagName === "button" || semanticName.startsWith("Button") || semanticName.startsWith("Badge") || isBadge) && !isSearchOrFullWidth && !style.width?.includes("%") && measuredW < 250) {
       initialWidth = "HUG";
     }
@@ -1500,7 +1598,15 @@
       name: semanticName,
       type: "FRAME",
       layout: currentLayout,
-      styles: { fills, strokes, borderSides, cornerRadius, opacity: parseFloat(style.opacity) || 1, boxShadow, backdropBlur },
+      styles: {
+        fills,
+        strokes,
+        borderSides,
+        cornerRadius,
+        opacity: parseFloat(style.opacity) || 1,
+        boxShadow,
+        backdropBlur
+      },
       children: [],
       clipsContent: isWholePage || CLIPPING_OVERFLOW.test(style.overflowX) || CLIPPING_OVERFLOW.test(style.overflowY) ? true : void 0
     };
@@ -1537,7 +1643,15 @@
           id: currentId + "_val",
           name: isPlaceholder ? "Placeholder / " + val : "Value / " + val.slice(0, 15),
           type: "TEXT",
-          layout: { mode: "NONE", padding: { top: 0, right: 0, bottom: 0, left: 0 }, itemSpacing: 0, width: "HUG", height: "HUG", x: padding.left || 12, y: 0 },
+          layout: {
+            mode: "NONE",
+            padding: { top: 0, right: 0, bottom: 0, left: 0 },
+            itemSpacing: 0,
+            width: "HUG",
+            height: "HUG",
+            x: padding.left || 12,
+            y: 0
+          },
           styles: { fills: [tc] },
           textData: {
             characters: val,
@@ -1553,15 +1667,36 @@
           id: currentId + "_sel",
           name: "Selected / " + selTxt,
           type: "TEXT",
-          layout: { mode: "NONE", padding: { top: 0, right: 0, bottom: 0, left: 0 }, itemSpacing: 0, width: "FILL", height: "HUG", x: padding.left || 12, y: 0 },
+          layout: {
+            mode: "NONE",
+            padding: { top: 0, right: 0, bottom: 0, left: 0 },
+            itemSpacing: 0,
+            width: "FILL",
+            height: "HUG",
+            x: padding.left || 12,
+            y: 0
+          },
           styles: { fills: [tc] },
-          textData: { characters: selTxt, fontSize: Math.round(parseFloat(style.fontSize) || 14), fontWeight: 400, fontFamily: "Inter" }
+          textData: {
+            characters: selTxt,
+            fontSize: Math.round(parseFloat(style.fontSize) || 14),
+            fontWeight: 400,
+            fontFamily: "Inter"
+          }
         });
         node.children.push({
           id: currentId + "_chevron",
           name: "Icon / ChevronDown",
           type: "SVG",
-          layout: { mode: "NONE", padding: { top: 0, right: 0, bottom: 0, left: 0 }, itemSpacing: 0, width: 16, height: 16, x: 0, y: 0 },
+          layout: {
+            mode: "NONE",
+            padding: { top: 0, right: 0, bottom: 0, left: 0 },
+            itemSpacing: 0,
+            width: 16,
+            height: 16,
+            x: 0,
+            y: 0
+          },
           styles: { fills: [] },
           svgContent: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>'
         });
@@ -1592,7 +1727,15 @@
           id: currentId + "_text",
           name: isBadge ? "Badge / " + txt : "Label",
           type: "TEXT",
-          layout: { mode: "NONE", padding: { top: 0, right: 0, bottom: 0, left: 0 }, itemSpacing: 0, width: "HUG", height: "HUG", x: 0, y: 0 },
+          layout: {
+            mode: "NONE",
+            padding: { top: 0, right: 0, bottom: 0, left: 0 },
+            itemSpacing: 0,
+            width: "HUG",
+            height: "HUG",
+            x: 0,
+            y: 0
+          },
           styles: { fills: [tc] },
           textData: {
             characters: txt,
@@ -1652,7 +1795,8 @@
             let nodeLh = void 0;
             if (style.lineHeight && style.lineHeight !== "normal") {
               const lhV = parseFloat(style.lineHeight);
-              if (!isNaN(lhV)) nodeLh = style.lineHeight.endsWith("px") ? Math.round(lhV) : Math.round(lhV * nodeFontSize);
+              if (!isNaN(lhV))
+                nodeLh = style.lineHeight.endsWith("px") ? Math.round(lhV) : Math.round(lhV * nodeFontSize);
             }
             const effLh = nodeLh || Math.round(nodeFontSize * 1.3);
             const isNodeMulti = th > effLh * 1.35 || raw.includes("\n");
@@ -1882,7 +2026,8 @@
     }
     const bytes = new TextEncoder().encode(raw);
     let bin = "";
-    for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+    for (let i = 0; i < bytes.length; i += 8192)
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
     return `data:${mime};base64,${btoa(bin)}`;
   }
   async function resolvePendingImages(rootNode) {
@@ -1897,62 +2042,64 @@
       }
     }
     collect(rootNode);
-    await Promise.all(pendingNodes.map(async (n) => {
-      try {
-        let url = n._pendingImageSrc || n._pendingBgImageSrc;
-        if (!url) return;
-        if (!url.startsWith("data:")) {
-          try {
-            url = new URL(url, document.baseURI).href;
-          } catch (_u) {
-          }
-        }
-        let base64 = null;
-        if (url.startsWith("data:")) base64 = dataUriToBase64(url);
-        if (!base64 && typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage) {
-          try {
-            const resp = await new Promise((resolve) => {
-              chrome.runtime.sendMessage({ type: "FETCH_IMAGE_AS_BASE64", url }, (res) => {
-                if (chrome.runtime.lastError) {
-                  resolve(null);
-                } else {
-                  resolve(res);
-                }
-              });
-            });
-            if (resp && resp.success && isImageDataUri(resp.base64)) {
-              base64 = resp.base64;
+    await Promise.all(
+      pendingNodes.map(async (n) => {
+        try {
+          let url = n._pendingImageSrc || n._pendingBgImageSrc;
+          if (!url) return;
+          if (!url.startsWith("data:")) {
+            try {
+              url = new URL(url, document.baseURI).href;
+            } catch (_u) {
             }
-          } catch (_bgErr) {
-            base64 = null;
           }
-        }
-        if (!base64) {
-          try {
-            const res = await fetch(url);
-            if (!res.ok) throw new Error("HTTP " + res.status);
-            const blob = await res.blob();
-            if (blob.type && !blob.type.startsWith("image/")) throw new Error("No es imagen: " + blob.type);
-            base64 = await new Promise((resolve) => {
-              const reader = new FileReader();
-              reader.onloadend = () => resolve(reader.result);
-              reader.onerror = () => resolve(null);
-              reader.readAsDataURL(blob);
-            });
-          } catch (_fetchErr) {
-            console.warn("[CodeToFigma] No se pudo obtener imagen directa:", url);
+          let base64 = null;
+          if (url.startsWith("data:")) base64 = dataUriToBase64(url);
+          if (!base64 && typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage) {
+            try {
+              const resp = await new Promise((resolve) => {
+                chrome.runtime.sendMessage({ type: "FETCH_IMAGE_AS_BASE64", url }, (res) => {
+                  if (chrome.runtime.lastError) {
+                    resolve(null);
+                  } else {
+                    resolve(res);
+                  }
+                });
+              });
+              if (resp && resp.success && isImageDataUri(resp.base64)) {
+                base64 = resp.base64;
+              }
+            } catch (_bgErr) {
+              base64 = null;
+            }
           }
+          if (!base64) {
+            try {
+              const res = await fetch(url);
+              if (!res.ok) throw new Error("HTTP " + res.status);
+              const blob = await res.blob();
+              if (blob.type && !blob.type.startsWith("image/")) throw new Error("No es imagen: " + blob.type);
+              base64 = await new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.onerror = () => resolve(null);
+                reader.readAsDataURL(blob);
+              });
+            } catch (_fetchErr) {
+              console.warn("[CodeToFigma] No se pudo obtener imagen directa:", url);
+            }
+          }
+          if (base64) {
+            if (isImageDataUri(base64)) n.imageData = base64;
+          }
+        } catch (_err) {
+          console.warn("[CodeToFigma] Error resolviendo imagen:", n._pendingImageSrc || n._pendingBgImageSrc);
+        } finally {
+          delete n._pendingImageSrc;
+          delete n._pendingBgImageSrc;
         }
-        if (base64) {
-          if (isImageDataUri(base64)) n.imageData = base64;
-        }
-      } catch (_err) {
-        console.warn("[CodeToFigma] Error resolviendo imagen:", n._pendingImageSrc || n._pendingBgImageSrc);
-      } finally {
-        delete n._pendingImageSrc;
-        delete n._pendingBgImageSrc;
-      }
-    }));
+      })
+    );
     const vw = window.innerWidth, vh = window.innerHeight;
     const shotNodes = [];
     (function collectShot(n) {
@@ -1990,7 +2137,8 @@
       str = str.trim();
       if (str.startsWith("#")) {
         let hex = str.slice(1);
-        if (hex.length === 3) hex = hex.split("").map((c) => c + c).join("");
+        if (hex.length === 3)
+          hex = hex.split("").map((c) => c + c).join("");
         if (hex.length >= 6) {
           return {
             r: parseInt(hex.slice(0, 2), 16) / 255,

@@ -19,14 +19,20 @@ export interface RelayResult {
 }
 
 /** Envía RENDER_NODES a un hub ya en marcha y responde si había plugins de Figma conectados */
-export function relayToExternalHub(url: string, message: WSMessage<WSRenderPayload>, timeoutMs = 4000): Promise<RelayResult> {
-  return new Promise((resolve) => {
+export function relayToExternalHub(
+  url: string,
+  message: WSMessage<WSRenderPayload>,
+  timeoutMs = 4000,
+): Promise<RelayResult> {
+  return new Promise(resolve => {
     let settled = false;
     const done = (r: RelayResult) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      try { ws.close(); } catch (_e) {}
+      try {
+        ws.close();
+      } catch (_e) {}
       resolve(r);
     };
     const ws = new WebSocket(url);
@@ -35,9 +41,13 @@ export function relayToExternalHub(url: string, message: WSMessage<WSRenderPaylo
       ws.send(JSON.stringify({ type: 'REGISTER_CLIENT', clientType: 'CLI_OR_MCP', client: 'code-to-figma-mcp' }));
       ws.send(JSON.stringify({ type: 'GET_STATUS' }));
     });
-    ws.on('message', (raw) => {
+    ws.on('message', raw => {
       let msg: any;
-      try { msg = JSON.parse(raw.toString()); } catch (_e) { return; }
+      try {
+        msg = JSON.parse(raw.toString());
+      } catch (_e) {
+        return;
+      }
       if (msg.type !== 'STATUS_RESPONSE') return;
       const plugins = Number(msg.payload?.figmaCount) || 0;
       if (!msg.payload?.figmaConnected) return done({ sent: false, plugins, via: 'hub-externo' });
@@ -48,7 +58,11 @@ export function relayToExternalHub(url: string, message: WSMessage<WSRenderPaylo
 }
 
 /** Entrega por el hub propio si escucha; si no, por el hub externo */
-export async function sendToFigma(hub: FigmaWsHub, message: WSMessage<WSRenderPayload>, externalUrl: string): Promise<RelayResult> {
+export async function sendToFigma(
+  hub: FigmaWsHub,
+  message: WSMessage<WSRenderPayload>,
+  externalUrl: string,
+): Promise<RelayResult> {
   if (hub.isListening()) {
     const sent = hub.broadcastToFigma(message);
     return { sent, plugins: hub.getConnectedPluginsCount(), via: 'hub-propio' };

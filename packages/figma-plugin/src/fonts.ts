@@ -55,7 +55,7 @@ export function resolveFontWeight(weight: number | string): string {
 export async function loadFontSafely(fontFamily: string, fontWeight: number | string): Promise<FontName> {
   // Asegurar siempre Inter Regular en memoria primero para que figma.createText() nunca falle
   try {
-    await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+    await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
   } catch (_e) {}
 
   await initFontCache();
@@ -107,19 +107,19 @@ export async function loadFontSafely(fontFamily: string, fontWeight: number | st
   const interVariants = [targetStyle, 'Regular'];
   for (const st of interVariants) {
     try {
-      const f: FontName = { family: "Inter", style: st };
+      const f: FontName = { family: 'Inter', style: st };
       await figma.loadFontAsync(f);
       return f;
     } catch (_e) {}
   }
 
-  return { family: "Inter", style: "Regular" };
+  return { family: 'Inter', style: 'Regular' };
 }
 
 // Optimización: Pre-calentamiento / carga por lote de todas las fuentes del árbol en paralelo
 export async function prewarmFonts(node: UINode): Promise<void> {
   try {
-    await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+    await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
   } catch (_e) {}
 
   await initFontCache();
@@ -141,6 +141,6 @@ export async function prewarmFonts(node: UINode): Promise<void> {
     Array.from(fontsToLoad).map(async key => {
       const [family, weight] = key.split(':::');
       await loadFontSafely(family, weight);
-    })
+    }),
   );
 }

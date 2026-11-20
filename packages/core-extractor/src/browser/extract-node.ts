@@ -2,14 +2,29 @@
  * Conversión recursiva de un elemento del DOM a UINode.
  * Fuente única del extractor: se empaqueta en packages/browser-extension/extractor.js (scripts/build-extractor.mjs).
  */
-import { CLIPPING_OVERFLOW, isCarouselSlide, isCarouselTrack, extractBgUrl, isVisuallyHidden, pseudoHasImage, bgScaleMode, vpRectOf, canvasPixels } from './dom-helpers';
+import {
+  CLIPPING_OVERFLOW,
+  isCarouselSlide,
+  isCarouselTrack,
+  extractBgUrl,
+  isVisuallyHidden,
+  pseudoHasImage,
+  bgScaleMode,
+  vpRectOf,
+  canvasPixels,
+} from './dom-helpers';
 import { isInlineTextRoot, buildRichText } from './text';
 import { fitAutoLayoutToGeometry, pseudoPosition } from './geometry';
 import type { ExtractCounter, RawLayout, RawNode, Rgba } from './types';
 
 // `element` es any: el extractor lee propiedades de muchos subtipos (img, video, input, select, slot…)
 // según tagName; tiparlo exigiría reescribir cada rama con guardas.
-export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 }, parentRect: DOMRect | null = null, parentLayout: RawLayout | null = null): RawNode | null {
+export function extractNodeTree(
+  element: any,
+  counter: ExtractCounter = { id: 0 },
+  parentRect: DOMRect | null = null,
+  parentLayout: RawLayout | null = null,
+): RawNode | null {
   if (!element || element.nodeType !== Node.ELEMENT_NODE) return null;
 
   const tagName = element.tagName.toLowerCase();
@@ -28,10 +43,12 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
   const vpW = window.innerWidth || 1440;
   const vpH = window.innerHeight || 900;
   const isRoot = parentRect === null;
-  const isWholePage = isRoot && (element === document.body || element === document.documentElement || tagName === 'body');
+  const isWholePage =
+    isRoot && (element === document.body || element === document.documentElement || tagName === 'body');
 
   // Descartar elementos colapsados
-  const isZeroClipped = (rect.height <= 0.5) &&
+  const isZeroClipped =
+    rect.height <= 0.5 &&
     (style.overflow === 'hidden' || style.overflowY === 'hidden') &&
     (style.maxHeight === '0px' || style.height === '0px');
   if (isZeroClipped) return null;
@@ -54,10 +71,10 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
       return c && c !== 'none' && c !== 'normal';
     });
     if (!hasText && !isReplaced && !hasPseudo && (rect.width <= 0.5 || rect.height <= 0.5)) return null;
-    if (parentRect !== null && (rect.top - parentRect.top >= 12000)) return null;
+    if (parentRect !== null && rect.top - parentRect.top >= 12000) return null;
   }
 
-  const currentId = 'node_' + (++counter.id);
+  const currentId = 'node_' + ++counter.id;
   const relX = parentRect ? Math.round(rect.left - parentRect.left) : 0;
   let relY = parentRect ? Math.round(rect.top - parentRect.top) : 0;
   // Headers/banners fijos: el navegador los pinta respecto a la PANTALLA. Si se extrae con la página
@@ -105,7 +122,11 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
       const open = str.indexOf('(');
       const close = str.lastIndexOf(')');
       if (open > -1 && close > open) {
-        const parts = str.slice(open + 1, close).split(/[, /]+/).map(s => s.trim()).filter(Boolean);
+        const parts = str
+          .slice(open + 1, close)
+          .split(/[, /]+/)
+          .map(s => s.trim())
+          .filter(Boolean);
         if (parts.length >= 3) {
           const r = Math.max(0, Math.min(255, parseFloat(parts[0]))) / 255;
           const g = Math.max(0, Math.min(255, parseFloat(parts[1]))) / 255;
@@ -120,19 +141,30 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
     }
     if (str.startsWith('#')) {
       let h = str.slice(1);
-      if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
-      else if (h.length === 4) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2]+h[3]+h[3];
+      if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+      else if (h.length === 4) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2] + h[3] + h[3];
       if (h.length === 6) {
-        return { r: parseInt(h.slice(0,2),16)/255, g: parseInt(h.slice(2,4),16)/255, b: parseInt(h.slice(4,6),16)/255, a: 1 };
+        return {
+          r: parseInt(h.slice(0, 2), 16) / 255,
+          g: parseInt(h.slice(2, 4), 16) / 255,
+          b: parseInt(h.slice(4, 6), 16) / 255,
+          a: 1,
+        };
       }
       if (h.length === 8) {
-        return { r: parseInt(h.slice(0,2),16)/255, g: parseInt(h.slice(2,4),16)/255, b: parseInt(h.slice(4,6),16)/255, a: parseInt(h.slice(6,8),16)/255 };
+        return {
+          r: parseInt(h.slice(0, 2), 16) / 255,
+          g: parseInt(h.slice(2, 4), 16) / 255,
+          b: parseInt(h.slice(4, 6), 16) / 255,
+          a: parseInt(h.slice(6, 8), 16) / 255,
+        };
       }
     }
     try {
       if (!_sharedCanvas) {
         _sharedCanvas = document.createElement('canvas');
-        _sharedCanvas.width = 1; _sharedCanvas.height = 1;
+        _sharedCanvas.width = 1;
+        _sharedCanvas.height = 1;
         _sharedCtx = _sharedCanvas.getContext('2d', { willReadFrequently: true });
       }
       if (_sharedCtx) {
@@ -141,9 +173,9 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
         _sharedCtx.fillRect(0, 0, 1, 1);
         const d = _sharedCtx.getImageData(0, 0, 1, 1).data;
         if (d[3] === 0) return null;
-        return { r: d[0]/255, g: d[1]/255, b: d[2]/255, a: d[3]/255 };
+        return { r: d[0] / 255, g: d[1] / 255, b: d[2] / 255, a: d[3] / 255 };
       }
-    } catch(_e){}
+    } catch (_e) {}
     return null;
   }
 
@@ -170,7 +202,10 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
         if (!col) continue;
 
         let pos = i / Math.max(1, rawStops.length - 1);
-        const posMatch = stopPart.replace(colorMatch[0], '').trim().match(/([\d.]+)%/);
+        const posMatch = stopPart
+          .replace(colorMatch[0], '')
+          .trim()
+          .match(/([\d.]+)%/);
         if (posMatch) {
           pos = parseFloat(posMatch[1]) / 100;
         }
@@ -185,7 +220,7 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
     const linMatch = bgStr.match(/linear-gradient\((.*)\)/i);
     if (!linMatch) return null;
     const inner = linMatch[1];
-    
+
     let angle = 180;
     let stopsStr = inner;
     const firstComma = inner.indexOf(',');
@@ -194,10 +229,19 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
       if (firstToken.includes('deg')) {
         angle = parseFloat(firstToken) || 180;
         stopsStr = inner.slice(firstComma + 1).trim();
-      } else if (firstToken === 'to top') { angle = 0; stopsStr = inner.slice(firstComma + 1).trim(); }
-      else if (firstToken === 'to right') { angle = 90; stopsStr = inner.slice(firstComma + 1).trim(); }
-      else if (firstToken === 'to bottom') { angle = 180; stopsStr = inner.slice(firstComma + 1).trim(); }
-      else if (firstToken === 'to left') { angle = 270; stopsStr = inner.slice(firstComma + 1).trim(); }
+      } else if (firstToken === 'to top') {
+        angle = 0;
+        stopsStr = inner.slice(firstComma + 1).trim();
+      } else if (firstToken === 'to right') {
+        angle = 90;
+        stopsStr = inner.slice(firstComma + 1).trim();
+      } else if (firstToken === 'to bottom') {
+        angle = 180;
+        stopsStr = inner.slice(firstComma + 1).trim();
+      } else if (firstToken === 'to left') {
+        angle = 270;
+        stopsStr = inner.slice(firstComma + 1).trim();
+      }
     }
 
     const rawStops = splitCssList(stopsStr);
@@ -210,7 +254,10 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
       if (!col) continue;
 
       let pos = i / Math.max(1, rawStops.length - 1);
-      const posMatch = stopPart.replace(colorMatch[0], '').trim().match(/([\d.]+)%/);
+      const posMatch = stopPart
+        .replace(colorMatch[0], '')
+        .trim()
+        .match(/([\d.]+)%/);
       if (posMatch) {
         pos = parseFloat(posMatch[1]) / 100;
       }
@@ -240,7 +287,7 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
           color,
           offset: { x: lengths[0], y: lengths[1] },
           radius: lengths[2] || 0,
-          spread: lengths[3] || 0
+          spread: lengths[3] || 0,
         });
       }
     }
@@ -248,7 +295,13 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
   }
 
   // ── 3.5 Pseudo-element (::before / ::after) Extractor ──
-  function extractPseudoElement(element: Element, pseudo: string, parentRect: DOMRect, parentLayout: RawLayout | null, counter: ExtractCounter) {
+  function extractPseudoElement(
+    element: Element,
+    pseudo: string,
+    parentRect: DOMRect,
+    parentLayout: RawLayout | null,
+    counter: ExtractCounter,
+  ) {
     try {
       const style = window.getComputedStyle(element, pseudo);
       const content = style.content;
@@ -265,7 +318,7 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
       if (bgUrl && isRendered && w > 0 && h > 0) {
         const isAbs = style.position === 'absolute' || style.position === 'fixed';
         const pNode: any = {
-          id: 'pseudo_' + (++counter.id),
+          id: 'pseudo_' + ++counter.id,
           name: pseudo === '::before' ? 'Image / Before' : 'Image / After',
           type: 'FRAME',
           layout: {
@@ -275,14 +328,14 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
             width: Math.round(w),
             height: Math.round(h),
             positioning: isAbs ? 'ABSOLUTE' : 'AUTO',
-            ...(isAbs ? (pseudoPosition(element, style, w, h) || {}) : {})
+            ...(isAbs ? pseudoPosition(element, style, w, h) || {} : {}),
           },
           styles: {
             fills: bg && bg.a > 0.01 ? [bg] : [],
             cornerRadius: parseFloat(style.borderRadius) || 0,
-            imageScaleMode: bgScaleMode(style)
+            imageScaleMode: bgScaleMode(style),
           },
-          children: []
+          children: [],
         };
         pNode._pendingBgImageSrc = bgUrl;
         return pNode;
@@ -300,7 +353,7 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
 
       if (rawText.length > 0) {
         return {
-          id: 'pseudo_' + (++counter.id),
+          id: 'pseudo_' + ++counter.id,
           name: pseudo === '::before' ? 'Pseudo / Before' : 'Pseudo / After',
           type: 'TEXT',
           layout: {
@@ -309,20 +362,20 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
             itemSpacing: 0,
             width: 'HUG',
             height: 'HUG',
-            positioning: isPosAbs ? 'ABSOLUTE' : 'AUTO'
+            positioning: isPosAbs ? 'ABSOLUTE' : 'AUTO',
           },
           styles: { fills: [tc] },
           textData: {
             characters: rawText,
             fontSize: Math.round(parseFloat(style.fontSize) || 14),
             fontWeight: style.fontWeight || 400,
-            fontFamily: style.fontFamily ? style.fontFamily.split(',')[0].replace(/['"]/g, '').trim() : 'Inter'
-          }
+            fontFamily: style.fontFamily ? style.fontFamily.split(',')[0].replace(/['"]/g, '').trim() : 'Inter',
+          },
         };
       } else if (w > 0 && h > 0 && ((bg && bg.a > 0.05) || hasBgGrad)) {
         const decoFills = hasBgGrad ? [parseGradient(style.backgroundImage)] : [bg];
         return {
-          id: 'pseudo_' + (++counter.id),
+          id: 'pseudo_' + ++counter.id,
           name: pseudo === '::before' ? 'Decorator / Before' : 'Decorator / After',
           type: 'FRAME',
           layout: {
@@ -332,13 +385,13 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
             width: Math.round(w),
             height: Math.round(h),
             positioning: isPosAbs ? 'ABSOLUTE' : 'AUTO',
-            ...(isPosAbs ? (pseudoPosition(element, style, w, h) || {}) : {})
+            ...(isPosAbs ? pseudoPosition(element, style, w, h) || {} : {}),
           },
           styles: {
             fills: decoFills,
-            cornerRadius: br > 0 ? br : 0
+            cornerRadius: br > 0 ? br : 0,
           },
-          children: []
+          children: [],
         };
       }
     } catch (_e) {}
@@ -356,7 +409,8 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
       if (label) return 'Icon / ' + label;
       const p = el.parentElement;
       if (p) {
-        const pIcon = p.getAttribute('name') || p.getAttribute('icon') || p.getAttribute('data-icon') || p.getAttribute('fontIcon');
+        const pIcon =
+          p.getAttribute('name') || p.getAttribute('icon') || p.getAttribute('data-icon') || p.getAttribute('fontIcon');
         if (pIcon) return 'Icon / ' + pIcon.replace(/^hero|^mat-/, '');
         const pClass = p.className || '';
         if (typeof pClass === 'string') {
@@ -370,7 +424,10 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
     }
 
     // Detectar botones
-    const isBtn = tag === 'button' || el.getAttribute('role') === 'button' || (el.className && typeof el.className === 'string' && el.className.includes('btn'));
+    const isBtn =
+      tag === 'button' ||
+      el.getAttribute('role') === 'button' ||
+      (el.className && typeof el.className === 'string' && el.className.includes('btn'));
     if (isBtn) {
       const btnText = el.textContent?.trim() || el.getAttribute('aria-label') || '';
       const isIconBtn = r.width <= 48 && r.height <= 48 && el.querySelector('svg, i, ng-icon');
@@ -398,9 +455,12 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
     if (tag === 'label') return 'Label / ' + (el.textContent?.trim().slice(0, 15) || 'Text');
 
     // Detectar contenedores directos de formulario (Input Group)
-    const childrenList = (Array.from(el.children) as any[]);
+    const childrenList = Array.from(el.children) as any[];
     const hasDirectLabel = childrenList.some(c => c.tagName.toLowerCase() === 'label');
-    const hasDirectInput = childrenList.some(c => ['input', 'select', 'textarea'].includes(c.tagName.toLowerCase()) || c.querySelector('input, select, textarea'));
+    const hasDirectInput = childrenList.some(
+      c =>
+        ['input', 'select', 'textarea'].includes(c.tagName.toLowerCase()) || c.querySelector('input, select, textarea'),
+    );
     if (hasDirectLabel && hasDirectInput && childrenList.length <= 4) {
       const lbl = el.querySelector('label')?.textContent?.trim();
       return 'Input Group' + (lbl ? ' (' + lbl.slice(0, 15) + ')' : '');
@@ -417,20 +477,25 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
     if (tag === 'a') return 'Link / ' + (el.textContent?.trim().slice(0, 15) || 'Anchor');
 
     // Detectar Cards
-    const isCard = (el.className && typeof el.className === 'string' && el.className.includes('card')) || tag === 'article';
+    const isCard =
+      (el.className && typeof el.className === 'string' && el.className.includes('card')) || tag === 'article';
     if (isCard) return 'Card / Container';
 
     // Detectar Navigation / Sidebar / Header
     if (tag === 'nav' || el.getAttribute('role') === 'navigation') return 'Navigation / Bar';
-    if (tag === 'aside' || (el.className && typeof el.className === 'string' && el.className.includes('sidebar'))) return 'Sidebar';
-    if (tag === 'header' || (el.className && typeof el.className === 'string' && el.className.includes('header'))) return 'Header / Navbar';
+    if (tag === 'aside' || (el.className && typeof el.className === 'string' && el.className.includes('sidebar')))
+      return 'Sidebar';
+    if (tag === 'header' || (el.className && typeof el.className === 'string' && el.className.includes('header')))
+      return 'Header / Navbar';
     if (tag === 'form') return 'Form / Container';
 
     // Limpiar clases utilitarias de Tailwind / Angular para no usarlas de nombre
     const rawClass = typeof el.className === 'string' ? el.className.trim() : '';
     if (rawClass) {
       const cleanClasses = rawClass.split(/\\s+/).filter(c => {
-        return !/^(mb-|mt-|ml-|mr-|p-|px-|py-|w-|h-|flex|grid|block|inline|relative|absolute|text-|bg-|border-|rounded-|ng-|mat-|cursor-|transition-|duration-|hover:|focus:)/.test(c);
+        return !/^(mb-|mt-|ml-|mr-|p-|px-|py-|w-|h-|flex|grid|block|inline|relative|absolute|text-|bg-|border-|rounded-|ng-|mat-|cursor-|transition-|duration-|hover:|focus:)/.test(
+          c,
+        );
       });
       if (cleanClasses.length > 0) {
         const c0 = cleanClasses[0];
@@ -445,13 +510,21 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
   if (tagName === 'svg') {
     const svgClone = element.cloneNode(true);
     const cc = parseColor(style.color) || { r: 0.2, g: 0.25, b: 0.35, a: 1 };
-    const ccHex = '#' + Math.round(cc.r*255).toString(16).padStart(2,'0') +
-                        Math.round(cc.g*255).toString(16).padStart(2,'0') +
-                        Math.round(cc.b*255).toString(16).padStart(2,'0');
+    const ccHex =
+      '#' +
+      Math.round(cc.r * 255)
+        .toString(16)
+        .padStart(2, '0') +
+      Math.round(cc.g * 255)
+        .toString(16)
+        .padStart(2, '0') +
+      Math.round(cc.b * 255)
+        .toString(16)
+        .padStart(2, '0');
 
     const svgCompStyle = window.getComputedStyle(element);
-    const svgHasStroke = (svgCompStyle.stroke && svgCompStyle.stroke !== 'none') ||
-                         element.getAttribute('stroke') !== null;
+    const svgHasStroke =
+      (svgCompStyle.stroke && svgCompStyle.stroke !== 'none') || element.getAttribute('stroke') !== null;
 
     const origVectors = element.querySelectorAll('path, circle, rect, polygon, line, ellipse');
     const cloneVectors = svgClone.querySelectorAll('path, circle, rect, polygon, line, ellipse');
@@ -463,7 +536,11 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
 
       // Rectángulo de bounding box transparente/invisible (común en Lucide / Tabler: <path d="M0 0h24v24H0z" fill="none">)
       const dAttr = ov.getAttribute('d') || '';
-      if (dAttr.includes('0 0h24v24H0z') || dAttr.includes('0 0h24v24') || (vs.fill === 'none' && vs.stroke === 'none')) {
+      if (
+        dAttr.includes('0 0h24v24H0z') ||
+        dAttr.includes('0 0h24v24') ||
+        (vs.fill === 'none' && vs.stroke === 'none')
+      ) {
         cv.setAttribute('fill', 'none');
         cv.setAttribute('stroke', 'none');
         continue;
@@ -481,18 +558,34 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
             cv.setAttribute('fill', 'none');
           } else {
             const pf = parseColor(explicitFill, style.color) || parseColor(vFill, style.color) || cc;
-            const fHex = '#' + Math.round(pf.r*255).toString(16).padStart(2,'0') +
-                               Math.round(pf.g*255).toString(16).padStart(2,'0') +
-                               Math.round(pf.b*255).toString(16).padStart(2,'0');
+            const fHex =
+              '#' +
+              Math.round(pf.r * 255)
+                .toString(16)
+                .padStart(2, '0') +
+              Math.round(pf.g * 255)
+                .toString(16)
+                .padStart(2, '0') +
+              Math.round(pf.b * 255)
+                .toString(16)
+                .padStart(2, '0');
             cv.setAttribute('fill', fHex);
             if (pf.a < 1) cv.setAttribute('fill-opacity', String(pf.a));
           }
         } else {
           // Icono puramente sólido (ej. logo Banco Pichincha)
           const pf = parseColor(vFill, style.color) || cc;
-          const fHex = '#' + Math.round(pf.r*255).toString(16).padStart(2,'0') +
-                             Math.round(pf.g*255).toString(16).padStart(2,'0') +
-                             Math.round(pf.b*255).toString(16).padStart(2,'0');
+          const fHex =
+            '#' +
+            Math.round(pf.r * 255)
+              .toString(16)
+              .padStart(2, '0') +
+            Math.round(pf.g * 255)
+              .toString(16)
+              .padStart(2, '0') +
+            Math.round(pf.b * 255)
+              .toString(16)
+              .padStart(2, '0');
           cv.setAttribute('fill', fHex);
           if (pf.a < 1) cv.setAttribute('fill-opacity', String(pf.a));
         }
@@ -501,14 +594,30 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
       }
 
       if (hasStroke) {
-        const strokeColorStr = (vStroke && vStroke !== 'none') ? vStroke : (svgCompStyle.stroke && svgCompStyle.stroke !== 'none' ? svgCompStyle.stroke : style.color);
+        const strokeColorStr =
+          vStroke && vStroke !== 'none'
+            ? vStroke
+            : svgCompStyle.stroke && svgCompStyle.stroke !== 'none'
+              ? svgCompStyle.stroke
+              : style.color;
         const ps = parseColor(strokeColorStr, style.color) || cc;
-        const sHex = '#' + Math.round(ps.r*255).toString(16).padStart(2,'0') +
-                           Math.round(ps.g*255).toString(16).padStart(2,'0') +
-                           Math.round(ps.b*255).toString(16).padStart(2,'0');
+        const sHex =
+          '#' +
+          Math.round(ps.r * 255)
+            .toString(16)
+            .padStart(2, '0') +
+          Math.round(ps.g * 255)
+            .toString(16)
+            .padStart(2, '0') +
+          Math.round(ps.b * 255)
+            .toString(16)
+            .padStart(2, '0');
         cv.setAttribute('stroke', sHex);
         if (ps.a < 1) cv.setAttribute('stroke-opacity', String(ps.a));
-        cv.setAttribute('stroke-width', vs.strokeWidth && vs.strokeWidth !== '0px' ? vs.strokeWidth : (svgCompStyle.strokeWidth || '2'));
+        cv.setAttribute(
+          'stroke-width',
+          vs.strokeWidth && vs.strokeWidth !== '0px' ? vs.strokeWidth : svgCompStyle.strokeWidth || '2',
+        );
         cv.setAttribute('stroke-linecap', vs.strokeLinecap || 'round');
         cv.setAttribute('stroke-linejoin', vs.strokeLinejoin || 'round');
       }
@@ -528,32 +637,62 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
     // Inlinear y limpiar variables CSS como style="stroke-width:var(--ng-icon__stroke-width, 2)"
     raw = raw.replace(/var\(--[a-zA-Z0-9_-]+,\s*([^)]+)\)/g, '$1');
     raw = raw.replace(/style="[^"]*"/gi, '');
-    if (!/viewBox/i.test(raw)) raw = raw.replace('<svg', '<svg viewBox="0 0 '+w+' '+h+'"');
-    if (!/width=/i.test(raw)) raw = raw.replace('<svg', '<svg width="'+w+'"');
-    if (!/height=/i.test(raw)) raw = raw.replace('<svg', '<svg height="'+h+'"');
+    if (!/viewBox/i.test(raw)) raw = raw.replace('<svg', '<svg viewBox="0 0 ' + w + ' ' + h + '"');
+    if (!/width=/i.test(raw)) raw = raw.replace('<svg', '<svg width="' + w + '"');
+    if (!/height=/i.test(raw)) raw = raw.replace('<svg', '<svg height="' + h + '"');
     raw = raw.replace(/\\s+(ng-reflect-[a-z-]+|_ng[a-z]+-[a-z0-9-]+|data-mat-icon-[a-z]+|class)="[^"]*"/gi, '');
 
     return {
       id: currentId,
       name: getSemanticName(element, tagName, style, rect),
       type: 'SVG',
-      layout: { mode: 'NONE', padding: {top:0,right:0,bottom:0,left:0}, itemSpacing: 0, width: w, height: h, x: relX, y: relY },
+      layout: {
+        mode: 'NONE',
+        padding: { top: 0, right: 0, bottom: 0, left: 0 },
+        itemSpacing: 0,
+        width: w,
+        height: h,
+        x: relX,
+        y: relY,
+      },
       styles: { fills: [] },
-      svgContent: raw
+      svgContent: raw,
     };
   }
 
   // ── 6. Canvas, Video e Iframes (medios que el DOM no devuelve como URL de imagen) ──
-  if (tagName === 'canvas' || tagName === 'video' || tagName === 'iframe' || tagName === 'embed' || tagName === 'object') {
+  if (
+    tagName === 'canvas' ||
+    tagName === 'video' ||
+    tagName === 'iframe' ||
+    tagName === 'embed' ||
+    tagName === 'object'
+  ) {
     const mediaNode: any = {
       id: currentId,
-      name: tagName === 'canvas' ? 'Chart / Canvas' : tagName === 'video' ? 'Video / ' + (element.getAttribute('aria-label') || element.getAttribute('title') || 'Media') : 'Embed / ' + (element.getAttribute('title') || tagName),
+      name:
+        tagName === 'canvas'
+          ? 'Chart / Canvas'
+          : tagName === 'video'
+            ? 'Video / ' + (element.getAttribute('aria-label') || element.getAttribute('title') || 'Media')
+            : 'Embed / ' + (element.getAttribute('title') || tagName),
       type: 'FRAME',
-      layout: { mode: 'NONE', padding:{top:0,right:0,bottom:0,left:0}, itemSpacing:0, width: Math.round(rect.width)||300, height: Math.round(rect.height)||150, x: relX, y: relY,
-        positioning: (style.position === 'absolute' || style.position === 'fixed') ? 'ABSOLUTE' : 'AUTO' },
-      styles: { fills: [], cornerRadius: parseFloat(style.borderRadius) || 0,
-        imageScaleMode: style.objectFit === 'contain' ? 'FIT' : 'FILL' },
-      children: []
+      layout: {
+        mode: 'NONE',
+        padding: { top: 0, right: 0, bottom: 0, left: 0 },
+        itemSpacing: 0,
+        width: Math.round(rect.width) || 300,
+        height: Math.round(rect.height) || 150,
+        x: relX,
+        y: relY,
+        positioning: style.position === 'absolute' || style.position === 'fixed' ? 'ABSOLUTE' : 'AUTO',
+      },
+      styles: {
+        fills: [],
+        cornerRadius: parseFloat(style.borderRadius) || 0,
+        imageScaleMode: style.objectFit === 'contain' ? 'FIT' : 'FILL',
+      },
+      children: [],
     };
     mediaNode._vpRect = vpRectOf(rect);
 
@@ -571,7 +710,9 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
           c.height = element.videoHeight;
           c.getContext('2d')!.drawImage(element, 0, 0); // canvas nuevo: siempre hay contexto 2d
           frame = c.toDataURL('image/jpeg', 0.88);
-        } catch (_e) { frame = null; }
+        } catch (_e) {
+          frame = null;
+        }
       }
       if (frame) mediaNode.imageData = frame;
       else {
@@ -620,7 +761,7 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
 
     // A. Analizar <source> dentro de <picture> respetando media queries
     if (picEl) {
-      const sources = (Array.from(picEl.querySelectorAll('source')) as any[]);
+      const sources = Array.from(picEl.querySelectorAll('source')) as any[];
       // Encontrar sources que coincidan con el viewport actual
       const matchingSources = sources.filter(s => {
         const media = s.getAttribute('media');
@@ -639,7 +780,10 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
         // Fallback: si ninguno coincide por matchMedia, buscar fuente para desktop (min-width)
         const desktopSource = sources.find(s => {
           const m = (s.getAttribute('media') || '').toLowerCase();
-          return m.includes('min-width') || (!m.includes('max-width: 734') && !m.includes('max-width: 640') && !m.includes('small'));
+          return (
+            m.includes('min-width') ||
+            (!m.includes('max-width: 734') && !m.includes('max-width: 640') && !m.includes('small'))
+          );
         });
         if (desktopSource) {
           addSrcset(desktopSource.getAttribute('srcset') || desktopSource.srcset);
@@ -659,9 +803,16 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
     // C. Atributos de alta resolución comunes en la web (lazyloading, retina)
     if (imgEl) {
       const hiResAttrs = [
-        'data-highres', 'data-original', 'data-src-retina', 'data-retina', 
-        'data-large', 'data-desktop-src', 'data-src-desktop', 'data-full-src',
-        'data-src', 'data-lazy-src'
+        'data-highres',
+        'data-original',
+        'data-src-retina',
+        'data-retina',
+        'data-large',
+        'data-desktop-src',
+        'data-src-desktop',
+        'data-full-src',
+        'data-src',
+        'data-lazy-src',
       ];
       for (const attr of hiResAttrs) {
         const val = imgEl.getAttribute(attr);
@@ -689,8 +840,8 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
         const aIsSmall = /(_small|_thumb|mobile)/i.test(a.url) ? -1 : 0;
         const bIsSmall = /(_small|_thumb|mobile)/i.test(b.url) ? -1 : 0;
 
-        const aScore = (a.density * 10) + aIs2x * 5 + aIsSmall * 10;
-        const bScore = (b.density * 10) + bIs2x * 5 + bIsSmall * 10;
+        const aScore = a.density * 10 + aIs2x * 5 + aIsSmall * 10;
+        const bScore = b.density * 10 + bIs2x * 5 + bIsSmall * 10;
 
         if (bScore !== aScore) return bScore - aScore;
         if (b.width !== a.width) return b.width - a.width;
@@ -713,7 +864,7 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
       const pRect = picEl.getBoundingClientRect();
       const iRect = imgEl.getBoundingClientRect();
       const fitsInside = iRect.width <= pRect.width + 1 && iRect.height <= pRect.height + 1;
-      boxRect = (fitsInside && iRect.width > 0 && iRect.height > 0) ? iRect : pRect;
+      boxRect = fitsInside && iRect.width > 0 && iRect.height > 0 ? iRect : pRect;
     }
     let imgW = Math.round(boxRect.width);
     let imgH = Math.round(boxRect.height);
@@ -741,14 +892,14 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
         measuredHeight: imgH,
         x: boxRelX,
         y: boxRelY,
-        positioning: (style.position === 'absolute' || style.position === 'fixed') ? 'ABSOLUTE' : 'AUTO'
+        positioning: style.position === 'absolute' || style.position === 'fixed' ? 'ABSOLUTE' : 'AUTO',
       },
       styles: {
         fills: [],
         cornerRadius: parseFloat(imgFitStyle.borderRadius) || parseFloat(style.borderRadius) || 0,
-        imageScaleMode: (imgFitStyle.objectFit === 'contain' || imgFitStyle.objectFit === 'scale-down') ? 'FIT' : 'FILL'
+        imageScaleMode: imgFitStyle.objectFit === 'contain' || imgFitStyle.objectFit === 'scale-down' ? 'FIT' : 'FILL',
       },
-      children: []
+      children: [],
     };
 
     if (pendingSrc) {
@@ -770,19 +921,21 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
   if (grad) fills.push(grad);
 
   // ── 9. Strokes & Borders en Cualquier Lado ──
-  const topW = Math.round(parseFloat(style.borderTopWidth)||0);
-  const rightBW = Math.round(parseFloat(style.borderRightWidth)||0);
-  const bottomW = Math.round(parseFloat(style.borderBottomWidth)||0);
-  const leftBW = Math.round(parseFloat(style.borderLeftWidth)||0);
-  const hasBorder = (topW > 0 && style.borderTopStyle !== 'none') ||
-                    (rightBW > 0 && style.borderRightStyle !== 'none') ||
-                    (bottomW > 0 && style.borderBottomStyle !== 'none') ||
-                    (leftBW > 0 && style.borderLeftStyle !== 'none');
+  const topW = Math.round(parseFloat(style.borderTopWidth) || 0);
+  const rightBW = Math.round(parseFloat(style.borderRightWidth) || 0);
+  const bottomW = Math.round(parseFloat(style.borderBottomWidth) || 0);
+  const leftBW = Math.round(parseFloat(style.borderLeftWidth) || 0);
+  const hasBorder =
+    (topW > 0 && style.borderTopStyle !== 'none') ||
+    (rightBW > 0 && style.borderRightStyle !== 'none') ||
+    (bottomW > 0 && style.borderBottomStyle !== 'none') ||
+    (leftBW > 0 && style.borderLeftStyle !== 'none');
 
-  const strokeColor = parseColor(style.borderTopColor, style.color) ||
-                      parseColor(style.borderBottomColor, style.color) ||
-                      parseColor(style.borderLeftColor, style.color) ||
-                      parseColor(style.borderRightColor, style.color);
+  const strokeColor =
+    parseColor(style.borderTopColor, style.color) ||
+    parseColor(style.borderBottomColor, style.color) ||
+    parseColor(style.borderLeftColor, style.color) ||
+    parseColor(style.borderRightColor, style.color);
 
   const strokes = [];
   let borderSides = undefined;
@@ -795,11 +948,11 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
   }
 
   // ── 10. Corner Radius ──
-  const rtl = parseFloat(style.borderTopLeftRadius)||0;
-  const rtr = parseFloat(style.borderTopRightRadius)||0;
-  const rbr = parseFloat(style.borderBottomRightRadius)||0;
-  const rbl = parseFloat(style.borderBottomLeftRadius)||0;
-  const cornerRadius = (rtl===rtr && rtr===rbr && rbr===rbl) ? rtl : [rtl, rtr, rbr, rbl];
+  const rtl = parseFloat(style.borderTopLeftRadius) || 0;
+  const rtr = parseFloat(style.borderTopRightRadius) || 0;
+  const rbr = parseFloat(style.borderBottomRightRadius) || 0;
+  const rbl = parseFloat(style.borderBottomLeftRadius) || 0;
+  const cornerRadius = rtl === rtr && rtr === rbr && rbr === rbl ? rtl : [rtl, rtr, rbr, rbl];
 
   // ── 11. Box Shadows & Glassmorphism Backdrop Blur ──
   const boxShadow = parseBoxShadow(style.boxShadow);
@@ -815,10 +968,10 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
 
   // ── 12. Padding ──
   const padding = {
-    top: Math.round(parseFloat(style.paddingTop)||0),
-    right: Math.round(parseFloat(style.paddingRight)||0),
-    bottom: Math.round(parseFloat(style.paddingBottom)||0),
-    left: Math.round(parseFloat(style.paddingLeft)||0)
+    top: Math.round(parseFloat(style.paddingTop) || 0),
+    right: Math.round(parseFloat(style.paddingRight) || 0),
+    bottom: Math.round(parseFloat(style.paddingBottom) || 0),
+    left: Math.round(parseFloat(style.paddingLeft) || 0),
   };
 
   // ── 13. Auto Layout Inteligente ──
@@ -855,7 +1008,11 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
       layoutWrap = 'NO_WRAP';
       itemSpacing = Math.round(parseFloat(style.columnGap || style.gap) || 0);
     }
-  } else if (tagName === 'button' || element.getAttribute('role') === 'button' || (element.className && typeof element.className === 'string' && element.className.includes('btn'))) {
+  } else if (
+    tagName === 'button' ||
+    element.getAttribute('role') === 'button' ||
+    (element.className && typeof element.className === 'string' && element.className.includes('btn'))
+  ) {
     mode = 'HORIZONTAL';
     primaryAlign = 'CENTER';
     counterAlign = 'CENTER';
@@ -869,7 +1026,11 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
     counterAlign = 'CENTER';
   } else if (['tbody', 'table', 'thead', 'tfoot'].includes(tagName) || style.display.includes('table')) {
     mode = 'VERTICAL';
-  } else if (style.display === 'block' || style.display === 'flow-root' || ['form', 'section', 'article', 'fieldset'].includes(tagName)) {
+  } else if (
+    style.display === 'block' ||
+    style.display === 'flow-root' ||
+    ['form', 'section', 'article', 'fieldset'].includes(tagName)
+  ) {
     if (element.children.length >= 2) {
       mode = 'VERTICAL';
       itemSpacing = Math.round(parseFloat(style.gap) || 0);
@@ -895,7 +1056,7 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
         const oy = Math.max(0, Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top));
         const overlapArea = ox * oy;
         const minArea = Math.min(ra.width * ra.height, rb.width * rb.height);
-        if (minArea > 0 && (overlapArea / minArea) > 0.35) {
+        if (minArea > 0 && overlapArea / minArea > 0.35) {
           hasSignificantOverlap = true;
           break;
         }
@@ -934,7 +1095,8 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
           // Columna: cada hijo (en orden visual) empieza más abajo que el anterior
           if (byTop[i + 1].top < byTop[i].top + 8) isVerticalStack = false;
           // Fila: cada hijo empieza más a la derecha que el anterior Y comparten franja vertical
-          const a = byLeft[i], b = byLeft[i + 1];
+          const a = byLeft[i],
+            b = byLeft[i + 1];
           const shareRow = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > TOL;
           if (b.left < a.left + 8 || !shareRow) isHorizontalStack = false;
         }
@@ -954,7 +1116,11 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
         }
       } else if (inFlowChildren.length === 1) {
         // Contenedor con 1 solo hijo en flujo (los demás son fondos o overlays absolutos)
-        if (style.justifyContent.includes('center') || style.alignItems.includes('center') || style.textAlign.includes('center')) {
+        if (
+          style.justifyContent.includes('center') ||
+          style.alignItems.includes('center') ||
+          style.textAlign.includes('center')
+        ) {
           primaryAlign = 'CENTER';
           counterAlign = 'CENTER';
         }
@@ -962,7 +1128,11 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
     }
 
     // Centrado de elementos: si el texto o el contenedor está centrado, alinear al centro
-    if (style.textAlign.includes('center') || style.alignItems.includes('center') || style.justifyContent.includes('center')) {
+    if (
+      style.textAlign.includes('center') ||
+      style.alignItems.includes('center') ||
+      style.justifyContent.includes('center')
+    ) {
       counterAlign = 'CENTER';
     }
   }
@@ -971,8 +1141,7 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
   const cName = (typeof element.className === 'string' ? element.className : '').toLowerCase();
   const idAttr = (typeof element.id === 'string' ? element.id : '').toLowerCase();
   const isSearchContainer = cName.includes('search') || idAttr.includes('search');
-  const isLayoutShell = isWholePage ||
-    (['body', 'app-root', 'router-outlet'].includes(tagName) && isRoot);
+  const isLayoutShell = isWholePage || (['body', 'app-root', 'router-outlet'].includes(tagName) && isRoot);
 
   if (isLayoutShell) {
     mode = 'NONE';
@@ -983,11 +1152,27 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
 
   // ── 15. Texto Terminal Puro ──
   // Hoja de texto, o raíz "todo inline" (<p>texto <a>link</a><sup>1</sup></p>) → UN solo TEXT
-  const isDirectText = element.textContent && element.textContent.trim().length > 0 &&
+  const isDirectText =
+    element.textContent &&
+    element.textContent.trim().length > 0 &&
     (element.children.length === 0 || isInlineTextRoot(element));
-  const rich = (isDirectText && !['input', 'textarea', 'select'].includes(tagName)) ? buildRichText(element, style) : null;
-  if (isDirectText && rich && rich.characters && !fills.length && !strokes.length && !pendingBgSrc && padding.top === 0 && padding.bottom === 0 && tagName !== 'input' && tagName !== 'textarea' && tagName !== 'select' &&
-      !pseudoHasImage(element, '::before') && !pseudoHasImage(element, '::after')) {
+  const rich =
+    isDirectText && !['input', 'textarea', 'select'].includes(tagName) ? buildRichText(element, style) : null;
+  if (
+    isDirectText &&
+    rich &&
+    rich.characters &&
+    !fills.length &&
+    !strokes.length &&
+    !pendingBgSrc &&
+    padding.top === 0 &&
+    padding.bottom === 0 &&
+    tagName !== 'input' &&
+    tagName !== 'textarea' &&
+    tagName !== 'select' &&
+    !pseudoHasImage(element, '::before') &&
+    !pseudoHasImage(element, '::after')
+  ) {
     const tc = parseColor(style.color) || { r: 0.1, g: 0.1, b: 0.1, a: 1 };
     const rawText = rich.characters;
 
@@ -1010,7 +1195,7 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
     const effLineHeight = parsedLineHeight || Math.round(fontSize * 1.3);
 
     // Detección precisa de multilínea
-    const isMultiline = rich.lines > 1 || measuredH > (effLineHeight * 1.35) || rawText.includes('\n');
+    const isMultiline = rich.lines > 1 || measuredH > effLineHeight * 1.35 || rawText.includes('\n');
 
     // Letter-spacing con precisión decimal (ej. 0.231px o -0.374px)
     let parsedLetterSpacing = undefined;
@@ -1023,7 +1208,20 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
 
     // Determinar dimensionamiento inteligente (FILL vs HUG vs FIXED):
     let textWidth: any = 'HUG';
-    const isBlockTag = ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'li', 'div', 'section', 'article'].includes(tagName);
+    const isBlockTag = [
+      'p',
+      'h1',
+      'h2',
+      'h3',
+      'h4',
+      'h5',
+      'h6',
+      'blockquote',
+      'li',
+      'div',
+      'section',
+      'article',
+    ].includes(tagName);
     const isParentVertical = parentLayout && parentLayout.mode === 'VERTICAL';
     const isParentHorizontal = parentLayout && parentLayout.mode === 'HORIZONTAL';
 
@@ -1046,11 +1244,11 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
         padding: { top: 0, right: 0, bottom: 0, left: 0 },
         itemSpacing: 0,
         width: textWidth,
-        height: isMultiline ? 'HUG' : (measuredH > 0 ? measuredH : 'HUG'),
+        height: isMultiline ? 'HUG' : measuredH > 0 ? measuredH : 'HUG',
         measuredWidth: measuredW,
         measuredHeight: measuredH,
         x: relX,
-        y: relY
+        y: relY,
       },
       styles: { fills: [tc] },
       textData: {
@@ -1065,8 +1263,8 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
         // Saltos de línea medidos en el navegador: Figma no debe re-acomodar el texto
         noWrap: rich.linesPreserved || undefined,
         lineCount: rich.lines,
-        segments: rich.segments || undefined
-      }
+        segments: rich.segments || undefined,
+      },
     };
   }
 
@@ -1080,25 +1278,39 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
   if (isWholePage) {
     // Página completa: TODO el documento, no solo la primera pantalla (antes se usaba el alto de
     // la ventana y, con clipsContent, en Figma solo se veía el hero).
-    const docH = Math.max(measuredH, document.documentElement.scrollHeight || 0, document.body ? document.body.scrollHeight : 0);
-    initialWidth = measuredW > 0 ? measuredW : (vpW || 1440);
-    initialHeight = docH > 0 ? Math.round(docH) : (vpH || 900);
+    const docH = Math.max(
+      measuredH,
+      document.documentElement.scrollHeight || 0,
+      document.body ? document.body.scrollHeight : 0,
+    );
+    initialWidth = measuredW > 0 ? measuredW : vpW || 1440;
+    initialHeight = docH > 0 ? Math.round(docH) : vpH || 900;
   } else if (isRoot) {
     initialWidth = measuredW > 0 ? measuredW : 'HUG';
-    initialHeight = (mode !== 'NONE' && element.children.length > 0) ? 'HUG' : (measuredH > 0 ? measuredH : 'HUG');
+    initialHeight = mode !== 'NONE' && element.children.length > 0 ? 'HUG' : measuredH > 0 ? measuredH : 'HUG';
   } else {
     initialWidth = measuredW;
     initialHeight = measuredH > 0 ? measuredH : 'HUG';
   }
 
   // Detección de Badges / Pills / Tags compactos
-  const isBadge = (typeof element.className === 'string' && (element.className.includes('badge') || element.className.includes('pill') || element.className.includes('role') || element.className.includes('tag'))) ||
-                  (parseFloat(style.borderRadius) >= 12 && measuredH <= 32 && measuredW < 200);
+  const isBadge =
+    (typeof element.className === 'string' &&
+      (element.className.includes('badge') ||
+        element.className.includes('pill') ||
+        element.className.includes('role') ||
+        element.className.includes('tag'))) ||
+    (parseFloat(style.borderRadius) >= 12 && measuredH <= 32 && measuredW < 200);
 
   // Si está dentro de Auto Layout Vertical del padre y ocupa el ancho del contenido del padre -> FILL
   if (parentLayout && parentLayout.mode === 'VERTICAL' && parentRect) {
     const parentContentW = parentRect.width - (parentLayout.padding?.left || 0) - (parentLayout.padding?.right || 0);
-    if (!isBadge && (Math.abs(measuredW - parentContentW) <= 8 || style.width === '100%' || (style.display === 'block' && Math.abs(measuredW - parentContentW) <= 16))) {
+    if (
+      !isBadge &&
+      (Math.abs(measuredW - parentContentW) <= 8 ||
+        style.width === '100%' ||
+        (style.display === 'block' && Math.abs(measuredW - parentContentW) <= 16))
+    ) {
       initialWidth = 'FILL';
     }
   }
@@ -1115,11 +1327,20 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
   }
 
   // Botones y badges que se ajustan al texto -> HUG (excepto si ocupa todo el ancho o es trigger/input de búsqueda)
-  const isSearchOrFullWidth = initialWidth === 'FILL' ||
-                              (parentRect && Math.abs(measuredW - (parentRect.width - (parentLayout?.padding?.left || 0) - (parentLayout?.padding?.right || 0))) <= 8) ||
-                              (typeof element.className === 'string' && element.className.includes('search'));
+  const isSearchOrFullWidth =
+    initialWidth === 'FILL' ||
+    (parentRect &&
+      Math.abs(
+        measuredW - (parentRect.width - (parentLayout?.padding?.left || 0) - (parentLayout?.padding?.right || 0)),
+      ) <= 8) ||
+    (typeof element.className === 'string' && element.className.includes('search'));
 
-  if ((tagName === 'button' || semanticName.startsWith('Button') || semanticName.startsWith('Badge') || isBadge) && !isSearchOrFullWidth && !style.width?.includes('%') && measuredW < 250) {
+  if (
+    (tagName === 'button' || semanticName.startsWith('Button') || semanticName.startsWith('Badge') || isBadge) &&
+    !isSearchOrFullWidth &&
+    !style.width?.includes('%') &&
+    measuredW < 250
+  ) {
     initialWidth = 'HUG';
   }
 
@@ -1172,12 +1393,19 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
   }
 
   const currentLayout = {
-    mode, primaryAxisAlignItems: primaryAlign, counterAxisAlignItems: counterAlign,
-    padding, itemSpacing, width: initialWidth, height: initialHeight,
+    mode,
+    primaryAxisAlignItems: primaryAlign,
+    counterAxisAlignItems: counterAlign,
+    padding,
+    itemSpacing,
+    width: initialWidth,
+    height: initialHeight,
     measuredWidth: Math.round(rect.width),
     measuredHeight: isWholePage && typeof initialHeight === 'number' ? initialHeight : Math.round(rect.height),
-    positioning: (style.position === 'absolute' || style.position === 'fixed') ? 'ABSOLUTE' : 'AUTO',
-    layoutWrap, x: relX, y: relY
+    positioning: style.position === 'absolute' || style.position === 'fixed' ? 'ABSOLUTE' : 'AUTO',
+    layoutWrap,
+    x: relX,
+    y: relY,
   };
 
   const node: any = {
@@ -1185,9 +1413,20 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
     name: semanticName,
     type: 'FRAME',
     layout: currentLayout,
-    styles: { fills, strokes, borderSides, cornerRadius, opacity: parseFloat(style.opacity)||1, boxShadow, backdropBlur },
+    styles: {
+      fills,
+      strokes,
+      borderSides,
+      cornerRadius,
+      opacity: parseFloat(style.opacity) || 1,
+      boxShadow,
+      backdropBlur,
+    },
     children: [],
-    clipsContent: isWholePage || CLIPPING_OVERFLOW.test(style.overflowX) || CLIPPING_OVERFLOW.test(style.overflowY) ? true : undefined
+    clipsContent:
+      isWholePage || CLIPPING_OVERFLOW.test(style.overflowX) || CLIPPING_OVERFLOW.test(style.overflowY)
+        ? true
+        : undefined,
   };
   if (pendingBgSrc) {
     node._pendingBgImageSrc = pendingBgSrc;
@@ -1197,7 +1436,7 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
 
   // ── 17. Form Elements: Inputs & Selects con Contenido Real ──
   if (element.children.length === 0) {
-    let txt = (element.textContent||'').trim();
+    let txt = (element.textContent || '').trim();
     if (style.textTransform === 'uppercase') txt = txt.toUpperCase();
 
     if (tagName === 'input' || tagName === 'textarea') {
@@ -1221,48 +1460,84 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
         }
       }
 
-      const tc = isPlaceholder 
-        ? { r: 0.6, g: 0.65, b: 0.7, a: 1 } 
-        : (parseColor(style.color) || { r: 0.15, g: 0.2, b: 0.25, a: 1 });
+      const tc = isPlaceholder
+        ? { r: 0.6, g: 0.65, b: 0.7, a: 1 }
+        : parseColor(style.color) || { r: 0.15, g: 0.2, b: 0.25, a: 1 };
 
       node.children.push({
-        id: currentId+'_val',
+        id: currentId + '_val',
         name: isPlaceholder ? 'Placeholder / ' + val : 'Value / ' + val.slice(0, 15),
         type: 'TEXT',
-        layout: { mode: 'NONE', padding: {top:0,right:0,bottom:0,left:0}, itemSpacing:0, width: 'HUG', height: 'HUG', x: padding.left || 12, y: 0 },
+        layout: {
+          mode: 'NONE',
+          padding: { top: 0, right: 0, bottom: 0, left: 0 },
+          itemSpacing: 0,
+          width: 'HUG',
+          height: 'HUG',
+          x: padding.left || 12,
+          y: 0,
+        },
         styles: { fills: [tc] },
         textData: {
           characters: val,
-          fontSize: Math.round(parseFloat(style.fontSize)||14),
+          fontSize: Math.round(parseFloat(style.fontSize) || 14),
           fontWeight: 400,
-          fontFamily: style.fontFamily ? style.fontFamily.split(',')[0].replace(/['"]/g, '').trim() : 'Inter'
-        }
+          fontFamily: style.fontFamily ? style.fontFamily.split(',')[0].replace(/['"]/g, '').trim() : 'Inter',
+        },
       });
     } else if (tagName === 'select') {
-      const selTxt = (element.options && element.selectedIndex>=0 && element.options[element.selectedIndex]) ? element.options[element.selectedIndex].text.trim() : 'Seleccionar...';
+      const selTxt =
+        element.options && element.selectedIndex >= 0 && element.options[element.selectedIndex]
+          ? element.options[element.selectedIndex].text.trim()
+          : 'Seleccionar...';
       const tc = parseColor(style.color) || { r: 0.2, g: 0.25, b: 0.3, a: 1 };
       node.children.push({
-        id: currentId+'_sel',
+        id: currentId + '_sel',
         name: 'Selected / ' + selTxt,
         type: 'TEXT',
-        layout: { mode: 'NONE', padding: {top:0,right:0,bottom:0,left:0}, itemSpacing:0, width: 'FILL', height: 'HUG', x: padding.left || 12, y: 0 },
+        layout: {
+          mode: 'NONE',
+          padding: { top: 0, right: 0, bottom: 0, left: 0 },
+          itemSpacing: 0,
+          width: 'FILL',
+          height: 'HUG',
+          x: padding.left || 12,
+          y: 0,
+        },
         styles: { fills: [tc] },
-        textData: { characters: selTxt, fontSize: Math.round(parseFloat(style.fontSize)||14), fontWeight: 400, fontFamily: 'Inter' }
+        textData: {
+          characters: selTxt,
+          fontSize: Math.round(parseFloat(style.fontSize) || 14),
+          fontWeight: 400,
+          fontFamily: 'Inter',
+        },
       });
       // Icono Chevron Down
       node.children.push({
-        id: currentId+'_chevron',
+        id: currentId + '_chevron',
         name: 'Icon / ChevronDown',
         type: 'SVG',
-        layout: { mode: 'NONE', padding: {top:0,right:0,bottom:0,left:0}, itemSpacing:0, width: 16, height: 16, x: 0, y: 0 },
+        layout: {
+          mode: 'NONE',
+          padding: { top: 0, right: 0, bottom: 0, left: 0 },
+          itemSpacing: 0,
+          width: 16,
+          height: 16,
+          x: 0,
+          y: 0,
+        },
         styles: { fills: [] },
-        svgContent: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>'
+        svgContent:
+          '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>',
       });
     } else if (txt.length > 0) {
       const tc = parseColor(style.color) || { r: 0.1, g: 0.1, b: 0.1, a: 1 };
 
       // Asegurar Auto Layout en frames contenedores de texto (badges, pills, botones, versión)
-      if (node.layout.mode === 'NONE' && (padding.top > 0 || padding.left > 0 || fills.length > 0 || strokes.length > 0 || isBadge)) {
+      if (
+        node.layout.mode === 'NONE' &&
+        (padding.top > 0 || padding.left > 0 || fills.length > 0 || strokes.length > 0 || isBadge)
+      ) {
         node.layout.mode = 'HORIZONTAL';
         node.layout.counterAxisAlignItems = 'CENTER';
         if (style.textAlign.includes('center') || isBadge) {
@@ -1275,8 +1550,12 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
       else if (style.textAlign.includes('right')) textAlignment = 'RIGHT';
 
       // Iconos en ::before / ::after de un elemento de solo texto (ej. <p class="ico">)
-      const leafBefore = pseudoHasImage(element, '::before') ? extractPseudoElement(element, '::before', rect, currentLayout, counter) : null;
-      const leafAfter = pseudoHasImage(element, '::after') ? extractPseudoElement(element, '::after', rect, currentLayout, counter) : null;
+      const leafBefore = pseudoHasImage(element, '::before')
+        ? extractPseudoElement(element, '::before', rect, currentLayout, counter)
+        : null;
+      const leafAfter = pseudoHasImage(element, '::after')
+        ? extractPseudoElement(element, '::after', rect, currentLayout, counter)
+        : null;
       if (leafBefore || leafAfter) {
         node.layout.mode = 'HORIZONTAL';
         node.layout.counterAxisAlignItems = 'CENTER';
@@ -1289,23 +1568,32 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
       if (labelRich.characters) txt = labelRich.characters;
 
       node.children.push({
-        id: currentId+'_text',
+        id: currentId + '_text',
         name: isBadge ? 'Badge / ' + txt : 'Label',
         type: 'TEXT',
-        layout: { mode: 'NONE', padding: {top:0,right:0,bottom:0,left:0}, itemSpacing:0, width: 'HUG', height: 'HUG', x: 0, y: 0 },
+        layout: {
+          mode: 'NONE',
+          padding: { top: 0, right: 0, bottom: 0, left: 0 },
+          itemSpacing: 0,
+          width: 'HUG',
+          height: 'HUG',
+          x: 0,
+          y: 0,
+        },
         styles: { fills: [tc] },
         textData: {
           characters: txt,
-          fontSize: Math.round(parseFloat(style.fontSize)||14),
+          fontSize: Math.round(parseFloat(style.fontSize) || 14),
           fontWeight: style.fontWeight || 500,
           fontFamily: style.fontFamily ? style.fontFamily.split(',')[0].replace(/['"]/g, '').trim() : 'Inter',
           textAlign: textAlignment,
-          lineHeight: (style.lineHeight && style.lineHeight.endsWith('px')) ? Math.round(parseFloat(style.lineHeight)) : undefined,
+          lineHeight:
+            style.lineHeight && style.lineHeight.endsWith('px') ? Math.round(parseFloat(style.lineHeight)) : undefined,
           isMultiline: labelRich.lines > 1,
           noWrap: labelRich.linesPreserved || undefined,
           lineCount: labelRich.lines,
-          segments: labelRich.segments || undefined
-        }
+          segments: labelRich.segments || undefined,
+        },
       });
       if (leafAfter) node.children.push(leafAfter);
     } else {
@@ -1322,7 +1610,7 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
     if (beforeNode) node.children.push(beforeNode);
 
     // ── 18. Hijos Recursivos ──
-    const __kids = (function(el) {
+    const __kids = (function (el) {
       if (el.shadowRoot) return [...el.shadowRoot.childNodes];
       if (el.localName === 'slot') {
         const a = el.assignedNodes({ flatten: true });
@@ -1335,12 +1623,14 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
         const cn = extractNodeTree(child, counter, rect, currentLayout);
         if (cn) node.children.push(cn);
       } else if (child.nodeType === Node.TEXT_NODE) {
-        let raw = (child.textContent||'').trim();
+        let raw = (child.textContent || '').trim();
         if (raw.length > 0) {
           if (style.textTransform === 'uppercase') raw = raw.toUpperCase();
           const tc = parseColor(style.color) || { r: 0.1, g: 0.1, b: 0.1, a: 1 };
-          let tx = 0, ty = 0;
-          let tw = 0, th = 0;
+          let tx = 0,
+            ty = 0;
+          let tw = 0,
+            th = 0;
           try {
             const r = document.createRange();
             r.selectNodeContents(child);
@@ -1351,16 +1641,17 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
               tw = Math.round(tr.width);
               th = Math.round(tr.height);
             }
-          } catch(_e){}
+          } catch (_e) {}
 
           const nodeFontSize = parseFloat(style.fontSize) || 14;
           let nodeLh = undefined;
           if (style.lineHeight && style.lineHeight !== 'normal') {
             const lhV = parseFloat(style.lineHeight);
-            if (!isNaN(lhV)) nodeLh = style.lineHeight.endsWith('px') ? Math.round(lhV) : Math.round(lhV * nodeFontSize);
+            if (!isNaN(lhV))
+              nodeLh = style.lineHeight.endsWith('px') ? Math.round(lhV) : Math.round(lhV * nodeFontSize);
           }
           const effLh = nodeLh || Math.round(nodeFontSize * 1.3);
-          const isNodeMulti = th > (effLh * 1.35) || raw.includes('\n');
+          const isNodeMulti = th > effLh * 1.35 || raw.includes('\n');
 
           let nodeLs = undefined;
           if (style.letterSpacing && style.letterSpacing !== 'normal') {
@@ -1378,7 +1669,7 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
           }
 
           node.children.push({
-            id: currentId+'_txt_'+(++counter.id),
+            id: currentId + '_txt_' + ++counter.id,
             name: 'Text / ' + raw.slice(0, 15),
             type: 'TEXT',
             layout: {
@@ -1386,11 +1677,11 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
               padding: { top: 0, right: 0, bottom: 0, left: 0 },
               itemSpacing: 0,
               width: childWidth,
-              height: isNodeMulti ? 'HUG' : (th > 0 ? th : 'HUG'),
+              height: isNodeMulti ? 'HUG' : th > 0 ? th : 'HUG',
               measuredWidth: tw,
               measuredHeight: th,
               x: tx,
-              y: ty
+              y: ty,
             },
             styles: { fills: [tc] },
             textData: {
@@ -1400,9 +1691,13 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
               fontFamily: style.fontFamily ? style.fontFamily.split(',')[0].replace(/['"]/g, '').trim() : 'Inter',
               lineHeight: nodeLh,
               letterSpacing: nodeLs,
-              textAlign: style.textAlign.includes('center') ? 'CENTER' : (style.textAlign.includes('right') ? 'RIGHT' : 'LEFT'),
-              isMultiline: isNodeMulti
-            }
+              textAlign: style.textAlign.includes('center')
+                ? 'CENTER'
+                : style.textAlign.includes('right')
+                  ? 'RIGHT'
+                  : 'LEFT',
+              isMultiline: isNodeMulti,
+            },
           });
         }
       }
@@ -1459,8 +1754,8 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
       if (node.children.length === 3 && cName.includes('search')) {
         const c1 = node.children[1];
         const c2 = node.children[2];
-        const pW = typeof node.layout.width === 'number' ? node.layout.width : (node.layout.measuredWidth || 200);
-        const c2W = typeof c2.layout?.width === 'number' ? c2.layout.width : (c2.layout?.measuredWidth || 20);
+        const pW = typeof node.layout.width === 'number' ? node.layout.width : node.layout.measuredWidth || 200;
+        const c2W = typeof c2.layout?.width === 'number' ? c2.layout.width : c2.layout?.measuredWidth || 20;
         const c2Right = (c2.layout?.x || 0) + c2W;
         if ((c2.layout?.x || 0) > pW - 60 || c2Right >= pW - 35) {
           c1.layout.width = 'FILL';
@@ -1477,11 +1772,23 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
   fitAutoLayoutToGeometry(node);
 
   // ── 21. Flattening de Wrappers Transparentes de Frameworks (Angular/React) ──
-  const isFrameworkWrapper = (!isSearchContainer) && (
-    ['app-root', 'router-outlet', 'app-login', 'ng-component', 'ng-container'].includes(tagName) ||
-    (tagName.startsWith('app-') && fills.length === 0 && strokes.length === 0 && padding.top === 0 && padding.left === 0 && boxShadow.length === 0) ||
-    (tagName === 'div' && fills.length === 0 && strokes.length === 0 && padding.top === 0 && padding.left === 0 && boxShadow.length === 0 && node.children.length === 1 && node.children[0].type !== 'TEXT')
-  );
+  const isFrameworkWrapper =
+    !isSearchContainer &&
+    (['app-root', 'router-outlet', 'app-login', 'ng-component', 'ng-container'].includes(tagName) ||
+      (tagName.startsWith('app-') &&
+        fills.length === 0 &&
+        strokes.length === 0 &&
+        padding.top === 0 &&
+        padding.left === 0 &&
+        boxShadow.length === 0) ||
+      (tagName === 'div' &&
+        fills.length === 0 &&
+        strokes.length === 0 &&
+        padding.top === 0 &&
+        padding.left === 0 &&
+        boxShadow.length === 0 &&
+        node.children.length === 1 &&
+        node.children[0].type !== 'TEXT'));
 
   // No aplanar contenedores con significado visual propio: los que recortan (viewport de
   // carrusel) o los que llevan background-image (se perdería la imagen).
@@ -1492,7 +1799,11 @@ export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 
       singleChild.layout.x = (singleChild.layout.x || 0) + (node.layout?.x || 0);
       singleChild.layout.y = (singleChild.layout.y || 0) + (node.layout?.y || 0);
     }
-    if ((singleChild.name === 'DIV' || singleChild.name.startsWith('Frame')) && node.name && !node.name.startsWith('Frame')) {
+    if (
+      (singleChild.name === 'DIV' || singleChild.name.startsWith('Frame')) &&
+      node.name &&
+      !node.name.startsWith('Frame')
+    ) {
       singleChild.name = node.name;
     }
     return singleChild;

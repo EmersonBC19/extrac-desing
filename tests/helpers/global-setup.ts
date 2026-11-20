@@ -9,7 +9,9 @@ const { startStaticServer } = require('./static-server.cjs');
 export default async function setup(project: TestProject) {
   const server = await startStaticServer(path.resolve(__dirname, '../fixtures'));
   project.provide('fixturesUrl', server.url);
-  return async () => { await server.close(); };
+  return async () => {
+    await server.close();
+  };
 }
 
 declare module 'vitest' {

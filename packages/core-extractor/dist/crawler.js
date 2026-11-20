@@ -42,7 +42,8 @@ export class SiteCrawler {
                 if (hasSpinner)
                     return false;
                 // Comprobar si hay elementos de contenido significativos
-                const container = document.querySelector('main, router-outlet + *, app-root .content, .main-content, app-sidebar ~ *') || document.body;
+                const container = document.querySelector('main, router-outlet + *, app-root .content, .main-content, app-sidebar ~ *') ||
+                    document.body;
                 const text = (container.textContent || '').trim();
                 const interactiveOrContentEls = container.querySelectorAll('table, mat-table, tr, td, .card, form, input, button, h1, h2, h3, h4, p, span, [class*="card"], [class*="item"]');
                 return interactiveOrContentEls.length >= 2 || text.length > 30;
@@ -87,7 +88,7 @@ export class SiteCrawler {
                 log.info('Esperando a que entres al dashboard principal (máximo 2 min)...');
                 log.info('=============================================================\n');
                 try {
-                    await page.waitForURL((url) => {
+                    await page.waitForURL(url => {
                         const path = url.pathname.toLowerCase();
                         return !path.endsWith('/login') && path !== '/' && path !== '';
                     }, { timeout: 120000 });
@@ -109,7 +110,7 @@ export class SiteCrawler {
                     rootNode: dsNode,
                     group: 'Design System',
                     routeKey: '_DESIGN_SYSTEM_',
-                    variantType: 'DESIGN_SYSTEM'
+                    variantType: 'DESIGN_SYSTEM',
                 };
                 results.push(dsResult);
                 if (options.onScreen) {
@@ -122,7 +123,7 @@ export class SiteCrawler {
                 targets = options.routes.map(r => ({
                     route: r,
                     title: r.replace(/[/_-]/g, ' ').trim(),
-                    group: 'Personalizado'
+                    group: 'Personalizado',
                 }));
             }
             else {
@@ -142,16 +143,12 @@ export class SiteCrawler {
                                         const grp = m.name || 'General';
                                         if (m.submodules && m.submodules.length > 0) {
                                             for (const s of m.submodules) {
-                                                const r = s.module_route.startsWith('/')
-                                                    ? s.module_route
-                                                    : `/administration/${s.module_route}`;
+                                                const r = s.module_route.startsWith('/') ? s.module_route : `/administration/${s.module_route}`;
                                                 list.push({ route: r, title: s.name, group: grp });
                                             }
                                         }
                                         else {
-                                            const r = m.module_route.startsWith('/')
-                                                ? m.module_route
-                                                : `/administration/${m.module_route}`;
+                                            const r = m.module_route.startsWith('/') ? m.module_route : `/administration/${m.module_route}`;
                                             list.push({ route: r, title: m.name, group: grp });
                                         }
                                     }
@@ -201,12 +198,14 @@ export class SiteCrawler {
                             const groupName = rawText.trim().split('\n')[0] || 'Módulo';
                             await acc.click();
                             await page.waitForTimeout(300);
-                            const subItems = await page.evaluate((grp) => {
+                            const subItems = await page.evaluate(grp => {
                                 const items = [];
                                 const origin = window.location.origin;
                                 const subLinks = document.querySelectorAll('.sidebar-sublist a, .sidebar-subitem');
                                 subLinks.forEach(el => {
-                                    const href = el.getAttribute('href') || el.getAttribute('routerLink') || el.getAttribute('ng-reflect-router-link');
+                                    const href = el.getAttribute('href') ||
+                                        el.getAttribute('routerLink') ||
+                                        el.getAttribute('ng-reflect-router-link');
                                     const title = el.textContent?.trim() || 'Submódulo';
                                     if (href && !href.startsWith('#') && !href.startsWith('javascript:')) {
                                         try {
@@ -242,14 +241,26 @@ export class SiteCrawler {
                     { route: '/administration/remote-download/groups', title: 'Grupos', group: 'Descarga Remota' },
                     { route: '/administration/remote-download/groups/new', title: 'Nuevo Grupo', group: 'Descarga Remota' },
                     { route: '/administration/remote-download/terminals', title: 'Terminales', group: 'Descarga Remota' },
-                    { route: '/administration/remote-download/terminals/move', title: 'Mover Terminales', group: 'Descarga Remota' },
-                    { route: '/administration/remote-download/applications', title: 'Carga de Aplicaciones', group: 'Descarga Remota' },
+                    {
+                        route: '/administration/remote-download/terminals/move',
+                        title: 'Mover Terminales',
+                        group: 'Descarga Remota',
+                    },
+                    {
+                        route: '/administration/remote-download/applications',
+                        title: 'Carga de Aplicaciones',
+                        group: 'Descarga Remota',
+                    },
                     { route: '/administration/tcp', title: 'Configuración TCP', group: 'Descarga Remota' },
-                    { route: '/administration/descarga-remota/geolocalizacion', title: 'Geolocalizar Terminales', group: 'Descarga Remota' },
+                    {
+                        route: '/administration/descarga-remota/geolocalizacion',
+                        title: 'Geolocalizar Terminales',
+                        group: 'Descarga Remota',
+                    },
                     { route: '/administration/email-providers', title: 'Proveedores de Correo', group: 'Configuración' },
                     { route: '/administration/change-password', title: 'Cambiar Contraseña', group: 'Configuración' },
                     { route: '/administration/mfa', title: 'MFA', group: 'Configuración' },
-                    { route: '/administration/codigo-barras', title: 'Código de Barras', group: 'Código de Barras' }
+                    { route: '/administration/codigo-barras', title: 'Código de Barras', group: 'Código de Barras' },
                 ];
                 for (const item of POLARIS_CATALOG) {
                     if (!discoveredMap.has(item.route)) {
@@ -277,7 +288,7 @@ export class SiteCrawler {
                 try {
                     if (page.url() !== fullUrl) {
                         // Intento 1: Navegación SPA por clic en enlace de sidebar
-                        const clicked = await page.evaluate((targetRoute) => {
+                        const clicked = await page.evaluate(targetRoute => {
                             try {
                                 const clean = targetRoute.replace(/^\/administration\//, '').replace(/^\//, '');
                                 // Desplegar acordeones de menú si están contraídos
@@ -290,7 +301,10 @@ export class SiteCrawler {
                                 }
                                 const links = Array.from(document.querySelectorAll('a, [routerlink], [ng-reflect-router-link], [role="menuitem"], .sidebar-subitem, .sidebar-item'));
                                 for (const link of links) {
-                                    const href = link.getAttribute('href') || link.getAttribute('routerlink') || link.getAttribute('ng-reflect-router-link') || '';
+                                    const href = link.getAttribute('href') ||
+                                        link.getAttribute('routerlink') ||
+                                        link.getAttribute('ng-reflect-router-link') ||
+                                        '';
                                     if (href.includes(targetRoute) || (clean.length > 2 && href.includes(clean))) {
                                         link.click();
                                         return true;
@@ -365,7 +379,7 @@ export class SiteCrawler {
                             rootNode: uiNode,
                             group: target.group,
                             routeKey: target.route,
-                            variantType: 'BASE'
+                            variantType: 'BASE',
                         };
                         results.push(screenResult);
                         if (options.onScreen) {
@@ -407,7 +421,7 @@ export class SiteCrawler {
                                             rootNode: tabNode,
                                             group: target.group,
                                             routeKey: target.route,
-                                            variantType: 'TAB'
+                                            variantType: 'TAB',
                                         };
                                         results.push(tabResult);
                                         if (options.onScreen) {
@@ -472,10 +486,10 @@ export class SiteCrawler {
                                     await page.waitForTimeout(600);
                                     const hasDialog = await page.$('.cdk-overlay-pane, [role="dialog"], .modal.show, .modal-dialog, .dialog-container, .mat-mdc-dialog-container');
                                     if (hasDialog) {
-                                        const modalTitle = await page.evaluate(() => {
+                                        const modalTitle = (await page.evaluate(() => {
                                             const h = document.querySelector('.cdk-overlay-pane h1, .cdk-overlay-pane h2, .cdk-overlay-pane h3, [role="dialog"] h1, [role="dialog"] h2, .modal-title, .dialog-title, .title');
                                             return h?.textContent?.trim() || null;
-                                        }) || trigger.label;
+                                        })) || trigger.label;
                                         log.info(`      ✨ [Modal Capturado con Fondo] "${modalTitle}"`);
                                         const modalScreenTitle = `${target.group} / ${target.title} [Modal: ${modalTitle}]`;
                                         // Extrae el árbol completo con el fondo oscurecido y el diálogo encima
@@ -502,7 +516,7 @@ export class SiteCrawler {
                                                 rootNode: modalNode,
                                                 group: target.group,
                                                 routeKey: target.route,
-                                                variantType: 'MODAL'
+                                                variantType: 'MODAL',
                                             };
                                             results.push(modalResult);
                                             if (options.onScreen) {

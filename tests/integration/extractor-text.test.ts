@@ -10,7 +10,7 @@ const B = useBrowser({ width: 1440, height: 900 });
 
 /** Líneas que pinta el navegador para el texto de un elemento (tops distintos de sus rectángulos) */
 async function browserLines(page: Page, selector: string): Promise<number> {
-  return page.evaluate((sel) => {
+  return page.evaluate(sel => {
     const el = document.querySelector(sel)!;
     const r = document.createRange();
     r.selectNodeContents(el);
@@ -24,7 +24,10 @@ async function browserLines(page: Page, selector: string): Promise<number> {
   }, selector);
 }
 
-const textOf = (root: any) => flatten(root).map((x: any) => x.node).filter((n: any) => n.type === 'TEXT');
+const textOf = (root: any) =>
+  flatten(root)
+    .map((x: any) => x.node)
+    .filter((n: any) => n.type === 'TEXT');
 
 describe('texto (synthetic/text.html)', () => {
   it('párrafo con <sup><a>1</a></sup>: un solo texto, superíndice Unicode y los mismos saltos de línea que el navegador', async () => {
@@ -70,15 +73,21 @@ describe('texto (synthetic/text.html)', () => {
   it('texto solo para lectores de pantalla (sr-only) no se exporta', async () => {
     const page = await B.page('synthetic/text.html');
     const { rootNode } = await extract(page, "document.getElementById('sronly')");
-    const all = textOf(rootNode).map((t: any) => t.textData.characters).join(' ');
+    const all = textOf(rootNode)
+      .map((t: any) => t.textData.characters)
+      .join(' ');
     expect(all).not.toMatch(/lectores/);
     expect(all.replace(/\s+/g, ' ')).toMatch(/iPad\s*mini/);
   });
 
   it('text-transform, <br> y etiqueta de botón de una línea', async () => {
     const page = await B.page('synthetic/text.html');
-    expect((await extract(page, "document.getElementById('upper')")).rootNode.textData.characters).toBe('SOFTWARE PARA INGENIERÍA APLICADA');
-    expect((await extract(page, "document.getElementById('br')")).rootNode.textData.characters).toBe('Primera línea\nSegunda línea');
+    expect((await extract(page, "document.getElementById('upper')")).rootNode.textData.characters).toBe(
+      'SOFTWARE PARA INGENIERÍA APLICADA',
+    );
+    expect((await extract(page, "document.getElementById('br')")).rootNode.textData.characters).toBe(
+      'Primera línea\nSegunda línea',
+    );
     const btn = (await extract(page, "document.getElementById('button')")).rootNode;
     const label = textOf(btn)[0];
     expect(label.textData.characters).toBe('Más información');

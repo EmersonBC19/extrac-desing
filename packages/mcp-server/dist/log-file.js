@@ -15,14 +15,16 @@ export function rotatingFileSink(file, maxBytes = 5 * 1024 * 1024) {
     catch (_e) {
         size = 0;
     }
-    return (r) => {
+    return r => {
         const line = JSON.stringify(r) + '\n';
         const bytes = Buffer.byteLength(line);
         if (size > 0 && size + bytes > maxBytes) {
             try {
                 fs.renameSync(file, file + '.1');
             }
-            catch (_e) { /* otro proceso lo movió: seguir */ }
+            catch (_e) {
+                /* otro proceso lo movió: seguir */
+            }
             size = 0;
         }
         fs.appendFileSync(file, line);

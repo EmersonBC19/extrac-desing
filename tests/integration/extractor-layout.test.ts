@@ -63,7 +63,12 @@ describe('casos concretos (synthetic/layout.html)', () => {
   it('cuadrícula uniforme con wrap → WRAP con separación entre filas', async () => {
     const page = await B.page('synthetic/layout.html');
     const { rootNode } = await extract(page, byId('wrap'), { normalize: false });
-    expect(rootNode.layout).toMatchObject({ mode: 'HORIZONTAL', layoutWrap: 'WRAP', itemSpacing: 10, counterAxisSpacing: 10 });
+    expect(rootNode.layout).toMatchObject({
+      mode: 'HORIZONTAL',
+      layoutWrap: 'WRAP',
+      itemSpacing: 10,
+      counterAxisSpacing: 10,
+    });
   });
 
   it('space-between se conserva', async () => {

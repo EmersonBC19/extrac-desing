@@ -19,11 +19,13 @@ export async function applyTextSegments(tn: TextNode, segments: UITextSegment[])
       }
       if (seg.fontSize && seg.fontSize > 0) tn.setRangeFontSize(start, end, seg.fontSize);
       if (seg.color) {
-        tn.setRangeFills(start, end, [{
-          type: 'SOLID',
-          color: { r: seg.color.r, g: seg.color.g, b: seg.color.b },
-          opacity: seg.color.a !== undefined ? seg.color.a : 1
-        }]);
+        tn.setRangeFills(start, end, [
+          {
+            type: 'SOLID',
+            color: { r: seg.color.r, g: seg.color.g, b: seg.color.b },
+            opacity: seg.color.a !== undefined ? seg.color.a : 1,
+          },
+        ]);
       }
       if (seg.underline) tn.setRangeTextDecoration(start, end, 'UNDERLINE');
       else if (seg.strike) tn.setRangeTextDecoration(start, end, 'STRIKETHROUGH');
@@ -50,9 +52,15 @@ export function applyNoWrapSizing(tn: TextNode, data: UINode, parentIsAutoLayout
 
   if (parentIsAutoLayout) {
     if (data.layout?.width === 'FILL' && fitsMeasured) {
-      try { tn.layoutSizingHorizontal = 'FILL'; tn.textAutoResize = 'HEIGHT'; } catch (_e) {}
+      try {
+        tn.layoutSizingHorizontal = 'FILL';
+        tn.textAutoResize = 'HEIGHT';
+      } catch (_e) {}
     } else if (typeof data.layout?.width === 'number' && fitsMeasured) {
-      try { tn.resize(Math.max(1, data.layout.width), tn.height); tn.textAutoResize = 'HEIGHT'; } catch (_e) {}
+      try {
+        tn.resize(Math.max(1, data.layout.width), tn.height);
+        tn.textAutoResize = 'HEIGHT';
+      } catch (_e) {}
     }
     // Si no cabe: queda HUG (WIDTH_AND_HEIGHT) y el padre lo alinea; nunca se re-parte.
     return;
@@ -60,7 +68,10 @@ export function applyNoWrapSizing(tn: TextNode, data: UINode, parentIsAutoLayout
 
   // Padre sin Auto Layout: posición absoluta
   if (measuredW > 0 && fitsMeasured) {
-    try { tn.resize(measuredW, tn.height); tn.textAutoResize = 'HEIGHT'; } catch (_e) {}
+    try {
+      tn.resize(measuredW, tn.height);
+      tn.textAutoResize = 'HEIGHT';
+    } catch (_e) {}
   } else if (measuredW > 0) {
     // Más ancho que en la web: anclar según la alineación del texto
     const extra = naturalW - measuredW;

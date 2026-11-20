@@ -12,8 +12,10 @@ export function base64ToBytes(dataUrl: string): Uint8Array {
   const bytes = new Uint8Array(len);
   let p = 0;
   for (let i = 0; i < clean.length; i += 4) {
-    const e1 = lookup[clean.charCodeAt(i)], e2 = lookup[clean.charCodeAt(i + 1)];
-    const e3 = lookup[clean.charCodeAt(i + 2)], e4 = lookup[clean.charCodeAt(i + 3)];
+    const e1 = lookup[clean.charCodeAt(i)],
+      e2 = lookup[clean.charCodeAt(i + 1)];
+    const e3 = lookup[clean.charCodeAt(i + 2)],
+      e4 = lookup[clean.charCodeAt(i + 3)];
     bytes[p++] = (e1 << 2) | (e2 >> 4);
     if (clean[i + 2] !== '=') bytes[p++] = ((e2 & 15) << 4) | (e3 >> 2);
     if (clean[i + 3] !== '=') bytes[p++] = ((e3 & 3) << 6) | (e4 & 63);
@@ -26,15 +28,15 @@ export function cssFillToPaint(f: any): Paint {
   if (f.type === 'GRADIENT_RADIAL') {
     const transform: Transform = [
       [0.5, 0, 0.5],
-      [0, 0.5, 0.5]
+      [0, 0.5, 0.5],
     ];
     return {
       type: 'GRADIENT_RADIAL',
       gradientTransform: transform,
       gradientStops: (f.stops || []).map((s: any) => ({
         position: Math.max(0, Math.min(1, s.position)),
-        color: { r: s.color.r, g: s.color.g, b: s.color.b, a: s.color.a !== undefined ? s.color.a : 1 }
-      }))
+        color: { r: s.color.r, g: s.color.g, b: s.color.b, a: s.color.a !== undefined ? s.color.a : 1 },
+      })),
     };
   }
   if (f.type === 'GRADIENT_LINEAR') {
@@ -50,20 +52,20 @@ export function cssFillToPaint(f: any): Paint {
     const dy = y2 - y1;
     const transform: Transform = [
       [dx, dy, x1],
-      [-dy, dx, y1]
+      [-dy, dx, y1],
     ];
     return {
       type: 'GRADIENT_LINEAR',
       gradientTransform: transform,
       gradientStops: (f.stops || []).map((s: any) => ({
         position: Math.max(0, Math.min(1, s.position)),
-        color: { r: s.color.r, g: s.color.g, b: s.color.b, a: s.color.a !== undefined ? s.color.a : 1 }
-      }))
+        color: { r: s.color.r, g: s.color.g, b: s.color.b, a: s.color.a !== undefined ? s.color.a : 1 },
+      })),
     };
   }
   return {
     type: 'SOLID',
     color: { r: f.r, g: f.g, b: f.b },
-    opacity: f.a !== undefined ? f.a : 1
+    opacity: f.a !== undefined ? f.a : 1,
   };
 }

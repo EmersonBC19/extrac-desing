@@ -88,8 +88,9 @@ describe('validateViewRenderRequest (antes: inyección de comandos y path traver
   const catalog = ['dashboard', 'users'];
 
   it('acepta una vista del catálogo', () => {
-    expect(validateViewRenderRequest({ viewId: 'users', route: '/administration/users', name: 'Usuarios' }, catalog))
-      .toMatchObject({ viewId: 'users', route: '/administration/users', name: 'Usuarios' });
+    expect(
+      validateViewRenderRequest({ viewId: 'users', route: '/administration/users', name: 'Usuarios' }, catalog),
+    ).toMatchObject({ viewId: 'users', route: '/administration/users', name: 'Usuarios' });
   });
 
   it.each([
@@ -104,7 +105,10 @@ describe('validateViewRenderRequest (antes: inyección de comandos y path traver
   });
 
   it('limpia name/pageName de caracteres de shell', () => {
-    const r = validateViewRenderRequest({ viewId: 'dashboard', name: 'Panel $(rm -rf) `x` "y"', pageName: 'Pág & ; |' }, catalog);
+    const r = validateViewRenderRequest(
+      { viewId: 'dashboard', name: 'Panel $(rm -rf) `x` "y"', pageName: 'Pág & ; |' },
+      catalog,
+    );
     expect(typeof r).toBe('object');
     if (typeof r === 'object') {
       expect(r.name).not.toMatch(/[$`"&;|()]/);

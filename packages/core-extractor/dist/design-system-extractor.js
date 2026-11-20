@@ -25,7 +25,7 @@ export function createDesignSystemFrame(counter = { id: 10000 }) {
         successGreen: c(16, 185, 129),
         dangerRed: c(239, 68, 68),
         warningAmber: c(245, 158, 11),
-        infoBlue: c(59, 130, 246)
+        infoBlue: c(59, 130, 246),
     };
     // Helper para crear texto Auto Layout
     function createTextNode(characters, fontSize = 14, fontWeight = 400, color = colors.textDark, lineHeight) {
@@ -38,7 +38,7 @@ export function createDesignSystemFrame(counter = { id: 10000 }) {
                 padding: { top: 0, right: 0, bottom: 0, left: 0 },
                 itemSpacing: 0,
                 width: 'HUG',
-                height: 'HUG'
+                height: 'HUG',
             },
             styles: { fills: [color] },
             textData: {
@@ -46,8 +46,8 @@ export function createDesignSystemFrame(counter = { id: 10000 }) {
                 fontSize,
                 fontWeight,
                 fontFamily: 'Inter',
-                lineHeight
-            }
+                lineHeight,
+            },
         };
     }
     // Helper para crear una tarjeta de muestra de color (Color Swatch)
@@ -63,13 +63,13 @@ export function createDesignSystemFrame(counter = { id: 10000 }) {
                 padding: { top: 8, right: 8, bottom: 12, left: 8 },
                 itemSpacing: 8,
                 width: 140,
-                height: 'HUG'
+                height: 'HUG',
             },
             styles: {
                 fills: [colors.surfaceWhite],
                 strokes: [{ ...colors.borderGray, width: 1, align: 'INSIDE' }],
                 cornerRadius: 10,
-                boxShadow: [{ color: c(0, 0, 0, 0.04), offset: { x: 0, y: 2 }, radius: 6, spread: 0 }]
+                boxShadow: [{ color: c(0, 0, 0, 0.04), offset: { x: 0, y: 2 }, radius: 6, spread: 0 }],
             },
             children: [
                 // Muestra de color
@@ -82,23 +82,23 @@ export function createDesignSystemFrame(counter = { id: 10000 }) {
                         padding: { top: 0, right: 0, bottom: 0, left: 0 },
                         itemSpacing: 0,
                         width: 124,
-                        height: 64
+                        height: 64,
                     },
                     styles: {
                         fills: [color],
                         cornerRadius: 6,
                         strokes: color.a < 1 || (color.r > 0.9 && color.g > 0.9 && color.b > 0.9)
                             ? [{ ...colors.borderGray, width: 1, align: 'INSIDE' }]
-                            : []
-                    }
+                            : [],
+                    },
                 },
                 // Nombre del token
                 createTextNode(name, 12, 600, colors.textDark),
                 // Código HEX
                 createTextNode(hex, 11, 500, colors.textMuted),
                 // Código RGB
-                createTextNode(rgbStr, 10, 400, colors.textMuted)
-            ]
+                createTextNode(rgbStr, 10, 400, colors.textMuted),
+            ],
         };
     }
     // 2. Sección: Paleta de Colores
@@ -113,12 +113,12 @@ export function createDesignSystemFrame(counter = { id: 10000 }) {
             padding: { top: 24, right: 32, bottom: 28, left: 32 },
             itemSpacing: 16,
             width: 1480,
-            height: 'HUG'
+            height: 'HUG',
         },
         styles: {
             fills: [colors.surfaceLight],
             strokes: [{ ...colors.borderGray, width: 1, align: 'INSIDE' }],
-            cornerRadius: 16
+            cornerRadius: 16,
         },
         children: [
             createTextNode('01. PALETA DE COLORES Y TOKENS (COLOR SYSTEM)', 16, 700, colors.pichinchaNavy),
@@ -135,7 +135,7 @@ export function createDesignSystemFrame(counter = { id: 10000 }) {
                     itemSpacing: 16,
                     layoutWrap: 'WRAP',
                     width: 1416,
-                    height: 'HUG'
+                    height: 'HUG',
                 },
                 styles: { fills: [] },
                 children: [
@@ -150,10 +150,10 @@ export function createDesignSystemFrame(counter = { id: 10000 }) {
                     createColorSwatch('Success', '#10B981', 'rgb(16, 185, 129)', colors.successGreen),
                     createColorSwatch('Danger', '#EF4444', 'rgb(239, 68, 68)', colors.dangerRed),
                     createColorSwatch('Warning', '#F59E0B', 'rgb(245, 158, 11)', colors.warningAmber),
-                    createColorSwatch('Info', '#3B82F6', 'rgb(59, 130, 246)', colors.infoBlue)
-                ]
-            }
-        ]
+                    createColorSwatch('Info', '#3B82F6', 'rgb(59, 130, 246)', colors.infoBlue),
+                ],
+            },
+        ],
     };
     // Helper para fila de escala tipográfica
     function createTypeRow(level, specs, sample, size, weight) {
@@ -168,12 +168,12 @@ export function createDesignSystemFrame(counter = { id: 10000 }) {
                 padding: { top: 12, right: 16, bottom: 12, left: 16 },
                 itemSpacing: 24,
                 width: 1416,
-                height: 'HUG'
+                height: 'HUG',
             },
             styles: {
                 fills: [colors.surfaceWhite],
                 strokes: [{ ...colors.borderGray, width: 1, align: 'INSIDE' }],
-                cornerRadius: 8
+                cornerRadius: 8,
             },
             children: [
                 {
@@ -185,16 +185,16 @@ export function createDesignSystemFrame(counter = { id: 10000 }) {
                         padding: { top: 0, right: 0, bottom: 0, left: 0 },
                         itemSpacing: 4,
                         width: 240,
-                        height: 'HUG'
+                        height: 'HUG',
                     },
                     styles: { fills: [] },
                     children: [
                         createTextNode(level, 13, 700, colors.pichinchaNavy),
-                        createTextNode(specs, 11, 400, colors.textMuted)
-                    ]
+                        createTextNode(specs, 11, 400, colors.textMuted),
+                    ],
                 },
-                createTextNode(sample, size, weight, colors.textDark)
-            ]
+                createTextNode(sample, size, weight, colors.textDark),
+            ],
         };
     }
     // 3. Sección: Escala Tipográfica
@@ -209,12 +209,12 @@ export function createDesignSystemFrame(counter = { id: 10000 }) {
             padding: { top: 24, right: 32, bottom: 28, left: 32 },
             itemSpacing: 16,
             width: 1480,
-            height: 'HUG'
+            height: 'HUG',
         },
         styles: {
             fills: [colors.surfaceLight],
             strokes: [{ ...colors.borderGray, width: 1, align: 'INSIDE' }],
-            cornerRadius: 16
+            cornerRadius: 16,
         },
         children: [
             createTextNode('02. ESCALA TIPOGRÁFICA (TYPOGRAPHY SCALE)', 16, 700, colors.pichinchaNavy),
@@ -224,8 +224,8 @@ export function createDesignSystemFrame(counter = { id: 10000 }) {
             createTypeRow('Heading 2', '20px • Medium (500) • LineHeight 28', 'Reporte Detallado de Transacciones y Descargas', 20, 500),
             createTypeRow('Subtitle / H3', '16px • SemiBold (600) • LineHeight 24', 'Configuración de Parámetros y Seguridad', 16, 600),
             createTypeRow('Body Regular', '14px • Regular (400) • LineHeight 20', 'Texto estándar para tablas de datos, formularios y tarjetas informativas.', 14, 400),
-            createTypeRow('Caption / Meta', '12px • Medium (500) • LineHeight 16', 'Versión de sistema 1.8.0 • Última sincronización: Hoy 14:30', 12, 500)
-        ]
+            createTypeRow('Caption / Meta', '12px • Medium (500) • LineHeight 16', 'Versión de sistema 1.8.0 • Última sincronización: Hoy 14:30', 12, 500),
+        ],
     };
     // Helper para botón
     function createButtonSample(label, bg, textColor, border) {
@@ -240,16 +240,14 @@ export function createDesignSystemFrame(counter = { id: 10000 }) {
                 padding: { top: 10, right: 20, bottom: 10, left: 20 },
                 itemSpacing: 8,
                 width: 'HUG',
-                height: 'HUG'
+                height: 'HUG',
             },
             styles: {
                 fills: [bg],
                 cornerRadius: 8,
-                strokes: border ? [{ ...border, width: 1, align: 'INSIDE' }] : []
+                strokes: border ? [{ ...border, width: 1, align: 'INSIDE' }] : [],
             },
-            children: [
-                createTextNode(label, 14, 600, textColor)
-            ]
+            children: [createTextNode(label, 14, 600, textColor)],
         };
     }
     // Helper para badge
@@ -265,15 +263,13 @@ export function createDesignSystemFrame(counter = { id: 10000 }) {
                 padding: { top: 4, right: 12, bottom: 4, left: 12 },
                 itemSpacing: 6,
                 width: 'HUG',
-                height: 'HUG'
+                height: 'HUG',
             },
             styles: {
                 fills: [bg],
-                cornerRadius: 16
+                cornerRadius: 16,
             },
-            children: [
-                createTextNode(label, 12, 600, textColor)
-            ]
+            children: [createTextNode(label, 12, 600, textColor)],
         };
     }
     // 4. Sección: Componentes y Botones Interactivos (UI Kit)
@@ -288,12 +284,12 @@ export function createDesignSystemFrame(counter = { id: 10000 }) {
             padding: { top: 24, right: 32, bottom: 28, left: 32 },
             itemSpacing: 20,
             width: 1480,
-            height: 'HUG'
+            height: 'HUG',
         },
         styles: {
             fills: [colors.surfaceLight],
             strokes: [{ ...colors.borderGray, width: 1, align: 'INSIDE' }],
-            cornerRadius: 16
+            cornerRadius: 16,
         },
         children: [
             createTextNode('03. BOTONES Y COMPONENTES REUTILIZABLES (UI KIT)', 16, 700, colors.pichinchaNavy),
@@ -310,7 +306,7 @@ export function createDesignSystemFrame(counter = { id: 10000 }) {
                     padding: { top: 0, right: 0, bottom: 0, left: 0 },
                     itemSpacing: 16,
                     width: 'HUG',
-                    height: 'HUG'
+                    height: 'HUG',
                 },
                 styles: { fills: [] },
                 children: [
@@ -318,8 +314,8 @@ export function createDesignSystemFrame(counter = { id: 10000 }) {
                     createButtonSample('Acción Secundaria', colors.pichinchaNavy, colors.surfaceWhite),
                     createButtonSample('Botón Contorno', colors.surfaceWhite, colors.textDark, colors.borderGray),
                     createButtonSample('Peligro / Eliminar', colors.dangerRed, colors.surfaceWhite),
-                    createButtonSample('+ Nuevo Registro', colors.accentBlue, colors.surfaceWhite)
-                ]
+                    createButtonSample('+ Nuevo Registro', colors.accentBlue, colors.surfaceWhite),
+                ],
             },
             // Fila de Badges y Pills
             {
@@ -333,7 +329,7 @@ export function createDesignSystemFrame(counter = { id: 10000 }) {
                     padding: { top: 4, right: 0, bottom: 0, left: 0 },
                     itemSpacing: 12,
                     width: 'HUG',
-                    height: 'HUG'
+                    height: 'HUG',
                 },
                 styles: { fills: [] },
                 children: [
@@ -341,8 +337,8 @@ export function createDesignSystemFrame(counter = { id: 10000 }) {
                     createBadgeSample('● En Línea', c(219, 234, 254), c(30, 64, 175)),
                     createBadgeSample('● Pendiente', c(254, 243, 199), c(146, 64, 14)),
                     createBadgeSample('● Inactivo / Error', c(254, 226, 226), c(153, 27, 27)),
-                    createBadgeSample('Terminal v1.8.0', c(241, 245, 249), c(71, 85, 105))
-                ]
+                    createBadgeSample('Terminal v1.8.0', c(241, 245, 249), c(71, 85, 105)),
+                ],
             },
             // Input de búsqueda / formulario simulado
             {
@@ -356,19 +352,19 @@ export function createDesignSystemFrame(counter = { id: 10000 }) {
                     padding: { top: 10, right: 16, bottom: 10, left: 16 },
                     itemSpacing: 10,
                     width: 420,
-                    height: 'HUG'
+                    height: 'HUG',
                 },
                 styles: {
                     fills: [colors.surfaceWhite],
                     strokes: [{ ...colors.borderGray, width: 1, align: 'INSIDE' }],
-                    cornerRadius: 8
+                    cornerRadius: 8,
                 },
                 children: [
                     createTextNode('🔍', 14, 400, colors.textMuted),
-                    createTextNode('Buscar por terminal, serie o usuario...', 13, 400, colors.textMuted)
-                ]
-            }
-        ]
+                    createTextNode('Buscar por terminal, serie o usuario...', 13, 400, colors.textMuted),
+                ],
+            },
+        ],
     };
     // 5. Marco Raíz Desktop del Sistema de Diseño (1600 px de ancho)
     return {
@@ -382,11 +378,11 @@ export function createDesignSystemFrame(counter = { id: 10000 }) {
             padding: { top: 48, right: 60, bottom: 60, left: 60 },
             itemSpacing: 36,
             width: 1600,
-            height: 'HUG'
+            height: 'HUG',
         },
         styles: {
             fills: [colors.surfaceWhite],
-            cornerRadius: 0
+            cornerRadius: 0,
         },
         children: [
             // Encabezado Principal del Artboard
@@ -401,19 +397,19 @@ export function createDesignSystemFrame(counter = { id: 10000 }) {
                     padding: { top: 0, right: 0, bottom: 12, left: 0 },
                     itemSpacing: 8,
                     width: 1480,
-                    height: 'HUG'
+                    height: 'HUG',
                 },
                 styles: { fills: [] },
                 children: [
                     createTextNode('BANCO PICHINCHA • POLARIS CLOUD', 13, 700, colors.accentBlue),
                     createTextNode('Design System, Tokens, Typography & Component Kit', 32, 700, colors.pichinchaNavy),
-                    createTextNode('Especificación oficial extraída del código en vivo. Guía canónica de colores, jerarquía de fuentes y botones reutilizables.', 15, 400, colors.textMuted)
-                ]
+                    createTextNode('Especificación oficial extraída del código en vivo. Guía canónica de colores, jerarquía de fuentes y botones reutilizables.', 15, 400, colors.textMuted),
+                ],
             },
             colorSection,
             typographySection,
-            componentsSection
-        ]
+            componentsSection,
+        ],
     };
 }
 //# sourceMappingURL=design-system-extractor.js.map

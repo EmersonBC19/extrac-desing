@@ -5,7 +5,7 @@ async function probe() {
     try {
         const node = await extractor.extractFromUrl({
             url: 'http://localhost:4210',
-            selector: 'body'
+            selector: 'body',
         });
         console.log('Nombre:', node.name);
         console.log('Tipo:', node.type);

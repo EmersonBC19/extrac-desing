@@ -32,6 +32,9 @@ jobs:
       - name: Lint (ESLint)
         run: npm run lint
 
+      - name: Formato (Prettier)
+        run: npm run format:check
+
       - name: Instalar Chromium para Playwright
         run: npx playwright install --with-deps chromium
 

@@ -29,7 +29,9 @@ const result = await build({
   metafile: true,
   charset: 'utf8',
   legalComments: 'none',
-  banner: { js: '// ⚠️ ARCHIVO GENERADO — no editar. Fuente: packages/figma-plugin/src · Generar: npm run build:plugin' },
+  banner: {
+    js: '// ⚠️ ARCHIVO GENERADO — no editar. Fuente: packages/figma-plugin/src · Generar: npm run build:plugin',
+  },
   write: false,
   logLevel: 'warning',
 });
@@ -38,7 +40,9 @@ const code = result.outputFiles[0].text.replace(/\r\n/g, '\n');
 
 if (process.argv.includes('--check')) {
   let current = '';
-  try { current = readFileSync(OUT, 'utf8').replace(/\r\n/g, '\n'); } catch (_e) {}
+  try {
+    current = readFileSync(OUT, 'utf8').replace(/\r\n/g, '\n');
+  } catch (_e) {}
   if (current !== code) {
     console.error('✗ packages/figma-plugin/dist/code.js no está al día. Ejecuta: npm run build:plugin');
     process.exit(1);

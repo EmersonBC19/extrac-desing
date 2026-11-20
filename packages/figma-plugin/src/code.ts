@@ -8,17 +8,18 @@ import { log } from './log';
 /** Mensajes sandbox → UI, tipados con el catálogo de contracts */
 const post = (m: PluginSandboxMessage) => figma.ui.postMessage(m);
 
-
 // Iniciar UI flotante para WebSocket con nuevo tamaño Studio & Receiver
 figma.showUI(__html__, {
   width: 470,
   height: 630,
-  title: "⚡ Code to Figma AI — Studio & Receiver"
+  title: '⚡ Code to Figma AI — Studio & Receiver',
 });
 
 // Notificar cambio de página activa al UI
 figma.on('currentpagechange', () => {
-  try { post({ type: 'PAGE_INFO', pageName: figma.currentPage.name }); } catch (_e) {}
+  try {
+    post({ type: 'PAGE_INFO', pageName: figma.currentPage.name });
+  } catch (_e) {}
 });
 
 type Handler<T extends PluginUiMessageType> = (msg: Extract<PluginUiMessage, { type: T }>) => void | Promise<void>;
@@ -28,19 +29,23 @@ const handlers: { [T in PluginUiMessageType]: Handler<T> } = {
   // Código de vinculación con el hub: se pide una vez y se guarda en el almacenamiento local de Figma
   GET_PAIRING_CODE: async () => {
     let code = '';
-    try { code = (await figma.clientStorage.getAsync('hubPairingCode')) || ''; } catch (_e) {}
+    try {
+      code = (await figma.clientStorage.getAsync('hubPairingCode')) || '';
+    } catch (_e) {}
     post({ type: 'PAIRING_CODE', code });
   },
 
-  SET_PAIRING_CODE: async (msg) => {
-    try { await figma.clientStorage.setAsync('hubPairingCode', String(msg.code || '')); } catch (_e) {}
+  SET_PAIRING_CODE: async msg => {
+    try {
+      await figma.clientStorage.setAsync('hubPairingCode', String(msg.code || ''));
+    } catch (_e) {}
   },
 
   CLEAR_PAGE: () => {
     for (const child of figma.currentPage.children) child.remove();
   },
 
-  DELETE_NODE: (msg) => {
+  DELETE_NODE: msg => {
     if (!msg.nodeId) return;
     try {
       const node = figma.getNodeById(msg.nodeId) as SceneNode;
@@ -54,7 +59,7 @@ const handlers: { [T in PluginUiMessageType]: Handler<T> } = {
     }
   },
 
-  DELETE_MULTIPLE_NODES: (msg) => {
+  DELETE_MULTIPLE_NODES: msg => {
     if (!Array.isArray(msg.nodeIds)) return;
     try {
       let count = 0;
@@ -81,7 +86,7 @@ const handlers: { [T in PluginUiMessageType]: Handler<T> } = {
     post({ type: 'PAGE_INFO', pageName: figma.currentPage.name });
   },
 
-  FOCUS_NODE: (msg) => {
+  FOCUS_NODE: msg => {
     if (!msg.nodeId) return;
     try {
       const node = figma.getNodeById(msg.nodeId) as SceneNode;
@@ -92,7 +97,7 @@ const handlers: { [T in PluginUiMessageType]: Handler<T> } = {
     } catch (_e) {}
   },
 
-  CONVERT_TO_COMPONENT: (msg) => {
+  CONVERT_TO_COMPONENT: msg => {
     if (!msg.nodeId) return;
     try {
       const node = figma.getNodeById(msg.nodeId) as FrameNode;
@@ -125,14 +130,18 @@ const handlers: { [T in PluginUiMessageType]: Handler<T> } = {
         figma.currentPage.selection = [comp];
         figma.viewport.scrollAndZoomIntoView([comp]);
 
-        post({ type: 'LOG', message: `Frame "${comp.name}" convertido a Componente nativo de Figma`, level: 'success' });
+        post({
+          type: 'LOG',
+          message: `Frame "${comp.name}" convertido a Componente nativo de Figma`,
+          level: 'success',
+        });
       }
     } catch (convErr: any) {
       post({ type: 'LOG', message: `Error al convertir a componente: ${convErr.message}`, level: 'error' });
     }
   },
 
-  RENDER_NODES: async (msg) => {
+  RENDER_NODES: async msg => {
     try {
       await renderNodesCommand(msg.payload, post, log);
     } catch (err: any) {
@@ -144,9 +153,10 @@ const handlers: { [T in PluginUiMessageType]: Handler<T> } = {
 
 // Receptor de mensajes de la UI del plugin
 figma.ui.onmessage = async (msg: PluginUiMessage) => {
-  const handler = msg && typeof msg.type === 'string' && Object.prototype.hasOwnProperty.call(handlers, msg.type)
-    ? handlers[msg.type] as Handler<PluginUiMessageType>
-    : null;
+  const handler =
+    msg && typeof msg.type === 'string' && Object.prototype.hasOwnProperty.call(handlers, msg.type)
+      ? (handlers[msg.type] as Handler<PluginUiMessageType>)
+      : null;
   if (!handler) {
     log.warn('Mensaje de la UI desconocido', { type: String((msg as any)?.type) });
     return;

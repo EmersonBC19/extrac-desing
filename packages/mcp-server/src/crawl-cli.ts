@@ -23,7 +23,7 @@ function parseArgs() {
     exploreModals: true,
     includeDesignSystem: true,
     contentSelector: 'body',
-    clear: true
+    clear: true,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -95,7 +95,9 @@ async function main() {
   log.info(`║  Viewport: ${options.width}×${options.height}px${''.padEnd(36)}║`);
   log.info(`║  Modo: ${options.routes.length > 0 ? 'Rutas manuales' : 'Auto-detección profunda'}${''.padEnd(33)}║`);
   log.info(`║  Design System: ${options.includeDesignSystem ? 'Sí' : 'No'}${''.padEnd(39)}║`);
-  log.info(`║  Tabs: ${options.exploreTabs ? 'Sí' : 'No'} │ Modales: ${options.exploreModals ? 'Sí' : 'No'}${''.padEnd(29)}║`);
+  log.info(
+    `║  Tabs: ${options.exploreTabs ? 'Sí' : 'No'} │ Modales: ${options.exploreModals ? 'Sí' : 'No'}${''.padEnd(29)}║`,
+  );
   log.info(`╚${'═'.repeat(58)}╝\n`);
 
   // ── 1. Conectar con el WebSocket Hub ──
@@ -109,14 +111,14 @@ async function main() {
       ws.send(JSON.stringify({ type: 'REGISTER_CLIENT', clientType: 'CLI_OR_MCP' }));
       resolve();
     });
-    ws.on('error', (err) => {
+    ws.on('error', err => {
       log.error(`No se pudo conectar a ${HUB_URL}. ¿El Hub está corriendo? (npm run start:hub)`);
       reject(err);
     });
   });
 
   // Escuchar respuestas del plugin de Figma
-  ws.on('message', (data) => {
+  ws.on('message', data => {
     try {
       const msg = JSON.parse(data.toString());
       if (msg.type === 'RENDER_SUCCESS' && renderResolve) {
@@ -130,15 +132,18 @@ async function main() {
    * Envía un frame a Figma y ESPERA a que el plugin confirme que terminó de renderizar.
    * Si no responde en `timeoutMs`, continúa de todas formas.
    */
-  async function sendAndWait(payload: WSRenderPayload, timeoutMs: number = 8000): Promise<{ id: string; name: string } | null> {
+  async function sendAndWait(
+    payload: WSRenderPayload,
+    timeoutMs: number = 8000,
+  ): Promise<{ id: string; name: string } | null> {
     const msg: WSMessage<WSRenderPayload> = { type: 'RENDER_NODES', payload };
     ws.send(JSON.stringify(msg));
 
     logRenderWait();
     const start = Date.now();
 
-    return new Promise<{ id: string; name: string } | null>((resolve) => {
-      renderResolve = (result) => {
+    return new Promise<{ id: string; name: string } | null>(resolve => {
+      renderResolve = result => {
         logRenderDone(result.name, Date.now() - start);
         resolve(result);
       };
@@ -188,7 +193,7 @@ async function main() {
       exploreTabs: options.exploreTabs,
       exploreModals: options.exploreModals,
       includeDesignSystem: options.includeDesignSystem,
-      onScreen: async (screen) => {
+      onScreen: async screen => {
         const mod = screen.group || 'General';
         const isDS = screen.variantType === 'DESIGN_SYSTEM' || screen.routeKey === '_DESIGN_SYSTEM_';
 
@@ -201,7 +206,7 @@ async function main() {
           moduleQueues.set(mod, []);
         }
         moduleQueues.get(mod)!.push({ screen, module: mod });
-      }
+      },
     });
 
     // ── 4. Resumen de lo recolectado ──
@@ -232,12 +237,15 @@ async function main() {
     // 5.1 Primero el Design System
     if (dsScreen) {
       log.info('🎨 Transmitiendo Design System & UI Kit...');
-      await sendAndWait({
-        rootNode: dsScreen.screen.rootNode,
-        clearPage: options.clear && isFirstTransmission,
-        targetCanvasPosition: { x: 0, y: 0 },
-        groupName: 'Design System'
-      }, 10000);
+      await sendAndWait(
+        {
+          rootNode: dsScreen.screen.rootNode,
+          clearPage: options.clear && isFirstTransmission,
+          targetCanvasPosition: { x: 0, y: 0 },
+          groupName: 'Design System',
+        },
+        10000,
+      );
       isFirstTransmission = false;
     }
 
@@ -268,7 +276,7 @@ async function main() {
 
         // Ordenar: BASE primero, luego TAB, luego MODAL
         const sorted = routeScreens.sort((a, b) => {
-          const order: Record<string, number> = { 'BASE': 0, 'TAB': 1, 'MODAL': 2 };
+          const order: Record<string, number> = { BASE: 0, TAB: 1, MODAL: 2 };
           return (order[a.screen.variantType || 'BASE'] || 0) - (order[b.screen.variantType || 'BASE'] || 0);
         });
 
@@ -276,13 +284,14 @@ async function main() {
 
         for (let si = 0; si < sorted.length; si++) {
           const { screen } = sorted[si];
-    
+
           logViewStart(screen.title, si, sorted.length, screen.variantType || 'BASE');
 
           // Section title solo para la primera pantalla de cada ruta
-          const sectionTitle = si === 0
-            ? `📌 ${moduleName.toUpperCase()} — ${screen.title.split(' / ').pop()?.toUpperCase() || ''}`
-            : undefined;
+          const sectionTitle =
+            si === 0
+              ? `📌 ${moduleName.toUpperCase()} — ${screen.title.split(' / ').pop()?.toUpperCase() || ''}`
+              : undefined;
 
           const payload: WSRenderPayload = {
             rootNode: screen.rootNode,
@@ -290,7 +299,7 @@ async function main() {
             targetCanvasPosition: { x: colX, y: currentCanvasY },
             pageName: options.pages ? moduleName : undefined,
             groupName: moduleName,
-            sectionTitle
+            sectionTitle,
           };
 
           if (isFirstTransmission) {
@@ -318,7 +327,6 @@ async function main() {
     log.info(`║  ${totalScreens} pantallas exportadas a Figma${''.padEnd(29)}║`);
     log.info(`║  ${moduleList.length} módulos procesados${''.padEnd(36)}║`);
     log.info(`╚${'═'.repeat(58)}╝\n`);
-
   } catch (err: any) {
     log.error('Error durante el crawling', { error: err.message });
     exitCode = 1;
@@ -331,7 +339,7 @@ async function main() {
   }
 }
 
-main().catch((err) => {
+main().catch(err => {
   log.error('Fallo del CLI', { error: String(err?.message || err) });
   process.exit(1);
 });

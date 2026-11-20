@@ -2,7 +2,7 @@ import { createLogger, formatLogRecord } from '@code-to-figma/contracts';
 import type { LogSink } from '@code-to-figma/contracts';
 
 /** Consola de Figma (Plugins → Development → Show console) */
-const figmaConsoleSink: LogSink = (r) => {
+const figmaConsoleSink: LogSink = r => {
   const line = formatLogRecord(r);
   if (r.level === 'error') console.error(line);
   else if (r.level === 'warn') console.warn(line);

@@ -12,7 +12,10 @@ export function boardColorKey(f: any): string {
   if (f.type && f.type !== 'SOLID') {
     return f.type + '(' + (f.stops || []).map((s: any) => boardColorKey(s.color)).join(',') + ')';
   }
-  const c = (v: number) => Math.round((v || 0) * 255).toString(16).padStart(2, '0');
+  const c = (v: number) =>
+    Math.round((v || 0) * 255)
+      .toString(16)
+      .padStart(2, '0');
   return '#' + c(f.r) + c(f.g) + c(f.b) + (f.a !== undefined && f.a < 0.995 ? '/' + Math.round(f.a * 100) : '');
 }
 
@@ -27,18 +30,25 @@ export function boardSignature(n: any, memo: Map<any, string>): string {
   const S = n.styles || {};
   if (n.type === 'TEXT') {
     const t = n.textData || {};
-    sig = ['T', t.fontFamily, t.fontSize, t.fontWeight, t.textAlign, (S.fills || []).map(boardColorKey).join(',')].join('|');
+    sig = ['T', t.fontFamily, t.fontSize, t.fontWeight, t.textAlign, (S.fills || []).map(boardColorKey).join(',')].join(
+      '|',
+    );
   } else if (n.type === 'SVG') {
     sig = 'S|' + boardHash(n.svgContent || '') + '|' + L.width + 'x' + L.height;
   } else {
     const pad = L.padding || {};
     const style = [
-      L.mode, L.primaryAxisAlignItems, L.counterAxisAlignItems, L.itemSpacing,
+      L.mode,
+      L.primaryAxisAlignItems,
+      L.counterAxisAlignItems,
+      L.itemSpacing,
       [pad.top, pad.right, pad.bottom, pad.left].join(','),
       (S.fills || []).map(boardColorKey).join(','),
       (S.strokes || []).map((s: any) => boardColorKey(s) + '@' + s.width).join(','),
-      JSON.stringify(S.cornerRadius ?? 0), S.opacity ?? 1, (S.boxShadow || []).length,
-      n.imageData ? 'IMG:' + (S.imageScaleMode || 'FILL') : ''
+      JSON.stringify(S.cornerRadius ?? 0),
+      S.opacity ?? 1,
+      (S.boxShadow || []).length,
+      n.imageData ? 'IMG:' + (S.imageScaleMode || 'FILL') : '',
     ].join('|');
     const h = Math.round(L.measuredHeight ?? (typeof L.height === 'number' ? L.height : 0));
     sig = 'F|' + style + '|h' + h + '[' + (n.children || []).map((c: any) => boardSignature(c, memo)).join(';') + ']';
@@ -53,7 +63,11 @@ export function boardCountNodes(n: any): number {
   return c;
 }
 
-export interface BoardGroup { id: string; name: string; occurrences: any[]; }
+export interface BoardGroup {
+  id: string;
+  name: string;
+  occurrences: any[];
+}
 
 /**
  * Nombre legible para un componente a partir del nombre de capa extraído:
@@ -62,17 +76,22 @@ export interface BoardGroup { id: string; name: string; occurrences: any[]; }
  * "Media-gallery-item theme-dark current"            → "Media Gallery Item"
  */
 export function boardCleanName(raw: string): string {
-  let s = String(raw || '').split('(')[0].trim();
-  if (s.includes('/')) return s.replace(/\s+/g, ' ');           // ya es semántico (Button / Primary)
+  let s = String(raw || '')
+    .split('(')[0]
+    .trim();
+  if (s.includes('/')) return s.replace(/\s+/g, ' '); // ya es semántico (Button / Primary)
   if (!/[-_]/.test(s)) return s.replace(/\s+/g, ' ') || 'Componente'; // legible (Input Group)
-  s = s.split(/\s+/)[0] || s;                                    // primera clase CSS
+  s = s.split(/\s+/)[0] || s; // primera clase CSS
   // Hash de CSS Modules / styled-components: tiene dígitos o varias mayúsculas internas (XeGJJ, bCyRk, 3A2TYk)
-  const isHash = (p: string) => /^[A-Za-z0-9]{4,8}$/.test(p) && (/\d/.test(p) || /[A-Z].*[A-Z]/.test(p.slice(1)) || /^[a-z][A-Z]/.test(p));
-  const parts = s.split(/__|--/).map(p => p.replace(/^_+|_+$/g, ''))
+  const isHash = (p: string) =>
+    /^[A-Za-z0-9]{4,8}$/.test(p) && (/\d/.test(p) || /[A-Z].*[A-Z]/.test(p.slice(1)) || /^[a-z][A-Z]/.test(p));
+  const parts = s
+    .split(/__|--/)
+    .map(p => p.replace(/^_+|_+$/g, ''))
     .filter(p => p && !isHash(p))
     .filter(p => !/-module$/i.test(p));
   let core = parts.length ? parts[parts.length - 1] : s;
-  if (parts.length >= 2 && core.length <= 6) core = parts[parts.length - 2] + " " + core;
+  if (parts.length >= 2 && core.length <= 6) core = parts[parts.length - 2] + ' ' + core;
   core = core.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
   return core ? core.replace(/\b\w/g, c => c.toUpperCase()) : 'Componente';
 }
@@ -88,13 +107,13 @@ export function boardDetectComponents(root: any): BoardGroup[] {
   const rootArea = Math.max(1, (root.layout?.measuredWidth || 1) * (root.layout?.measuredHeight || 1));
   const eligible = (n: any) => {
     if (n === root || n.type === 'TEXT' || n.type === 'SVG') return false;
-    if (!n.children || n.children.length === 0) return false;       // imagen/caja suelta: no es componente
+    if (!n.children || n.children.length === 0) return false; // imagen/caja suelta: no es componente
     // Demasiado trivial, salvo una caja con estilo propio + contenido (botón, badge, chip):
     // es el componente más básico de un design system
     const styled = (n.styles?.fills || []).length > 0 || (n.styles?.strokes || []).length > 0;
     if (boardCountNodes(n) < 3 && !styled) return false;
     const area = (n.layout?.measuredWidth || 0) * (n.layout?.measuredHeight || 0);
-    return area > 0 && area / rootArea < 0.35;                       // secciones enteras no
+    return area > 0 && area / rootArea < 0.35; // secciones enteras no
   };
   const counts = new Map<string, number>();
   (function count(n: any) {

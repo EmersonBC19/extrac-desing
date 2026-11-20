@@ -12,9 +12,9 @@
  * - Zero emojis (Clean vector SVG icons)
  */
 (() => {
-  "use strict";
+  'use strict';
 
-  const KEY = "__codeToFigmaActive";
+  const KEY = '__codeToFigmaActive';
   if (window[KEY]) {
     const inst = window.__codeToFigmaInstance;
     if (inst) {
@@ -32,10 +32,10 @@
   window[KEY] = true;
 
   // ── Palette & Constants ──
-  const PURPLE = "#A259FF";
-  const BLUE = "#0D99FF";
-  const DARK_BG = "rgba(15, 23, 42, 0.96)";
-  const BORDER_GLOW = "0 0 20px rgba(162, 89, 255, 0.45), inset 0 0 15px rgba(13, 153, 255, 0.12)";
+  const PURPLE = '#A259FF';
+  const BLUE = '#0D99FF';
+  const DARK_BG = 'rgba(15, 23, 42, 0.96)';
+  const BORDER_GLOW = '0 0 20px rgba(162, 89, 255, 0.45), inset 0 0 15px rgba(13, 153, 255, 0.12)';
 
   // ── Vector SVG Icons (Clean UI, Zero Emojis) ──
   const ICONS = {
@@ -52,25 +52,71 @@
     drag: `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><circle cx="9" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="5" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="15" cy="19" r="1.5"/></svg>`,
     snowflake: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/><line x1="19.07" y1="4.93" x2="4.93" y2="19.07"/></svg>`,
     component: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>`,
-    multi: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>`
+    multi: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>`,
   };
 
   // Leaf and inline tags that usually don't represent a complete component on their own
   const LEAF_TAGS = new Set([
-    "span", "p", "b", "strong", "i", "em", "svg", "path", "circle", "rect",
-    "polygon", "line", "small", "label", "img", "h1", "h2", "h3", "h4", "h5", "h6", "picture", "figure"
+    'span',
+    'p',
+    'b',
+    'strong',
+    'i',
+    'em',
+    'svg',
+    'path',
+    'circle',
+    'rect',
+    'polygon',
+    'line',
+    'small',
+    'label',
+    'img',
+    'h1',
+    'h2',
+    'h3',
+    'h4',
+    'h5',
+    'h6',
+    'picture',
+    'figure',
   ]);
 
   // Semantic container tags that represent cohesive UI blocks
   const CONTAINER_TAGS = new Set([
-    "article", "section", "nav", "aside", "header", "footer", "form",
-    "table", "ul", "ol", "dialog", "button", "details"
+    'article',
+    'section',
+    'nav',
+    'aside',
+    'header',
+    'footer',
+    'form',
+    'table',
+    'ul',
+    'ol',
+    'dialog',
+    'button',
+    'details',
   ]);
 
   // Container class substrings
   const CONTAINER_CLASSES = [
-    "card", "panel", "box", "wrapper", "container", "item", "row", "col",
-    "widget", "modal", "dialog", "header", "footer", "sidebar", "banner", "unit"
+    'card',
+    'panel',
+    'box',
+    'wrapper',
+    'container',
+    'item',
+    'row',
+    'col',
+    'widget',
+    'modal',
+    'dialog',
+    'header',
+    'footer',
+    'sidebar',
+    'banner',
+    'unit',
   ];
 
   class CodeToFigmaInspector {
@@ -114,25 +160,25 @@
       window.__codeToFigmaCaptureRegions = this.captureRegions.bind(this);
       this.showToast(
         `${ICONS.zap}Code to Figma activo`,
-        `Clic: Seleccionar · ${(/Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '') ? '⌘' : 'Ctrl')}+Clic: Multi-selección · F: Congelar pantalla`,
-        4000
+        `Clic: Seleccionar · ${/Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '') ? '⌘' : 'Ctrl'}+Clic: Multi-selección · F: Congelar pantalla`,
+        4000,
       );
     }
 
     initOverlay() {
-      this.host = document.createElement("div");
-      this.host.id = "__code_to_figma_root";
-      this.host.style.position = "fixed";
-      this.host.style.top = "0";
-      this.host.style.left = "0";
-      this.host.style.width = "100vw";
-      this.host.style.height = "100vh";
-      this.host.style.pointerEvents = "none";
-      this.host.style.zIndex = "2147483647";
+      this.host = document.createElement('div');
+      this.host.id = '__code_to_figma_root';
+      this.host.style.position = 'fixed';
+      this.host.style.top = '0';
+      this.host.style.left = '0';
+      this.host.style.width = '100vw';
+      this.host.style.height = '100vh';
+      this.host.style.pointerEvents = 'none';
+      this.host.style.zIndex = '2147483647';
 
-      this.shadow = this.host.attachShadow({ mode: "open" });
+      this.shadow = this.host.attachShadow({ mode: 'open' });
 
-      const style = document.createElement("style");
+      const style = document.createElement('style');
       style.textContent = `
         * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
         svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
@@ -586,40 +632,41 @@
       this.shadow.appendChild(style);
 
       // Elements inside Shadow DOM
-      this.freezeBanner = document.createElement("div");
-      this.freezeBanner.className = "freeze-banner";
+      this.freezeBanner = document.createElement('div');
+      this.freezeBanner.className = 'freeze-banner';
       this.freezeBanner.innerHTML = `${ICONS.snowflake} <span>Pantalla Congelada: Menús fijos. Pulsa <strong>[F]</strong> para descongelar.</span>`;
 
-      this.highlightBox = document.createElement("div");
-      this.highlightBox.className = "highlight-box";
-      this.pillBadge = document.createElement("div");
-      this.pillBadge.className = "pill-badge";
+      this.highlightBox = document.createElement('div');
+      this.highlightBox.className = 'highlight-box';
+      this.pillBadge = document.createElement('div');
+      this.pillBadge.className = 'pill-badge';
       this.highlightBox.appendChild(this.pillBadge);
 
-      this.spotlightBox = document.createElement("div");
-      this.spotlightBox.className = "spotlight-box";
+      this.spotlightBox = document.createElement('div');
+      this.spotlightBox.className = 'spotlight-box';
 
-      this.multiBoxesHost = document.createElement("div");
-      this.multiBoxesHost.className = "multi-boxes-host";
+      this.multiBoxesHost = document.createElement('div');
+      this.multiBoxesHost.className = 'multi-boxes-host';
 
-      this.backdrop = document.createElement("div");
-      this.backdrop.className = "spotlight-backdrop";
+      this.backdrop = document.createElement('div');
+      this.backdrop.className = 'spotlight-backdrop';
       // Clic en el fondo: cierra la selección; con Ctrl/⌘ suma o quita el componente de debajo
-      this.backdrop.addEventListener("click", (e) => {
+      this.backdrop.addEventListener('click', e => {
         if (!this.isMultiSelectEvent(e)) {
           this.cancelElevation();
           return;
         }
         e.preventDefault();
         e.stopPropagation();
-        const under = document.elementsFromPoint(e.clientX, e.clientY)
-          .find((n) => n !== this.host && !this.host.contains(n));
+        const under = document
+          .elementsFromPoint(e.clientX, e.clientY)
+          .find(n => n !== this.host && !this.host.contains(n));
         const container = under ? this.findSemanticContainer(under) : null;
         if (container) this.toggleInSelection(container);
       });
 
-      this.hud = document.createElement("div");
-      this.hud.className = "action-hud";
+      this.hud = document.createElement('div');
+      this.hud.className = 'action-hud';
 
       this.shadow.appendChild(this.freezeBanner);
       this.shadow.appendChild(this.highlightBox);
@@ -634,28 +681,28 @@
     }
 
     bindEvents() {
-      window.addEventListener("mousemove", this.onMouseMove, true);
-      window.addEventListener("click", this.onClick, true);
-      window.addEventListener("mousedown", this.onMouseDownBlock, true);
-      window.addEventListener("keydown", this.onKeyDown, true);
-      window.addEventListener("scroll", this.onScrollOrResize, { passive: true });
-      window.addEventListener("resize", this.onScrollOrResize, { passive: true });
+      window.addEventListener('mousemove', this.onMouseMove, true);
+      window.addEventListener('click', this.onClick, true);
+      window.addEventListener('mousedown', this.onMouseDownBlock, true);
+      window.addEventListener('keydown', this.onKeyDown, true);
+      window.addEventListener('scroll', this.onScrollOrResize, { passive: true });
+      window.addEventListener('resize', this.onScrollOrResize, { passive: true });
 
       // Free Drag & Drop listeners
-      window.addEventListener("mousemove", this.onHudMouseMove, true);
-      window.addEventListener("mouseup", this.onHudMouseUp, true);
+      window.addEventListener('mousemove', this.onHudMouseMove, true);
+      window.addEventListener('mouseup', this.onHudMouseUp, true);
     }
 
     unbindEvents() {
-      window.removeEventListener("mousemove", this.onMouseMove, true);
-      window.removeEventListener("click", this.onClick, true);
-      window.removeEventListener("mousedown", this.onMouseDownBlock, true);
-      window.removeEventListener("keydown", this.onKeyDown, true);
-      window.removeEventListener("scroll", this.onScrollOrResize);
-      window.removeEventListener("resize", this.onScrollOrResize);
+      window.removeEventListener('mousemove', this.onMouseMove, true);
+      window.removeEventListener('click', this.onClick, true);
+      window.removeEventListener('mousedown', this.onMouseDownBlock, true);
+      window.removeEventListener('keydown', this.onKeyDown, true);
+      window.removeEventListener('scroll', this.onScrollOrResize);
+      window.removeEventListener('resize', this.onScrollOrResize);
 
-      window.removeEventListener("mousemove", this.onHudMouseMove, true);
-      window.removeEventListener("mouseup", this.onHudMouseUp, true);
+      window.removeEventListener('mousemove', this.onHudMouseMove, true);
+      window.removeEventListener('mouseup', this.onHudMouseUp, true);
 
       // Unbind freeze listeners if active
       if (this.isFrozen) {
@@ -666,28 +713,24 @@
     // ── Freeze Screen Mode (Hotkey F / Space) ──
     toggleFreeze() {
       this.isFrozen = !this.isFrozen;
-      const blockEvents = ["blur", "focusout", "mouseleave", "mouseout", "pointerleave"];
+      const blockEvents = ['blur', 'focusout', 'mouseleave', 'mouseout', 'pointerleave'];
 
       if (this.isFrozen) {
-        this.freezeBanner.classList.add("visible");
+        this.freezeBanner.classList.add('visible');
         for (const evt of blockEvents) {
           window.addEventListener(evt, this.onFreezeBlock, true);
         }
         this.showToast(
           `${ICONS.snowflake} Pantalla Congelada`,
-          "Los menús desplegables y tooltips no se cerrarán al mover el ratón.",
-          3000
+          'Los menús desplegables y tooltips no se cerrarán al mover el ratón.',
+          3000,
         );
       } else {
-        this.freezeBanner.classList.remove("visible");
+        this.freezeBanner.classList.remove('visible');
         for (const evt of blockEvents) {
           window.removeEventListener(evt, this.onFreezeBlock, true);
         }
-        this.showToast(
-          `${ICONS.zap} Pantalla Descongelada`,
-          "Interacción fluida normal restaurada.",
-          2500
-        );
+        this.showToast(`${ICONS.zap} Pantalla Descongelada`, 'Interacción fluida normal restaurada.', 2500);
       }
     }
 
@@ -701,8 +744,8 @@
     // ── Live Figma Status Check ──
     async checkFigmaStatus() {
       try {
-        if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage) {
-          chrome.runtime.sendMessage({ type: "CHECK_FIGMA_STATUS" }, (res) => {
+        if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+          chrome.runtime.sendMessage({ type: 'CHECK_FIGMA_STATUS' }, res => {
             if (chrome.runtime.lastError) return;
             if (res && res.success && res.status) {
               this.figmaStatus = res.status;
@@ -719,18 +762,18 @@
     }
 
     updateFigmaStatusUI() {
-      const pill = this.hud?.querySelector("#__hud_figma_status");
+      const pill = this.hud?.querySelector('#__hud_figma_status');
       if (!pill) return;
       if (this.figmaStatus.figmaConnected) {
-        pill.className = "hud-status-pill connected";
+        pill.className = 'hud-status-pill connected';
         pill.innerHTML = `<span class="status-dot"></span> Figma Conectado`;
-        pill.title = "WebSocket Hub y Plugin de Figma enlazados en tiempo real";
+        pill.title = 'WebSocket Hub y Plugin de Figma enlazados en tiempo real';
       } else if (this.figmaStatus.hubRunning) {
-        pill.className = "hud-status-pill waiting";
+        pill.className = 'hud-status-pill waiting';
         pill.innerHTML = `<span class="status-dot"></span> Esperando Figma`;
-        pill.title = "Hub activo en puerto 8080. Abre el plugin en Figma para enlazar";
+        pill.title = 'Hub activo en puerto 8080. Abre el plugin en Figma para enlazar';
       } else {
-        pill.className = "hud-status-pill disconnected";
+        pill.className = 'hud-status-pill disconnected';
         pill.innerHTML = `<span class="status-dot"></span> Hub Desconectado`;
         pill.title = "Ejecuta 'npm run start:hub' en la terminal";
       }
@@ -748,7 +791,7 @@
       let curr = el;
       while (curr && curr.parentElement && curr.parentElement !== document.body) {
         const tag = curr.tagName.toLowerCase();
-        const parentClasses = (curr.parentElement.className || "").toString().toLowerCase();
+        const parentClasses = (curr.parentElement.className || '').toString().toLowerCase();
 
         // 1. If leaf or media, hoist to parent
         if (LEAF_TAGS.has(tag)) {
@@ -757,10 +800,16 @@
         }
 
         // 2. If container only wraps media and parent has headings/copy, hoist to parent
-        const isMediaWrapper = (tag === 'figure' || tag === 'picture' || parentClasses.includes('unit-image') || (curr.className || '').toString().includes('unit-image')) ||
+        const isMediaWrapper =
+          tag === 'figure' ||
+          tag === 'picture' ||
+          parentClasses.includes('unit-image') ||
+          (curr.className || '').toString().includes('unit-image') ||
           (curr.querySelector('img, svg, video') && !curr.querySelector('h1, h2, h3, h4, h5, h6, p, button, a'));
         if (isMediaWrapper && curr.parentElement && curr.parentElement !== document.body) {
-          const parentHasText = !!curr.parentElement.querySelector('h1, h2, h3, h4, h5, h6, p, button, a, [class*="copy"], [class*="headline"], [class*="subhead"]');
+          const parentHasText = !!curr.parentElement.querySelector(
+            'h1, h2, h3, h4, h5, h6, p, button, a, [class*="copy"], [class*="headline"], [class*="subhead"]',
+          );
           if (parentHasText) {
             curr = curr.parentElement;
             continue;
@@ -775,7 +824,7 @@
         if (isParentCard) {
           const grandParent = curr.parentElement.parentElement;
           if (grandParent && grandParent !== document.body) {
-            const gpClasses = (grandParent.className || "").toString().toLowerCase();
+            const gpClasses = (grandParent.className || '').toString().toLowerCase();
             const isGpCard = CONTAINER_CLASSES.some(cls => gpClasses.includes(cls));
             if (isGpCard && !curr.parentElement.querySelector('h1, h2, h3, h4, h5, h6, p')) {
               return grandParent;
@@ -787,7 +836,7 @@
         // 5. Check display mode: Flex/Grid with multiple children
         try {
           const pStyle = window.getComputedStyle(curr);
-          if (pStyle.display === "flex" || pStyle.display === "grid") {
+          if (pStyle.display === 'flex' || pStyle.display === 'grid') {
             const r = curr.getBoundingClientRect();
             if (r.width > 90 && r.height > 60) return curr;
           }
@@ -814,20 +863,20 @@
 
     updateHighlight(el) {
       if (!el || el === document.documentElement) {
-        this.highlightBox.style.display = "none";
+        this.highlightBox.style.display = 'none';
         return;
       }
 
       const rect = el.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0) {
-        this.highlightBox.style.display = "none";
+        this.highlightBox.style.display = 'none';
         return;
       }
 
       const cs = window.getComputedStyle(el);
-      const radius = cs.borderRadius || "8px";
+      const radius = cs.borderRadius || '8px';
 
-      this.highlightBox.style.display = "block";
+      this.highlightBox.style.display = 'block';
       this.highlightBox.style.top = `${rect.top}px`;
       this.highlightBox.style.left = `${rect.left}px`;
       this.highlightBox.style.width = `${rect.width}px`;
@@ -836,29 +885,29 @@
 
       // Tag & dimensions
       const tag = el.tagName.toLowerCase();
-      const cls = el.className && typeof el.className === "string" ? "." + el.className.trim().split(/\s+/)[0] : "";
+      const cls = el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/)[0] : '';
       const label = `${tag}${cls}`;
       const dims = `${Math.round(rect.width)} × ${Math.round(rect.height)} px`;
 
       // Position badge: top if enough room, else inside top
       if (rect.top < 40) {
-        this.pillBadge.style.top = "6px";
-        this.pillBadge.style.left = "6px";
+        this.pillBadge.style.top = '6px';
+        this.pillBadge.style.left = '6px';
       } else {
-        this.pillBadge.style.top = "-34px";
-        this.pillBadge.style.left = "0";
+        this.pillBadge.style.top = '-34px';
+        this.pillBadge.style.left = '0';
       }
 
       this.pillBadge.innerHTML = `
         <span class="pill-tag">&lt;${label.slice(0, 24)}&gt;</span>
         <span class="pill-dims">${dims}</span>
-        <span class="pill-hint">${ICONS.arrowUp}${ICONS.arrowDown} Jerarquía · ${(/Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '') ? '⌘' : 'Ctrl')}+Clic Multi</span>
+        <span class="pill-hint">${ICONS.arrowUp}${ICONS.arrowDown} Jerarquía · ${/Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '') ? '⌘' : 'Ctrl'}+Clic Multi</span>
       `;
     }
 
     /** Ctrl + clic en Windows/Linux, ⌘ + clic en Mac (en Mac Ctrl + clic abre el menú contextual) */
     isMultiSelectEvent(e) {
-      const isMac = /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || "");
+      const isMac = /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '');
       return isMac ? e.metaKey : e.ctrlKey;
     }
 
@@ -882,20 +931,22 @@
       if (!elements || elements.length === 0) return false;
       if (elements.length > 1) return true;
       const el = elements[0];
-      const tag = (el.tagName || "").toLowerCase();
-      if (tag === "body" || tag === "main" || tag === "html" || el.getAttribute("role") === "main") return true;
+      const tag = (el.tagName || '').toLowerCase();
+      if (tag === 'body' || tag === 'main' || tag === 'html' || el.getAttribute('role') === 'main') return true;
       return el.getBoundingClientRect().height > window.innerHeight * 1.5;
     }
 
     /** Suma o quita un componente de la selección múltiple */
     toggleInSelection(container) {
-      try { window.getSelection()?.removeAllRanges(); } catch (_e) {}
+      try {
+        window.getSelection()?.removeAllRanges();
+      } catch (_e) {}
       const existingIdx = this.selectedElements.indexOf(container);
       if (existingIdx >= 0) {
         this.selectedElements.splice(existingIdx, 1);
       } else {
         // Evitar anidados: si el nuevo contiene o está dentro de uno ya elegido, reemplaza
-        this.selectedElements = this.selectedElements.filter((el) => !el.contains(container) && !container.contains(el));
+        this.selectedElements = this.selectedElements.filter(el => !el.contains(container) && !container.contains(el));
         this.selectedElements.push(container);
       }
       if (this.selectedElements.length === 0) {
@@ -940,7 +991,7 @@
 
       this.isElevated = true;
       this.selectedEl = elements[0];
-      this.highlightBox.style.display = "none";
+      this.highlightBox.style.display = 'none';
 
       // Always re-ensure this.host is the absolute last child of body for highest stacking context
       const mountParent = document.body || document.documentElement;
@@ -954,7 +1005,7 @@
       this.playSheen();
 
       // Show spotlight backdrop
-      this.backdrop.classList.add("visible");
+      this.backdrop.classList.add('visible');
 
       // Render HUD toolbar with fluid responsive positioning
       this.renderHUD();
@@ -962,27 +1013,27 @@
     }
 
     renderSpotlights(elements) {
-      this.multiBoxesHost.innerHTML = "";
-      this.spotlightBox.style.display = "none";
+      this.multiBoxesHost.innerHTML = '';
+      this.spotlightBox.style.display = 'none';
 
       const placeBox = (box, el) => {
         const rect = this.baseRectOf(el);
         const cs = window.getComputedStyle(el);
         const found = this.liftOf(el);
         const lift = found && !found.suspended ? found : null;
-        box.style.display = "block";
+        box.style.display = 'block';
         box.style.top = `${rect.top}px`;
         box.style.left = `${rect.left}px`;
         box.style.width = `${rect.width}px`;
         box.style.height = `${rect.height}px`;
-        box.style.borderRadius = cs.borderRadius || "8px";
+        box.style.borderRadius = cs.borderRadius || '8px';
         // Mismo "levantamiento" que el elemento real, para que recuadro y componente se muevan juntos
-        box.style.translate = lift ? `0 ${lift.ty}px` : "";
-        box.style.scale = lift ? String(lift.s) : "";
-        box.classList.toggle("lifted", !!lift);
-        if (!box.querySelector(".spotlight-sheen")) {
-          const sheen = document.createElement("div");
-          sheen.className = "spotlight-sheen";
+        box.style.translate = lift ? `0 ${lift.ty}px` : '';
+        box.style.scale = lift ? String(lift.s) : '';
+        box.classList.toggle('lifted', !!lift);
+        if (!box.querySelector('.spotlight-sheen')) {
+          const sheen = document.createElement('div');
+          sheen.className = 'spotlight-sheen';
           box.appendChild(sheen);
         }
       };
@@ -991,8 +1042,8 @@
         placeBox(this.spotlightBox, elements[0]);
       } else {
         for (const el of elements) {
-          const box = document.createElement("div");
-          box.className = "spotlight-box";
+          const box = document.createElement('div');
+          box.className = 'spotlight-box';
           placeBox(box, el);
           this.multiBoxesHost.appendChild(box);
         }
@@ -1005,7 +1056,7 @@
     // inline previos se guardan y se restauran exactos.
 
     liftOf(el) {
-      return (this._lifts || []).find((l) => l.el === el) || null;
+      return (this._lifts || []).find(l => l.el === el) || null;
     }
 
     /** Rect del elemento sin la elevación aplicada (para no sumarla dos veces al hacer scroll) */
@@ -1017,8 +1068,8 @@
       // actuales (getComputedStyle los devuelve interpolados), no con los valores finales.
       const cs = window.getComputedStyle(el);
       const curS = parseFloat(cs.scale) || 1;
-      const tParts = (cs.translate || "").split(/\s+/);
-      const curTy = tParts.length > 1 ? (parseFloat(tParts[1]) || 0) : 0;
+      const tParts = (cs.translate || '').split(/\s+/);
+      const curTy = tParts.length > 1 ? parseFloat(tParts[1]) || 0 : 0;
       const w = r.width / curS;
       const h = r.height / curS;
       const cx = r.left + r.width / 2;
@@ -1028,30 +1079,33 @@
 
     liftElements(elements) {
       this.unliftElements();
-      const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       this._lifts = [];
       for (const el of elements) {
         if (!el || !el.style) continue;
         const r = el.getBoundingClientRect();
         const cs = window.getComputedStyle(el);
-        if (cs.display === "inline" || r.width < 4 || r.height < 4) continue; // inline no admite scale/translate
+        if (cs.display === 'inline' || r.width < 4 || r.height < 4) continue; // inline no admite scale/translate
         // Escala adaptativa: ~12px de crecimiento total, sin exagerar en secciones grandes
         const s = 1 + Math.min(0.03, 12 / Math.max(r.width, r.height));
         const ty = -Math.min(8, Math.max(3, r.height * 0.012));
         const lift = {
-          el, s, ty,
+          el,
+          s,
+          ty,
           prev: {
             translate: el.style.translate,
             scale: el.style.scale,
             transition: el.style.transition,
-            willChange: el.style.willChange
-          }
+            willChange: el.style.willChange,
+          },
         };
         if (!reduce) {
-          el.style.transition = (lift.prev.transition ? lift.prev.transition + ", " : "") +
-            "translate 0.38s cubic-bezier(0.16, 1, 0.3, 1), scale 0.38s cubic-bezier(0.16, 1, 0.3, 1)";
+          el.style.transition =
+            (lift.prev.transition ? lift.prev.transition + ', ' : '') +
+            'translate 0.38s cubic-bezier(0.16, 1, 0.3, 1), scale 0.38s cubic-bezier(0.16, 1, 0.3, 1)';
         }
-        el.style.willChange = "translate, scale";
+        el.style.willChange = 'translate, scale';
         el.style.translate = `0 ${ty}px`;
         el.style.scale = String(s);
         this._lifts.push(lift);
@@ -1078,12 +1132,12 @@
       if (!lifts.length) return () => {};
       for (const lift of lifts) {
         const st = lift.el.style;
-        st.transition = "none";
+        st.transition = 'none';
         st.translate = lift.prev.translate;
         st.scale = lift.prev.scale;
         lift.suspended = true;
       }
-      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
       return () => {
         for (const lift of lifts) {
           if (!lift.suspended) continue;
@@ -1091,19 +1145,21 @@
           lift.el.style.translate = `0 ${lift.ty}px`;
           lift.el.style.scale = String(lift.s);
           // restaurar la transición después de aplicar, para que no re-anime
-          requestAnimationFrame(() => { lift.el.style.transition = lift.prev.transition; });
+          requestAnimationFrame(() => {
+            lift.el.style.transition = lift.prev.transition;
+          });
         }
       };
     }
 
     playSheen() {
-      const boxes = [this.spotlightBox, ...this.multiBoxesHost.querySelectorAll(".spotlight-box")];
+      const boxes = [this.spotlightBox, ...this.multiBoxesHost.querySelectorAll('.spotlight-box')];
       for (const box of boxes) {
-        const sheen = box.querySelector(".spotlight-sheen");
+        const sheen = box.querySelector('.spotlight-sheen');
         if (!sheen) continue;
-        sheen.classList.remove("play");
+        sheen.classList.remove('play');
         void sheen.offsetWidth; // reiniciar la animación
-        sheen.classList.add("play");
+        sheen.classList.add('play');
       }
     }
 
@@ -1117,7 +1173,7 @@
 
     elevateChild() {
       if (this.selectedElements.length !== 1) return;
-      const child = this.selectedElements[0].querySelector("article, section, div, button, nav, form, figure");
+      const child = this.selectedElements[0].querySelector('article, section, div, button, nav, form, figure');
       if (!child || child === this.selectedElements[0]) return;
       this.selectedElements = [child];
       this.elevateElements(this.selectedElements);
@@ -1125,14 +1181,15 @@
 
     // ── Drag & Drop HUD Implementation ──
     onHudMouseDown(e) {
-      if (e.target.closest("button") || e.target.closest("a") || e.target.closest("input") || e.target.closest("label")) return;
+      if (e.target.closest('button') || e.target.closest('a') || e.target.closest('input') || e.target.closest('label'))
+        return;
       this.isDragging = true;
       this.dragStartX = e.clientX;
       this.dragStartY = e.clientY;
       const rect = this.hud.getBoundingClientRect();
       this.dragInitialLeft = rect.left;
       this.dragInitialTop = rect.top;
-      this.hud.style.cursor = "grabbing";
+      this.hud.style.cursor = 'grabbing';
       e.preventDefault();
     }
 
@@ -1163,23 +1220,23 @@
     onHudMouseUp() {
       if (!this.isDragging) return;
       this.isDragging = false;
-      this.hud.style.cursor = "default";
+      this.hud.style.cursor = 'default';
     }
 
     renderHUD() {
       const isMulti = this.selectedElements.length > 1;
-      let titleHtml = "";
-      let metaHtml = "";
+      let titleHtml = '';
+      let metaHtml = '';
 
       if (isMulti) {
         titleHtml = `${ICONS.multi} Multi-selección (${this.selectedElements.length} componentes)`;
-        metaHtml = `${(/Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '') ? '⌘' : 'Ctrl')}+Clic para sumar/quitar componentes`;
+        metaHtml = `${/Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '') ? '⌘' : 'Ctrl'}+Clic para sumar/quitar componentes`;
       } else {
         const el = this.selectedElements[0];
         const rect = el.getBoundingClientRect();
         const tag = el.tagName.toLowerCase();
         const dims = `${Math.round(rect.width)} × ${Math.round(rect.height)} px`;
-        const childCount = el.querySelectorAll("*").length;
+        const childCount = el.querySelectorAll('*').length;
         titleHtml = `${ICONS.layers} Componente Seleccionado`;
         metaHtml = `&lt;${tag}&gt; · ${dims} · ${childCount} capas`;
       }
@@ -1200,13 +1257,17 @@
 
         <div class="hud-nav-row">
           <div class="hud-nav-left">
-            ${!isMulti ? `
+            ${
+              !isMulti
+                ? `
               <span>Ajustar contenedor:</span>
               <button class="btn-hierarchy" id="__btn_hud_parent">${ICONS.arrowUp} Subir a Padre <span style="opacity:0.6;font-size:10px">[↑]</span></button>
               <button class="btn-hierarchy" id="__btn_hud_child">${ICONS.arrowDown} Bajar a Hijo <span style="opacity:0.6;font-size:10px">[↓]</span></button>
-            ` : `
+            `
+                : `
               <span style="color:#38bdf8;">${ICONS.multi} ${this.selectedElements.length} elementos agrupados listos para Figma</span>
-            `}
+            `
+            }
           </div>
 
           <label class="hud-component-toggle" title="Crear en Figma como Componente reutilizable oficial (figma.createComponent)">
@@ -1217,7 +1278,7 @@
 
         <div class="hud-buttons">
           <button class="btn-figma" id="__btn_send_figma">${ICONS.figma} Enviar a Figma <span style="opacity:0.75;font-size:10px">[Enter]</span></button>
-          <button class="btn-secondary" id="__btn_freeze">${ICONS.snowflake} ${this.isFrozen ? "Descongelar" : "Congelar"} <span style="opacity:0.75;font-size:10px">[F]</span></button>
+          <button class="btn-secondary" id="__btn_freeze">${ICONS.snowflake} ${this.isFrozen ? 'Descongelar' : 'Congelar'} <span style="opacity:0.75;font-size:10px">[F]</span></button>
           <button class="btn-secondary" id="__btn_copy_json">${ICONS.copy} Copiar JSON</button>
           <button class="btn-secondary" id="__btn_cancel">${ICONS.close} Cancelar <span style="opacity:0.75;font-size:10px">[Esc]</span></button>
         </div>
@@ -1245,39 +1306,40 @@
 
       this.hud.style.top = `${Math.round(hudTop)}px`;
       this.hud.style.left = `${Math.round(hudLeft)}px`;
-      this.hud.style.display = "block";
+      this.hud.style.display = 'block';
 
       // Attach Drag & Drop listener to header
-      const header = this.hud.querySelector("#__hud_header");
+      const header = this.hud.querySelector('#__hud_header');
       if (header) {
-        header.addEventListener("mousedown", this.onHudMouseDown);
+        header.addEventListener('mousedown', this.onHudMouseDown);
       }
 
       // Attach button & toggle events
-      const btnSend = this.hud.querySelector("#__btn_send_figma");
-      const btnFreeze = this.hud.querySelector("#__btn_freeze");
-      const btnCopy = this.hud.querySelector("#__btn_copy_json");
-      const btnCancel = this.hud.querySelector("#__btn_cancel");
-      const chkComponent = this.hud.querySelector("#__chk_component");
-      const btnParent = this.hud.querySelector("#__btn_hud_parent");
-      const btnChild = this.hud.querySelector("#__btn_hud_child");
+      const btnSend = this.hud.querySelector('#__btn_send_figma');
+      const btnFreeze = this.hud.querySelector('#__btn_freeze');
+      const btnCopy = this.hud.querySelector('#__btn_copy_json');
+      const btnCancel = this.hud.querySelector('#__btn_cancel');
+      const chkComponent = this.hud.querySelector('#__chk_component');
+      const btnParent = this.hud.querySelector('#__btn_hud_parent');
+      const btnChild = this.hud.querySelector('#__btn_hud_child');
 
-      if (btnSend) btnSend.addEventListener("click", () => this.sendToFigma());
-      if (btnFreeze) btnFreeze.addEventListener("click", () => {
-        this.toggleFreeze();
-        this.renderHUD();
-      });
-      if (btnCopy) btnCopy.addEventListener("click", () => this.copyJson());
-      if (btnCancel) btnCancel.addEventListener("click", () => this.cancelElevation());
+      if (btnSend) btnSend.addEventListener('click', () => this.sendToFigma());
+      if (btnFreeze)
+        btnFreeze.addEventListener('click', () => {
+          this.toggleFreeze();
+          this.renderHUD();
+        });
+      if (btnCopy) btnCopy.addEventListener('click', () => this.copyJson());
+      if (btnCancel) btnCancel.addEventListener('click', () => this.cancelElevation());
 
       if (chkComponent) {
-        chkComponent.addEventListener("change", (e) => {
+        chkComponent.addEventListener('change', e => {
           this.createAsComponent = e.target.checked;
         });
       }
 
-      if (btnParent) btnParent.addEventListener("click", () => this.elevateParent());
-      if (btnChild) btnChild.addEventListener("click", () => this.elevateChild());
+      if (btnParent) btnParent.addEventListener('click', () => this.elevateParent());
+      if (btnChild) btnChild.addEventListener('click', () => this.elevateChild());
 
       this.updateFigmaStatusUI();
     }
@@ -1286,10 +1348,10 @@
       if (!this.isElevated) return;
 
       this.unliftElements();
-      this.spotlightBox.style.display = "none";
-      this.multiBoxesHost.innerHTML = "";
-      this.backdrop.classList.remove("visible");
-      this.hud.style.display = "none";
+      this.spotlightBox.style.display = 'none';
+      this.multiBoxesHost.innerHTML = '';
+      this.backdrop.classList.remove('visible');
+      this.hud.style.display = 'none';
       this.isElevated = false;
       this.selectedEl = null;
       this.selectedElements = [];
@@ -1302,7 +1364,7 @@
     async sendToFigma() {
       if (this.selectedElements.length === 0) return;
 
-      const btn = this.hud.querySelector("#__btn_send_figma");
+      const btn = this.hud.querySelector('#__btn_send_figma');
       if (btn) {
         btn.innerHTML = `${ICONS.spinner} Extrayendo componentes e imágenes...`;
         btn.disabled = true;
@@ -1310,7 +1372,7 @@
 
       try {
         if (!window.__codeToFigmaExtract) {
-          throw new Error("Motor de extracción no cargado en la página");
+          throw new Error('Motor de extracción no cargado en la página');
         }
 
         let rootNode;
@@ -1321,71 +1383,71 @@
         try {
           await this.prepareForExtraction(this.selectedElements);
 
-        if (this.selectedElements.length === 1) {
-          const res = await window.__codeToFigmaExtract(this.selectedElements[0]);
-          if (!res) throw new Error("No se pudo estructurar el componente");
-          rootNode = res.rootNode || res;
-          tokens = res.tokens;
-        } else {
-          // Multi-selection: Extract all selected elements and bundle in a parent frame
-          const results = await Promise.all(this.selectedElements.map(el => window.__codeToFigmaExtract(el)));
-          const validNodes = [];
-          for (const r of results) {
-            if (r) {
-              const node = r.rootNode || r;
-              validNodes.push(node);
-              if (!tokens && r.tokens) tokens = r.tokens;
+          if (this.selectedElements.length === 1) {
+            const res = await window.__codeToFigmaExtract(this.selectedElements[0]);
+            if (!res) throw new Error('No se pudo estructurar el componente');
+            rootNode = res.rootNode || res;
+            tokens = res.tokens;
+          } else {
+            // Multi-selection: Extract all selected elements and bundle in a parent frame
+            const results = await Promise.all(this.selectedElements.map(el => window.__codeToFigmaExtract(el)));
+            const validNodes = [];
+            for (const r of results) {
+              if (r) {
+                const node = r.rootNode || r;
+                validNodes.push(node);
+                if (!tokens && r.tokens) tokens = r.tokens;
+              }
             }
+            if (validNodes.length === 0) {
+              throw new Error('No se pudo extraer ningún componente de la selección');
+            }
+
+            let minLeft = Infinity;
+            let minTop = Infinity;
+            let maxRight = -Infinity;
+            let maxBottom = -Infinity;
+
+            for (const el of this.selectedElements) {
+              const r = el.getBoundingClientRect();
+              minLeft = Math.min(minLeft, r.left);
+              minTop = Math.min(minTop, r.top);
+              maxRight = Math.max(maxRight, r.right);
+              maxBottom = Math.max(maxBottom, r.bottom);
+            }
+
+            const children = validNodes.map((childNode, idx) => {
+              const el = this.selectedElements[idx];
+              const r = el.getBoundingClientRect();
+              if (!childNode.layout) childNode.layout = {};
+              childNode.layout.x = Math.round(r.left - minLeft);
+              childNode.layout.y = Math.round(r.top - minTop);
+              childNode.layout.positioning = 'ABSOLUTE';
+              return childNode;
+            });
+
+            const totalW = Math.max(100, Math.round(maxRight - minLeft));
+            const totalH = Math.max(50, Math.round(maxBottom - minTop));
+
+            rootNode = {
+              id: 'multi_selection_bundle_' + Date.now(),
+              name: `Multi-selection (${children.length} componentes)`,
+              type: this.createAsComponent ? 'COMPONENT' : 'FRAME',
+              layout: {
+                mode: 'NONE',
+                width: totalW,
+                height: totalH,
+                measuredWidth: totalW,
+                measuredHeight: totalH,
+                padding: { top: 0, right: 0, bottom: 0, left: 0 },
+                itemSpacing: 0,
+              },
+              styles: {
+                fills: [],
+              },
+              children,
+            };
           }
-          if (validNodes.length === 0) {
-            throw new Error("No se pudo extraer ningún componente de la selección");
-          }
-
-          let minLeft = Infinity;
-          let minTop = Infinity;
-          let maxRight = -Infinity;
-          let maxBottom = -Infinity;
-
-          for (const el of this.selectedElements) {
-            const r = el.getBoundingClientRect();
-            minLeft = Math.min(minLeft, r.left);
-            minTop = Math.min(minTop, r.top);
-            maxRight = Math.max(maxRight, r.right);
-            maxBottom = Math.max(maxBottom, r.bottom);
-          }
-
-          const children = validNodes.map((childNode, idx) => {
-            const el = this.selectedElements[idx];
-            const r = el.getBoundingClientRect();
-            if (!childNode.layout) childNode.layout = {};
-            childNode.layout.x = Math.round(r.left - minLeft);
-            childNode.layout.y = Math.round(r.top - minTop);
-            childNode.layout.positioning = 'ABSOLUTE';
-            return childNode;
-          });
-
-          const totalW = Math.max(100, Math.round(maxRight - minLeft));
-          const totalH = Math.max(50, Math.round(maxBottom - minTop));
-
-          rootNode = {
-            id: 'multi_selection_bundle_' + Date.now(),
-            name: `Multi-selection (${children.length} componentes)`,
-            type: this.createAsComponent ? 'COMPONENT' : 'FRAME',
-            layout: {
-              mode: 'NONE',
-              width: totalW,
-              height: totalH,
-              measuredWidth: totalW,
-              measuredHeight: totalH,
-              padding: { top: 0, right: 0, bottom: 0, left: 0 },
-              itemSpacing: 0
-            },
-            styles: {
-              fills: []
-            },
-            children
-          };
-        }
         } finally {
           // Medición terminada: devolver la elevación (sin re-animar el reflejo)
           if (this.isElevated) relift();
@@ -1399,48 +1461,47 @@
           createAsComponent: this.createAsComponent,
           // Landing completa o varios componentes → Figma lo organiza como design system
           board: this.shouldBuildBoard(this.selectedElements),
-          source: { url: location.href, title: document.title }
+          source: { url: location.href, title: document.title },
         });
 
         // Visual success pulse
-        this.spotlightBox.style.borderColor = "#10b981";
-        this.spotlightBox.style.boxShadow = "0 0 45px rgba(16, 185, 129, 0.65)";
+        this.spotlightBox.style.borderColor = '#10b981';
+        this.spotlightBox.style.boxShadow = '0 0 45px rgba(16, 185, 129, 0.65)';
 
         if (btn) {
           btn.innerHTML = `${ICONS.check} ¡Enviado a Figma con éxito!`;
-          btn.style.background = "#10b981";
-          btn.style.borderColor = "#059669";
+          btn.style.background = '#10b981';
+          btn.style.borderColor = '#059669';
         }
 
         this.showToast(
           `${ICONS.check} Enviado a Figma con éxito`,
           `"${rootNode.name}" transmitido correctamente.`,
-          4000
+          4000,
         );
 
         setTimeout(() => {
           if (btn) {
             btn.innerHTML = `${ICONS.figma} Enviar a Figma <span style="opacity:0.75;font-size:10px">[Enter]</span>`;
-            btn.style.background = "";
-            btn.style.borderColor = "";
+            btn.style.background = '';
+            btn.style.borderColor = '';
             btn.disabled = false;
           }
           // Regresar al modo inspector para poder seguir seleccionando componentes sin desactivar
           this.cancelElevation();
         }, 1200);
-
       } catch (err) {
-        console.error("[CodeToFigma] Error enviando a Figma:", err);
+        console.error('[CodeToFigma] Error enviando a Figma:', err);
         if (btn) {
           btn.innerHTML = `${ICONS.figma} Enviar a Figma <span style="opacity:0.75;font-size:10px">[Enter]</span>`;
           btn.disabled = false;
         }
         const msg = String(err?.message || err);
-        if (msg.includes("Hub") || msg.includes("WebSocket") || msg.includes("8080") || msg.includes("conect")) {
+        if (msg.includes('Hub') || msg.includes('WebSocket') || msg.includes('8080') || msg.includes('conect')) {
           this.showToast(
             `${ICONS.warning} Hub no detectado en puerto 8080`,
             "Asegúrate de ejecutar 'npm run start:hub'. Puedes usar 'Copiar JSON' para pegar en Figma.",
-            5500
+            5500,
           );
         } else {
           this.showToast(`${ICONS.warning} Error de extracción`, msg, 5500);
@@ -1455,19 +1516,16 @@
      */
     transmitToWebSocket(payloadData) {
       return new Promise((resolve, reject) => {
-        if (typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.sendMessage) {
-          return reject(new Error("La extensión no está disponible en esta pestaña. Recarga la página."));
+        if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.sendMessage) {
+          return reject(new Error('La extensión no está disponible en esta pestaña. Recarga la página.'));
         }
-        chrome.runtime.sendMessage(
-          { type: "TRANSMIT_TO_FIGMA", payload: payloadData, clearPage: false },
-          (response) => {
-            if (chrome.runtime.lastError) {
-              return reject(new Error("La extensión se recargó o no responde. Recarga la página e inténtalo de nuevo."));
-            }
-            if (response && response.success) resolve(true);
-            else reject(new Error(response?.error || "Error al transmitir a través del service worker"));
+        chrome.runtime.sendMessage({ type: 'TRANSMIT_TO_FIGMA', payload: payloadData, clearPage: false }, response => {
+          if (chrome.runtime.lastError) {
+            return reject(new Error('La extensión se recargó o no responde. Recarga la página e inténtalo de nuevo.'));
           }
-        );
+          if (response && response.success) resolve(true);
+          else reject(new Error(response?.error || 'Error al transmitir a través del service worker'));
+        });
       });
     }
 
@@ -1488,7 +1546,11 @@
         }
         const json = JSON.stringify(dataToCopy, null, 2);
         navigator.clipboard.writeText(json).then(() => {
-          this.showToast(`${ICONS.copy} JSON copiado al portapapeles`, "Pégalo en el plugin de Figma directamente.", 3000);
+          this.showToast(
+            `${ICONS.copy} JSON copiado al portapapeles`,
+            'Pégalo en el plugin de Figma directamente.',
+            3000,
+          );
         });
       } catch (err) {
         console.error(err);
@@ -1497,10 +1559,10 @@
 
     onKeyDown(e) {
       // Don't intercept if user is typing in an input or textarea
-      const activeTag = (document.activeElement?.tagName || "").toLowerCase();
-      const isInput = activeTag === "input" || activeTag === "textarea" || document.activeElement?.isContentEditable;
+      const activeTag = (document.activeElement?.tagName || '').toLowerCase();
+      const isInput = activeTag === 'input' || activeTag === 'textarea' || document.activeElement?.isContentEditable;
 
-      if (e.key === "Escape") {
+      if (e.key === 'Escape') {
         if (this.isElevated) {
           this.cancelElevation();
         } else {
@@ -1510,7 +1572,10 @@
       }
 
       // Freeze Mode Hotkeys: 'f', 'F', or Space (when not typing in an input)
-      if ((e.key === "f" || e.key === "F" || e.code === "KeyF" || (e.code === "Space" && !this.isElevated)) && !isInput) {
+      if (
+        (e.key === 'f' || e.key === 'F' || e.code === 'KeyF' || (e.code === 'Space' && !this.isElevated)) &&
+        !isInput
+      ) {
         e.preventDefault();
         e.stopPropagation();
         this.toggleFreeze();
@@ -1518,18 +1583,18 @@
         return;
       }
 
-      if (e.key === "Enter" && this.isElevated && !isInput) {
+      if (e.key === 'Enter' && this.isElevated && !isInput) {
         e.preventDefault();
         this.sendToFigma();
         return;
       }
 
       if (this.isElevated && this.selectedElements.length === 1 && !isInput) {
-        if (e.key === "ArrowUp") {
+        if (e.key === 'ArrowUp') {
           e.preventDefault();
           this.elevateParent();
           return;
-        } else if (e.key === "ArrowDown") {
+        } else if (e.key === 'ArrowDown') {
           e.preventDefault();
           this.elevateChild();
           return;
@@ -1537,15 +1602,15 @@
       }
 
       if (!this.isElevated && this.hoveredEl && !isInput) {
-        if (e.key === "ArrowUp") {
+        if (e.key === 'ArrowUp') {
           e.preventDefault();
           if (this.hoveredEl.parentElement && this.hoveredEl.parentElement !== document.documentElement) {
             this.hoveredEl = this.hoveredEl.parentElement;
             this.updateHighlight(this.hoveredEl);
           }
-        } else if (e.key === "ArrowDown") {
+        } else if (e.key === 'ArrowDown') {
           e.preventDefault();
-          const firstChild = this.hoveredEl.querySelector("article, section, div, button, nav, form, figure");
+          const firstChild = this.hoveredEl.querySelector('article, section, div, button, nav, form, figure');
           if (firstChild) {
             this.hoveredEl = firstChild;
             this.updateHighlight(this.hoveredEl);
@@ -1564,17 +1629,17 @@
     }
 
     showToast(title, desc, duration = 3000) {
-      const toast = document.createElement("div");
-      toast.className = "toast-msg";
+      const toast = document.createElement('div');
+      toast.className = 'toast-msg';
       toast.innerHTML = `
         <div class="toast-title">${title}</div>
         <div class="toast-desc">${desc}</div>
       `;
       this.shadow.appendChild(toast);
       setTimeout(() => {
-        toast.style.opacity = "0";
-        toast.style.transform = "translateY(10px)";
-        toast.style.transition = "all 0.3s ease";
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(10px)';
+        toast.style.transition = 'all 0.3s ease';
         setTimeout(() => toast.remove(), 300);
       }, duration);
     }
@@ -1588,7 +1653,7 @@
       delete window[KEY];
       delete window.__codeToFigmaInstance;
       delete window.__codeToFigmaCaptureRegions;
-      console.log("[CodeToFigma] Inspector cerrado por el usuario.");
+      console.log('[CodeToFigma] Inspector cerrado por el usuario.');
     }
 
     /**
@@ -1599,7 +1664,7 @@
      *  - espera (máx. 3 s) a que las imágenes terminen de cargar.
      */
     async prepareForExtraction(elements) {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
       const imgs = [];
       let top = Infinity;
       let bottom = -Infinity;
@@ -1608,8 +1673,8 @@
         const r = el.getBoundingClientRect();
         top = Math.min(top, r.top + window.scrollY);
         bottom = Math.max(bottom, r.bottom + window.scrollY);
-        el.querySelectorAll("img").forEach((img) => {
-          if (img.loading === "lazy") img.loading = "eager";
+        el.querySelectorAll('img').forEach(img => {
+          if (img.loading === 'lazy') img.loading = 'eager';
           imgs.push(img);
         });
       }
@@ -1617,32 +1682,37 @@
       if (!this.isFrozen && isFinite(top) && bottom - top > window.innerHeight * 0.9) {
         const startX = window.scrollX;
         const startY = window.scrollY;
-        const prevVisibility = this.host ? this.host.style.visibility : "";
-        if (this.host) this.host.style.visibility = "hidden";
+        const prevVisibility = this.host ? this.host.style.visibility : '';
+        if (this.host) this.host.style.visibility = 'hidden';
         try {
           const step = Math.max(200, window.innerHeight * 0.8);
           const maxSteps = 40; // límite de seguridad en páginas muy largas
           let i = 0;
           for (let y = top; y < bottom && i < maxSteps; y += step, i++) {
-            window.scrollTo({ left: startX, top: y, behavior: "instant" });
+            window.scrollTo({ left: startX, top: y, behavior: 'instant' });
             await sleep(220);
           }
         } finally {
-          window.scrollTo({ left: startX, top: startY, behavior: "instant" });
+          window.scrollTo({ left: startX, top: startY, behavior: 'instant' });
           await sleep(350);
           if (this.host) this.host.style.visibility = prevVisibility;
           if (this.selectedElements.length) this.renderSpotlights(this.selectedElements);
         }
       }
 
-      const pending = imgs.filter((img) => !img.complete);
+      const pending = imgs.filter(img => !img.complete);
       if (pending.length) {
         await Promise.race([
-          Promise.all(pending.map((img) => new Promise((r) => {
-            img.addEventListener("load", r, { once: true });
-            img.addEventListener("error", r, { once: true });
-          }))),
-          sleep(3000)
+          Promise.all(
+            pending.map(
+              img =>
+                new Promise(r => {
+                  img.addEventListener('load', r, { once: true });
+                  img.addEventListener('error', r, { once: true });
+                }),
+            ),
+          ),
+          sleep(3000),
         ]);
       }
     }
@@ -1652,15 +1722,14 @@
      * @param {{left:number,top:number,width:number,height:number}[]} rects coordenadas de viewport
      */
     async captureRegions(rects) {
-      const prevVisibility = this.host ? this.host.style.visibility : "";
+      const prevVisibility = this.host ? this.host.style.visibility : '';
       try {
-        if (this.host) this.host.style.visibility = "hidden";
+        if (this.host) this.host.style.visibility = 'hidden';
         // Esperar a que el navegador repinte sin el overlay
-        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 60))));
-        const resp = await new Promise((resolve) => {
-          chrome.runtime.sendMessage(
-            { type: "CAPTURE_REGIONS", rects, viewportWidth: window.innerWidth },
-            (res) => resolve(chrome.runtime.lastError ? null : res)
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 60))));
+        const resp = await new Promise(resolve => {
+          chrome.runtime.sendMessage({ type: 'CAPTURE_REGIONS', rects, viewportWidth: window.innerWidth }, res =>
+            resolve(chrome.runtime.lastError ? null : res),
           );
         });
         return resp && resp.success ? resp.crops : [];

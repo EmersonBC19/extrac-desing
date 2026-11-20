@@ -65,26 +65,50 @@ Fecha de corte: 2026-11-20.
 
 ---
 
-## Fase 1 — Seguridad y privacidad
+## Fase 1 — Seguridad y privacidad — ✅ hecha (2026-11-20)
 
-### 1.1 Hub WebSocket autenticado  `[REV]` (omitido por A1 y A2)
+> **Hallazgo crítico (no estaba en A1 ni A2):** `REQUEST_VIEW_RENDER` interpolaba `viewId`, `route`, `name` y `pageName` del mensaje en un comando de shell (`exec`) y en rutas de archivo. Cualquier página web abierta en el navegador podía conectarse al hub y **ejecutar comandos en el equipo** (inyección de comandos) o leer JSON fuera de `scratch/views` (path traversal). Confirmado con una prueba real contra la versión anterior: el comando inyectado se ejecutó. Corregido: solo ids del catálogo, rutas de URL simples y `execFile` sin shell.
+>
+> Pruebas: `scratch/_hub_security_test.cjs` (19/19; contra el hub anterior 5/17), `scratch/_plugin_pairing_test.cjs` (10/10), `scratch/_schema_test.cjs` (16/16).
+
+### 1.1 Hub WebSocket autenticado  `[REV]` (omitido por A1 y A2) — ✅
+> Implementado en `packages/mcp-server/src/hub-security.ts` + `ws-hub.ts`:
+> - Origen validado en el handshake: páginas web → 403; `chrome-extension://` y procesos locales sin `Origin` → confiables; `https://*.figma.com` → confiable.
+> - Origen `null` (UI del plugin de Figma; una página atacante también puede producirlo con un iframe sandbox) → **código de vinculación** `XXXX-XXXX`, persistente en `~/.code-to-figma/pairing-code`, guardado por el plugin en `figma.clientStorage`. Comparación en tiempo constante; bloqueo 1 min tras 5 fallos; cierre a los 10 s sin vincular.
+> - Diferencia con lo planeado: la extensión no usa token (su origen no es falsificable por una web) → cero fricción para el usuario; solo el plugin se vincula una vez.
+> - Escucha en `127.0.0.1`; `maxPayload` 64 MB; nada se atiende ni se reenvía a clientes sin autenticar.
+> - `content.js` ya no abre WebSockets desde la página (el hub los rechaza y el CSP los bloqueaba): todo va por el service worker.
+> - Pendiente opcional: fijar `CTF_EXTENSION_IDS` al publicar la extensión (ID estable de la Chrome Web Store).
+
+**Riesgo:** cualquier página web puede abrir `ws://localhost:8080` (los navegadores lo permiten), dibujar en el Figma del usuario, pedir el catálogo de vistas del crawler y recibir lo que el hub reenvía.
 **Riesgo:** cualquier página web puede abrir `ws://localhost:8080` (los navegadores lo permiten), dibujar en el Figma del usuario, pedir el catálogo de vistas del crawler y recibir lo que el hub reenvía.
 - Validar el header `Origin` (aceptar solo `chrome-extension://<id>` y el origen del plugin de Figma, `null`).
 - Token compartido: el hub genera un token al arrancar; extensión y plugin lo envían en el primer mensaje (`REGISTER`) y el hub cierra conexiones sin token.
 - Escuchar solo en `127.0.0.1` (no en todas las interfaces).
 - No reenviar mensajes de un cliente a otros clientes no autorizados.
 
-### 1.2 Payload de diagnóstico  `[REV]`
+### 1.2 Payload de diagnóstico  `[REV]` — ✅
+> Solo con `CTF_DEBUG_CAPTURE=1`; desactivado por defecto (y el archivo sigue en `.gitignore`).
+
 - `scratch/captured-last-payload.json` guarda la captura completa (incluye imágenes). En dashboards con sesión iniciada son datos privados en disco.
 - Ponerlo detrás de un modo debug (`DEBUG_CAPTURE=1` o ajuste en el plugin) y desactivado por defecto.
 
-### 1.3 Validación de entrada en tiempo de ejecución (Zod)  `[A2]`
+### 1.3 Validación de entrada en tiempo de ejecución (Zod)  `[A2]` — ✅ hub · ⏳ plugin con Zod (fase 3)
+> - `packages/contracts/src/schemas.ts`: `validateRenderPayload` / `validateUINodeTree` (Zod 3), recorrido iterativo (un árbol malicioso no desborda la pila), límites: 400 niveles, 150.000 nodos, imagen ≤ 40 M caracteres, SVG ≤ 2 MB sin `<script>`/`javascript:`, texto ≤ 200.000.
+> - Hub: valida todo `RENDER_NODES` y responde `RENDER_ERROR` al emisor; nada inválido llega a Figma.
+> - Plugin: `guardRenderPayload` en `code.ts` con las mismas reglas (cubre "Pegar JSON"). Duplicado temporal: se reemplaza por el esquema Zod compartido cuando el plugin tenga empaquetador (3.2).
+> - Extensión: normaliza en origen los data URI de imagen codificados como URL (`data:image/svg+xml,%3Csvg…`) a base64 (falso rechazo detectado en Wikipedia).
+> - Pendiente: validar las respuestas del service worker en la extensión (llega con la migración a TS de la fase 3).
+
 - Esquemas en `@code-to-figma/contracts` para `UINode`, `RenderPayload` y cada mensaje del bus.
 - Validar en **las tres fronteras**: hub (lo que entra por WebSocket), plugin (`RENDER_NODES` y "Pegar JSON") y extensión (respuestas del service worker).
 - Límites defensivos dentro del esquema: profundidad máxima, nº de nodos, tamaño de `imageData`, `svgContent` sin `<script>`.
 - Nota: Zod no puede ir dentro del plugin sin empaquetador (el plugin compila con `tsc` a CommonJS sin bundle). Depende de 3.2.
 
-### 1.4 Fetch de imágenes con credenciales  `[REV]`
+### 1.4 Fetch de imágenes con credenciales  `[REV]` — ✅
+> `imageFetchPolicy` en `background.js`: solo http/https/data; recursos de red local (localhost, 10.x, 192.168.x, 172.16–31.x, ::1, *.local…) solo si la pestaña también es de red local; cookies solo para el mismo sitio que la pestaña (`credentials: "omit"` en el resto). La URL de la pestaña la da Chrome (`sender.tab.url`), no el mensaje. 14 casos verificados.
+> Limitación conocida: un dominio público que resuelve a IP privada no se detecta (el service worker no resuelve DNS); Chrome añade su propia protección (Private Network Access).
+
 - `background.js` descarga imágenes con `credentials: "include"` para plataformas con login. Limitar a URLs que aparecen en el DOM extraído (ya es así) y bloquear IPs privadas / `file:` salvo en la pestaña de origen, para evitar que una página induzca descargas internas.
 
 ---
@@ -100,6 +124,10 @@ Ya existen y funcionan; hay que formalizarlas en `tests/` con un runner (**Vites
 | `_harness.cjs` | **Imágenes**: todas extraídas, ≤4096 px, formato PNG/JPEG/GIF, carruseles completos (9/9 galería Apple, 15/15 página sintética). |
 | `_figma_mock.cjs` + `_board_sim.cjs` | **Plugin sin Figma**: render normal, tablero, multi-selección, límite de páginas, fallo forzado → fallback. |
 | `_dump_text.cjs` | **Texto**: saltos de línea conservados, superíndices (`¹`), tramos de estilo. |
+| `_hub_security_test.cjs` | **Seguridad del hub**: origen, vinculación, fuerza bruta, inyección de comandos, path traversal, red local, payload malicioso. |
+| `_plugin_pairing_test.cjs` | **Vinculación del plugin**: primera vez, código incorrecto, reapertura, compatibilidad con hub antiguo. |
+| `_schema_test.cjs` | **Esquemas**: extracciones reales aceptadas (Apple, GitHub, Wikipedia, sintética) y payloads maliciosos rechazados. |
+| `test-drag-inspector.ts` | **Inspector**: arrastre de la barra y persistencia de su posición. |
 | Página sintética (`scratchpad/site`) | Fixture local: carrusel con transform, scroll-snap, fade, WebP/SVG, `image-set`, `::before` con imagen, video con póster, iframe, WebGL. |
 
 - **Fixtures congeladas**: guardar HTML+CSS estáticos de las páginas de referencia (no depender de que apple.com cambie).

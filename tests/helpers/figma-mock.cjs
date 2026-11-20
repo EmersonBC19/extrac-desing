@@ -187,6 +187,8 @@ function createFigma(opts = {}) {
     set fontSize(v) {
       this._need();
       this._fontSize = v;
+      // el ancho aproximado depende del tamaño (como en Figma con textAutoResize)
+      if (this._chars) this.characters = this._chars;
     }
     getRangeAllFontNames() {
       return [this._fontName];

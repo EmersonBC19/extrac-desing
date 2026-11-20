@@ -297,6 +297,9 @@ describe('tablero design system', () => {
     const sets = comps.children.filter((c: any) => c.type === 'COMPONENT_SET');
     expect(sets).toHaveLength(1);
     expect(sets[0].name).toBe('Tile Ctas');
+    // QA-9: sin etiquetas propias encima (Figma ya muestra el nombre); los usos van en la descripción
+    expect(comps.children.filter((c: any) => c.type === 'TEXT')).toEqual([]);
+    expect(sets[0].description).toContain('2 variantes (Size) · 4 usos');
     expect(sets[0].children.map((c: any) => c.name).sort()).toEqual(['Size=L', 'Size=S']);
     // Las 4 apariciones de la vista completa son instancias de las variantes
     const full = sectionsOf(figma).find((s: any) => s.name === '01 · Página completa');
@@ -443,6 +446,22 @@ describe('tablero design system', () => {
     const names = sub.children.filter((c: any) => c.type !== 'TEXT').map((c: any) => c.name);
     expect(names.some((n: string) => /Fondo/.test(n))).toBe(false);
     expect(names.length).toBe(3);
+  });
+
+  it('QA-3/9/10/4: Sections claras, 03 sin etiquetas propias y colores a la derecha de la tipografía', async () => {
+    const figma = await runPlugin({ rootNode: clone(landing), board: true, source: { url: 'https://x.test/' } });
+    for (const sec of sectionsOf(figma)) expect(sec.fills[0].color.r).toBeGreaterThan(0.9);
+    const comps = sectionsOf(figma).find((x: any) => x.name === '03 · Componentes');
+    if (comps) {
+      expect(comps.children.filter((c: any) => c.type === 'TEXT')).toEqual([]);
+      expect(comps.children.every((c: any) => /usos/.test(c.description || ''))).toBe(true);
+    }
+    const styles = sectionsOf(figma).find((x: any) => x.name === '04 · Estilos');
+    const texts = styles.children.filter((c: any) => c.type === 'TEXT');
+    const colorsTitle = texts.find((t: any) => /^Colores/.test(t.characters));
+    const typography = texts.filter((t: any) => t.x < colorsTitle.x);
+    expect(typography.length).toBeGreaterThan(1);
+    for (const t of typography) expect(t.x + t.width).toBeLessThan(colorsTitle.x);
   });
 
   it('si el tablero falla, limpia lo creado y dibuja en modo normal', async () => {

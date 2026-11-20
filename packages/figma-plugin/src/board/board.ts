@@ -186,15 +186,21 @@ export async function boardLabel(
   return t;
 }
 
+/** Fondo de las Sections del tablero: claro y fijo, legible con la UI de Figma clara u oscura (QA-3) */
+const BOARD_BG: RGB = { r: 0.965, g: 0.965, b: 0.973 };
+
 export function boardNewSection(name: string): SectionNode | FrameNode {
   if (typeof (figma as any).createSection === 'function') {
     const s = figma.createSection();
     s.name = name;
+    try {
+      s.fills = [{ type: 'SOLID', color: BOARD_BG }];
+    } catch (_e) {}
     return s;
   }
   const f = figma.createFrame(); // fallback para versiones sin Sections
   f.name = name;
-  f.fills = [{ type: 'SOLID', color: { r: 0.97, g: 0.97, b: 0.98 } }];
+  f.fills = [{ type: 'SOLID', color: BOARD_BG }];
   return f;
 }
 
@@ -258,6 +264,7 @@ export async function boardBuildStyles(scope: SceneNode[], stylesSec: SectionNod
     .slice(0, 24);
 
   let y = PAD;
+  let typoRight = PAD + 600;
   const title = await boardLabel('Tipografía', 32, 700, { r: 0.1, g: 0.1, b: 0.12 });
   stylesSec.appendChild(title);
   title.x = PAD;
@@ -294,6 +301,7 @@ export async function boardBuildStyles(scope: SceneNode[], stylesSec: SectionNod
       stylesSec.appendChild(meta);
       meta.x = PAD;
       meta.y = y + sample.height + 6;
+      typoRight = Math.max(typoRight, sample.x + sample.width, meta.x + meta.width);
       y += sample.height + 48;
     } catch (_e) {}
   }
@@ -327,7 +335,7 @@ export async function boardBuildStyles(scope: SceneNode[], stylesSec: SectionNod
     }
   }
 
-  const cx = 1100;
+  const cx = Math.round(typoRight + 160);
   let cy = PAD;
   const ctitle = await boardLabel(vars ? 'Colores · Variables' : 'Colores', 32, 700, { r: 0.1, g: 0.1, b: 0.12 });
   stylesSec.appendChild(ctitle);
@@ -622,12 +630,11 @@ export async function buildDesignBoard(
       rowH = 0;
     }
     n.x = gx;
-    n.y = gy + 40;
-    const lbl = await boardLabel(item.label, 16, 600, { r: 0.33, g: 0.2, b: 0.8 });
-    compSec.appendChild(lbl);
-    lbl.x = gx;
-    lbl.y = gy;
-    gx += n.width + 120;
+    n.y = gy + 40; // hueco para el nombre que Figma dibuja encima de cada componente
+    try {
+      (n as ComponentNode | ComponentSetNode).description = item.label;
+    } catch (_e) {}
+    gx += n.width + 160;
     rowH = Math.max(rowH, n.height + 40);
   }
 

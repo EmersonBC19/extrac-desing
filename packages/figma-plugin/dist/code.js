@@ -7337,15 +7337,20 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     t.fills = [{ type: "SOLID", color, opacity }];
     return t;
   }
+  var BOARD_BG = { r: 0.965, g: 0.965, b: 0.973 };
   function boardNewSection(name) {
     if (typeof figma.createSection === "function") {
       const s = figma.createSection();
       s.name = name;
+      try {
+        s.fills = [{ type: "SOLID", color: BOARD_BG }];
+      } catch (_e) {
+      }
       return s;
     }
     const f = figma.createFrame();
     f.name = name;
-    f.fills = [{ type: "SOLID", color: { r: 0.97, g: 0.97, b: 0.98 } }];
+    f.fills = [{ type: "SOLID", color: BOARD_BG }];
     return f;
   }
   function boardFitSection(sec, pad = 100) {
@@ -7397,6 +7402,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     }
     const typeScale = [...tGroups.values()].sort((a, b) => b.size - a.size || b.nodes.length - a.nodes.length).slice(0, 24);
     let y = PAD;
+    let typoRight = PAD + 600;
     const title = await boardLabel("Tipografía", 32, 700, { r: 0.1, g: 0.1, b: 0.12 });
     stylesSec.appendChild(title);
     title.x = PAD;
@@ -7435,6 +7441,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         stylesSec.appendChild(meta2);
         meta2.x = PAD;
         meta2.y = y + sample.height + 6;
+        typoRight = Math.max(typoRight, sample.x + sample.width, meta2.x + meta2.width);
         y += sample.height + 48;
       } catch (_e) {
       }
@@ -7464,7 +7471,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         });
       }
     }
-    const cx = 1100;
+    const cx = Math.round(typoRight + 160);
     let cy = PAD;
     const ctitle = await boardLabel(vars ? "Colores · Variables" : "Colores", 32, 700, { r: 0.1, g: 0.1, b: 0.12 });
     stylesSec.appendChild(ctitle);
@@ -7729,11 +7736,11 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
       }
       n.x = gx;
       n.y = gy + 40;
-      const lbl = await boardLabel(item.label, 16, 600, { r: 0.33, g: 0.2, b: 0.8 });
-      compSec.appendChild(lbl);
-      lbl.x = gx;
-      lbl.y = gy;
-      gx += n.width + 120;
+      try {
+        n.description = item.label;
+      } catch (_e) {
+      }
+      gx += n.width + 160;
       rowH = Math.max(rowH, n.height + 40);
     }
     progress(

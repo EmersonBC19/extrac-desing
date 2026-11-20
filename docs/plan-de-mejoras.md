@@ -298,22 +298,28 @@ Hoy se pierden o se aproximan:
 
 ---
 
-## Fase 7 — Distribución "cero terminal"  `[A1-A]` `[A1]`
+## Fase 7 — Distribución "cero terminal"  `[A1-A]` `[A1]` — 📄 documentada, sin ejecutar
+
+> **Plan de ejecución completo: [fase-7-distribucion.md](fase-7-distribucion.md)** (2026-11-20), con
+> la investigación de las reglas actuales, la comparación de opciones, los pasos, las pruebas y los
+> criterios de terminado.
+>
+> **Hallazgos que cambian el alcance:**
+> - Figma exige `documentAccess: "dynamic-page"` a los plugins nuevos: hay que migrar a APIs
+>   asíncronas (inventario en el documento).
+> - Desde Chrome 142, Figma en el navegador necesita el permiso "Apps en el dispositivo" para que el
+>   plugin se conecte al hub local; hoy solo "no conecta".
+> - La descarga de imágenes es lo que justifica `<all_urls>`; puede pasar a permiso opcional.
+>
+> **Antes de ejecutar:** (1) verificaciones V1–V6 (paso 7.0); (2) decisión del responsable del
+> producto: hub instalado que arranca solo (**recomendada**), Native Messaging o relay en la nube.
 
 ### 7.1 Eliminar la dependencia de la terminal
-- Opciones a evaluar:
-  1. **Hub empaquetado** como app de bandeja (Tauri/Go) que arranca con el sistema, con puerto configurable y detección de puerto ocupado.
-  2. **Native Messaging** de Chrome: la extensión lanza el host local sin terminal (requiere instalador).
-  3. **Relay en la nube** con emparejamiento extensión↔plugin por código (sin nada local, pero implica servidor y privacidad).
-- Mientras tanto: el fallback "Copiar JSON / Pegar JSON" ya existe.
+- Opciones A/B/C comparadas en el documento (§ 3). Mientras tanto, "Copiar JSON / Pegar JSON" sigue funcionando.
 
 ### 7.2 Publicación  `[A1]` `[REV]`
-- **Chrome Web Store**: justificar `host_permissions: <all_urls>` (descarga de imágenes cross-origin) o reducirlo a permisos opcionales por sitio.
-- **Figma Community**:
-  - `networkAccess.allowedDomains: ["*"]` → acotar y justificar.
-  - Verificar las reglas actuales sobre conexiones a `localhost` en plugins publicados.
-  - Verificar si se exige `documentAccess: "dynamic-page"`; de ser así, migrar a APIs asíncronas: `figma.currentPage =` → `setCurrentPageAsync`, `getNodeById` → `getNodeByIdAsync`, `getLocalPaintStyles` → `getLocalPaintStylesAsync`, `textStyleId =` → `setTextStyleIdAsync`, `fillStyleId =` → `setFillStyleIdAsync`.
-- Instalador único / guía de instalación para usuarios no técnicos.
+- Chrome Web Store (permisos mínimos, ID estable, política de privacidad) y Figma Community (`dynamic-page`, `networkAccess` acotado): pasos 7.3 y 7.4 del documento.
+- Instaladores, firma de código y guía para no técnicos: paso 7.5. Release automatizado: paso 7.6.
 
 ---
 

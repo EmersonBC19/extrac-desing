@@ -113,7 +113,22 @@ Fecha de corte: 2026-11-20.
 
 ---
 
-## Fase 2 — Red de seguridad (pruebas)
+## Fase 2 — Red de seguridad (pruebas) — ✅ hecha (2026-11-20)
+
+> **Resultado:** `npm test` = 155 pruebas (102 unitarias + 53 de integración, ~70 s, sin red) + `npm run test:live` = 9 sobre sitios reales. CI en `.github/workflows/tests.yml`. Detalle en `tests/README.md`.
+>
+> **Bugs reales que encontraron las pruebas al escribirlas** (corregidos):
+> - Los **botones nunca se convertían en componentes** del tablero: el detector exigía ≥ 3 nodos y un botón es caja + texto. Ahora cuenta toda caja con estilo propio + contenido.
+> - La **decoración `::before`/`::after` de cajas vacías se perdía** (brillos, formas de fondo): solo se extraía en elementos con hijos.
+> - Un **icono centrado** salía como "MIN + padding": igual a la vista, pero se descentraba al redimensionar en Figma. Ahora se prefiere CENTER.
+> - `image-set("a.png" 1x)` con comillas devolvía null.
+>
+> **Dependencias:**
+> - Zod 3.25.76 tenía un aviso de severidad alta (GHSA-mrhx-c7xc-m3w5: agotamiento de memoria con colecciones grandes). Actualizado a **Zod 4.6.7**; los esquemas funcionan sin cambios.
+> - Playwright fijado en 1.63.0 (con `^` npm instalaba 1.65, que requiere otro Chromium).
+> - ⏳ **Pendiente:** `@modelcontextprotocol/sdk` ≤ 1.31 tiene avisos altos (y arrastra `hono`, `body-parser`, `qs`, `fast-uri`, `ip-address`). `npm audit fix` lo corrige sin cambio de versión mayor, pero el servidor MCP no tiene pruebas: actualizar junto con pruebas del servidor MCP (ver 4.x).
+>
+> Pendiente menor: el nombre de capa de un título incluye texto sr-only (`Heading 2 / iPad texto s…`); el texto exportado ya lo excluye.
 
 ### 2.1 Convertir las herramientas existentes en suite  `[A2]` `[REV]`
 Ya existen y funcionan; hay que formalizarlas en `tests/` con un runner (**Vitest** `[A2]` + Playwright):
@@ -134,7 +149,8 @@ Ya existen y funcionan; hay que formalizarlas en `tests/` con un runner (**Vites
 - ✅ **Página sintética en el repo**: `tests/fixtures/synthetic/` (`index.html`, `hero.html`, `shot.html`, generador de imágenes y servidor), movida desde la carpeta temporal de la sesión.
 - **Pruebas unitarias** puras: `boardDetectComponents`, `boardCleanName`, `fitAutoLayoutToGeometry`, `fitWrapToGeometry`, `buildRichText`, `extractBgUrl`, `parseColor`, `parseGradient`.
 - **Snapshot del contrato**: forma del JSON exportado, para detectar cambios accidentales.
-- CI (GitHub Actions) ejecutando la suite en cada push.
+- ✅ CI (GitHub Actions) ejecutando la suite en cada push.
+- ⏳ Pruebas del servidor MCP (`index.ts`, `crawl-cli.ts`): no cubiertas; necesarias antes de actualizar su SDK.
 
 ---
 

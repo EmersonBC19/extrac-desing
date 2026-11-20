@@ -7,1194 +7,6 @@
       __defProp(target, name, { get: all[name], enumerable: true });
   };
 
-  // packages/figma-plugin/src/fonts.ts
-  var availableFontsCache = null;
-  var fontLookupMap = /* @__PURE__ */ new Map();
-  async function initFontCache() {
-    if (availableFontsCache && fontLookupMap.size > 0) return;
-    try {
-      if (typeof figma.listAvailableFontsAsync === "function") {
-        availableFontsCache = await figma.listAvailableFontsAsync();
-        fontLookupMap.clear();
-        for (const f of availableFontsCache) {
-          const famLower = f.fontName.family.toLowerCase();
-          if (!fontLookupMap.has(famLower)) {
-            fontLookupMap.set(famLower, []);
-          }
-          fontLookupMap.get(famLower).push(f.fontName);
-        }
-      }
-    } catch (err) {
-      console.warn("Advertencia: No se pudo obtener la lista de fuentes disponibles:", err);
-    }
-  }
-  function resolveFontWeight(weight) {
-    const num = typeof weight === "string" ? parseInt(weight, 10) : weight;
-    if (isNaN(num)) {
-      const lower = String(weight).toLowerCase();
-      if (lower.includes("black") || lower.includes("900")) return "Black";
-      if (lower.includes("extra") && lower.includes("bold") || lower.includes("800")) return "Extra Bold";
-      if (lower.includes("bold") || lower.includes("700")) return "Bold";
-      if (lower.includes("semibold") || lower.includes("semi-bold") || lower.includes("600")) return "Semi Bold";
-      if (lower.includes("medium") || lower.includes("500")) return "Medium";
-      if (lower.includes("light") || lower.includes("300")) return "Light";
-      if (lower.includes("thin") || lower.includes("100")) return "Thin";
-      return "Regular";
-    }
-    if (num >= 900) return "Black";
-    if (num >= 800) return "Extra Bold";
-    if (num >= 700) return "Bold";
-    if (num >= 600) return "Semi Bold";
-    if (num >= 500) return "Medium";
-    if (num >= 400) return "Regular";
-    if (num >= 300) return "Light";
-    return "Regular";
-  }
-  async function loadFontSafely(fontFamily, fontWeight) {
-    try {
-      await figma.loadFontAsync({ family: "Inter", style: "Regular" });
-    } catch (_e) {
-    }
-    await initFontCache();
-    const rawFamily = (fontFamily || "Inter").split(",")[0].replace(/['"]/g, "").trim() || "Inter";
-    const targetStyle = resolveFontWeight(fontWeight);
-    const isApple = /^(sf pro|-apple-system|blinkmacsystemfont|apple)/i.test(rawFamily);
-    const candidates = isApple ? [rawFamily, "SF Pro Display", "SF Pro Text", "SF Pro", "Segoe UI", "Inter", "Helvetica Neue", "Arial", "Roboto"] : [rawFamily, "Inter", "Segoe UI", "Roboto", "Arial"];
-    const styleVariants = [targetStyle];
-    if (targetStyle === "Semi Bold") styleVariants.push("Semibold", "Semi-Bold", "Demibold");
-    else if (targetStyle === "Extra Bold") styleVariants.push("Extrabold", "Extra-Bold");
-    else if (targetStyle === "Bold") styleVariants.push("Bold");
-    else if (targetStyle === "Medium") styleVariants.push("Medium");
-    else if (targetStyle === "Regular") styleVariants.push("Regular");
-    if (!styleVariants.includes("Regular")) styleVariants.push("Regular");
-    if (fontLookupMap.size > 0) {
-      for (const cand of candidates) {
-        const availableStyles = fontLookupMap.get(cand.toLowerCase());
-        if (availableStyles && availableStyles.length > 0) {
-          for (const wantStyle of styleVariants) {
-            const match = availableStyles.find((s) => s.style.toLowerCase() === wantStyle.toLowerCase());
-            if (match) {
-              try {
-                await figma.loadFontAsync(match);
-                return match;
-              } catch (_e) {
-              }
-            }
-          }
-          const regularMatch = availableStyles.find((s) => s.style.toLowerCase() === "regular") || availableStyles[0];
-          try {
-            await figma.loadFontAsync(regularMatch);
-            return regularMatch;
-          } catch (_e) {
-          }
-        }
-      }
-    }
-    const interVariants = [targetStyle, "Regular"];
-    for (const st of interVariants) {
-      try {
-        const f = { family: "Inter", style: st };
-        await figma.loadFontAsync(f);
-        return f;
-      } catch (_e) {
-      }
-    }
-    return { family: "Inter", style: "Regular" };
-  }
-  async function prewarmFonts(node2) {
-    try {
-      await figma.loadFontAsync({ family: "Inter", style: "Regular" });
-    } catch (_e) {
-    }
-    await initFontCache();
-    const fontsToLoad = /* @__PURE__ */ new Set();
-    function traverse(n) {
-      if (n.type === "TEXT" && n.textData) {
-        const fam = n.textData.fontFamily || "Inter";
-        const weight = n.textData.fontWeight || 400;
-        fontsToLoad.add(`${fam}:::${weight}`);
-      }
-      if (n.children) {
-        for (const child of n.children) traverse(child);
-      }
-    }
-    traverse(node2);
-    await Promise.all(
-      Array.from(fontsToLoad).map(async (key) => {
-        const [family, weight] = key.split(":::");
-        await loadFontSafely(family, weight);
-      })
-    );
-  }
-
-  // packages/figma-plugin/src/paint.ts
-  function base64ToBytes(dataUrl) {
-    const clean = dataUrl.replace(/^data:[^;]+;base64,/, "").replace(/\s/g, "");
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    const lookup = new Uint8Array(256);
-    for (let i = 0; i < chars.length; i++) lookup[chars.charCodeAt(i)] = i;
-    let len = Math.floor(clean.length * 0.75);
-    if (clean.endsWith("==")) len -= 2;
-    else if (clean.endsWith("=")) len -= 1;
-    const bytes = new Uint8Array(len);
-    let p = 0;
-    for (let i = 0; i < clean.length; i += 4) {
-      const e1 = lookup[clean.charCodeAt(i)], e2 = lookup[clean.charCodeAt(i + 1)];
-      const e3 = lookup[clean.charCodeAt(i + 2)], e4 = lookup[clean.charCodeAt(i + 3)];
-      bytes[p++] = e1 << 2 | e2 >> 4;
-      if (clean[i + 2] !== "=") bytes[p++] = (e2 & 15) << 4 | e3 >> 2;
-      if (clean[i + 3] !== "=") bytes[p++] = (e3 & 3) << 6 | e4 & 63;
-    }
-    return bytes;
-  }
-  function cssFillToPaint(f) {
-    if (f.type === "GRADIENT_RADIAL") {
-      const transform2 = [
-        [0.5, 0, 0.5],
-        [0, 0.5, 0.5]
-      ];
-      return {
-        type: "GRADIENT_RADIAL",
-        gradientTransform: transform2,
-        gradientStops: (f.stops || []).map((s) => ({
-          position: Math.max(0, Math.min(1, s.position)),
-          color: { r: s.color.r, g: s.color.g, b: s.color.b, a: s.color.a !== void 0 ? s.color.a : 1 }
-        }))
-      };
-    }
-    if (f.type === "GRADIENT_LINEAR") {
-      const angleDeg = typeof f.angle === "number" ? f.angle : 180;
-      const rad = (angleDeg - 90) * Math.PI / 180;
-      const cos = Math.cos(rad);
-      const sin = Math.sin(rad);
-      const x1 = 0.5 - 0.5 * cos;
-      const y1 = 0.5 - 0.5 * sin;
-      const x2 = 0.5 + 0.5 * cos;
-      const y2 = 0.5 + 0.5 * sin;
-      const dx = x2 - x1;
-      const dy = y2 - y1;
-      const transform2 = [
-        [dx, dy, x1],
-        [-dy, dx, y1]
-      ];
-      return {
-        type: "GRADIENT_LINEAR",
-        gradientTransform: transform2,
-        gradientStops: (f.stops || []).map((s) => ({
-          position: Math.max(0, Math.min(1, s.position)),
-          color: { r: s.color.r, g: s.color.g, b: s.color.b, a: s.color.a !== void 0 ? s.color.a : 1 }
-        }))
-      };
-    }
-    return {
-      type: "SOLID",
-      color: { r: f.r, g: f.g, b: f.b },
-      opacity: f.a !== void 0 ? f.a : 1
-    };
-  }
-
-  // packages/figma-plugin/src/board/context.ts
-  var current = null;
-  function getBoardCtx() {
-    return current;
-  }
-  function setBoardCtx(ctx) {
-    current = ctx;
-  }
-
-  // packages/figma-plugin/src/board/pure.ts
-  function boardHash(str) {
-    let h = 5381;
-    for (let i = 0; i < str.length; i++) h = (h << 5) + h + str.charCodeAt(i) | 0;
-    return (h >>> 0).toString(36);
-  }
-  function boardColorKey(f) {
-    if (!f) return "-";
-    if (f.type && f.type !== "SOLID") {
-      return f.type + "(" + (f.stops || []).map((s) => boardColorKey(s.color)).join(",") + ")";
-    }
-    const c = (v) => Math.round((v || 0) * 255).toString(16).padStart(2, "0");
-    return "#" + c(f.r) + c(f.g) + c(f.b) + (f.a !== void 0 && f.a < 0.995 ? "/" + Math.round(f.a * 100) : "");
-  }
-  function boardSignature(n, memo2) {
-    if (memo2.has(n)) return memo2.get(n);
-    let sig;
-    const L = n.layout || {};
-    const S = n.styles || {};
-    if (n.type === "TEXT") {
-      const t = n.textData || {};
-      sig = ["T", t.fontFamily, t.fontSize, t.fontWeight, t.textAlign, (S.fills || []).map(boardColorKey).join(",")].join("|");
-    } else if (n.type === "SVG") {
-      sig = "S|" + boardHash(n.svgContent || "") + "|" + L.width + "x" + L.height;
-    } else {
-      const pad = L.padding || {};
-      const style = [
-        L.mode,
-        L.primaryAxisAlignItems,
-        L.counterAxisAlignItems,
-        L.itemSpacing,
-        [pad.top, pad.right, pad.bottom, pad.left].join(","),
-        (S.fills || []).map(boardColorKey).join(","),
-        (S.strokes || []).map((s) => boardColorKey(s) + "@" + s.width).join(","),
-        JSON.stringify(S.cornerRadius ?? 0),
-        S.opacity ?? 1,
-        (S.boxShadow || []).length,
-        n.imageData ? "IMG:" + (S.imageScaleMode || "FILL") : ""
-      ].join("|");
-      const h = Math.round(L.measuredHeight ?? (typeof L.height === "number" ? L.height : 0));
-      sig = "F|" + style + "|h" + h + "[" + (n.children || []).map((c) => boardSignature(c, memo2)).join(";") + "]";
-    }
-    memo2.set(n, sig);
-    return sig;
-  }
-  function boardCountNodes(n) {
-    let c = 1;
-    for (const ch of n.children || []) c += boardCountNodes(ch);
-    return c;
-  }
-  function boardCleanName(raw) {
-    let s = String(raw || "").split("(")[0].trim();
-    if (s.includes("/")) return s.replace(/\s+/g, " ");
-    if (!/[-_]/.test(s)) return s.replace(/\s+/g, " ") || "Componente";
-    s = s.split(/\s+/)[0] || s;
-    const isHash = (p) => /^[A-Za-z0-9]{4,8}$/.test(p) && (/\d/.test(p) || /[A-Z].*[A-Z]/.test(p.slice(1)) || /^[a-z][A-Z]/.test(p));
-    const parts = s.split(/__|--/).map((p) => p.replace(/^_+|_+$/g, "")).filter((p) => p && !isHash(p)).filter((p) => !/-module$/i.test(p));
-    let core = parts.length ? parts[parts.length - 1] : s;
-    if (parts.length >= 2 && core.length <= 6) core = parts[parts.length - 2] + " " + core;
-    core = core.replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
-    return core ? core.replace(/\b\w/g, (c) => c.toUpperCase()) : "Componente";
-  }
-  function boardDetectComponents(root) {
-    const memo2 = /* @__PURE__ */ new Map();
-    boardSignature(root, memo2);
-    const rootArea = Math.max(1, (root.layout?.measuredWidth || 1) * (root.layout?.measuredHeight || 1));
-    const eligible = (n) => {
-      if (n === root || n.type === "TEXT" || n.type === "SVG") return false;
-      if (!n.children || n.children.length === 0) return false;
-      const styled = (n.styles?.fills || []).length > 0 || (n.styles?.strokes || []).length > 0;
-      if (boardCountNodes(n) < 3 && !styled) return false;
-      const area = (n.layout?.measuredWidth || 0) * (n.layout?.measuredHeight || 0);
-      return area > 0 && area / rootArea < 0.35;
-    };
-    const counts = /* @__PURE__ */ new Map();
-    (function count(n) {
-      if (eligible(n)) counts.set(memo2.get(n), (counts.get(memo2.get(n)) || 0) + 1);
-      (n.children || []).forEach(count);
-    })(root);
-    let allowed = new Set([...counts.entries()].filter(([, c]) => c >= 2).map(([s]) => s));
-    let assigned = /* @__PURE__ */ new Map();
-    for (let iter = 0; iter < 4; iter++) {
-      assigned = /* @__PURE__ */ new Map();
-      (function pick2(n) {
-        const s = memo2.get(n);
-        if (eligible(n) && allowed.has(s)) {
-          if (!assigned.has(s)) assigned.set(s, []);
-          assigned.get(s).push(n);
-          return;
-        }
-        (n.children || []).forEach(pick2);
-      })(root);
-      const next = new Set([...assigned.entries()].filter(([, occ]) => occ.length >= 2).map(([s]) => s));
-      if (next.size === allowed.size) break;
-      allowed = next;
-    }
-    const groups = [];
-    const usedNames = /* @__PURE__ */ new Map();
-    for (const [, occ] of assigned) {
-      if (occ.length < 2) continue;
-      const base = boardCleanName(occ[0].name);
-      const k = (usedNames.get(base) || 0) + 1;
-      usedNames.set(base, k);
-      const id = "cg_" + groups.length;
-      groups.push({ id, name: k > 1 ? `${base} ${k}` : base, occurrences: occ });
-      for (const o of occ) o.__cg = id;
-    }
-    return groups;
-  }
-  function boardCollect(n, pred, out = []) {
-    if (pred(n)) out.push(n);
-    for (const c of n.children || []) boardCollect(c, pred, out);
-    return out;
-  }
-
-  // packages/figma-plugin/src/board/board.ts
-  async function buildBoardInstance(nodeData, master) {
-    const inst = master.createInstance();
-    inst.name = nodeData.name || master.name;
-    const dataTexts = boardCollect(nodeData, (x) => x.type === "TEXT");
-    const figTexts = inst.findAll((n) => n.type === "TEXT");
-    if (dataTexts.length === figTexts.length) {
-      for (let i = 0; i < figTexts.length; i++) {
-        const want = dataTexts[i].textData?.characters ?? "";
-        const tn = figTexts[i];
-        if (tn.characters === want) continue;
-        try {
-          const fonts = tn.characters.length ? tn.getRangeAllFontNames(0, tn.characters.length) : [tn.fontName];
-          for (const f of fonts) await figma.loadFontAsync(f);
-          tn.characters = want || " ";
-        } catch (_e) {
-        }
-      }
-    }
-    const dataImgs = boardCollect(nodeData, (x) => !!x.imageData);
-    const figImgs = inst.findAll((n) => "fills" in n && Array.isArray(n.fills) && n.fills.some((p) => p.type === "IMAGE"));
-    if (dataImgs.length === figImgs.length) {
-      for (let i = 0; i < figImgs.length; i++) {
-        try {
-          const image = figma.createImage(base64ToBytes(dataImgs[i].imageData));
-          figImgs[i].fills = figImgs[i].fills.map((p) => p.type === "IMAGE" ? { ...p, imageHash: image.hash } : p);
-        } catch (_e) {
-        }
-      }
-    }
-    const w = nodeData.layout?.measuredWidth ?? (typeof nodeData.layout?.width === "number" ? nodeData.layout.width : inst.width);
-    const h = nodeData.layout?.measuredHeight ?? (typeof nodeData.layout?.height === "number" ? nodeData.layout.height : inst.height);
-    try {
-      if (w > 0 && h > 0) inst.resize(w, h);
-    } catch (_e) {
-    }
-    return inst;
-  }
-  function boardPickSections(root) {
-    const bigKids = (n) => {
-      if (!("children" in n)) return [];
-      return n.children.filter((c) => c.visible !== false && c.type !== "TEXT" && c.height >= 60 && c.width >= n.width * 0.4).sort((a, b) => a.y - b.y);
-    };
-    const SECTION_MAX_H = 1400;
-    function expand(n, depth) {
-      const kids = bigKids(n);
-      if (depth < 4 && n.height > SECTION_MAX_H && kids.length >= 2) {
-        return kids.flatMap((k) => expand(k, depth + 1));
-      }
-      if (depth < 4 && kids.length === 1 && kids[0].height >= n.height * 0.9 && n.height > SECTION_MAX_H) {
-        return expand(kids[0], depth + 1);
-      }
-      return [n];
-    }
-    let top = bigKids(root);
-    for (let depth = 0; top.length === 1 && depth < 5; depth++) top = bigKids(top[0]);
-    return top.flatMap((k) => expand(k, 0));
-  }
-  function boardHeadingOf(n) {
-    if (!("findAll" in n)) return "";
-    const texts = n.findAll((c) => c.type === "TEXT").slice(0, 12);
-    let best = null;
-    for (const t of texts) {
-      const fs = typeof t.fontSize === "number" ? t.fontSize : 0;
-      const bestFs = best && typeof best.fontSize === "number" ? best.fontSize : -1;
-      if (t.characters.trim().length > 2 && fs > bestFs) best = t;
-    }
-    const s = best ? best.characters.replace(/\s+/g, " ").trim() : "";
-    return s.length > 48 ? s.slice(0, 47) + "…" : s;
-  }
-  async function boardLabel(text, size, weight, color, opacity = 1) {
-    const font = await loadFontSafely("Inter", weight);
-    const t = figma.createText();
-    t.fontName = font;
-    t.characters = text;
-    t.fontSize = size;
-    t.fills = [{ type: "SOLID", color, opacity }];
-    return t;
-  }
-  function boardNewSection(name) {
-    if (typeof figma.createSection === "function") {
-      const s = figma.createSection();
-      s.name = name;
-      return s;
-    }
-    const f = figma.createFrame();
-    f.name = name;
-    f.fills = [{ type: "SOLID", color: { r: 0.97, g: 0.97, b: 0.98 } }];
-    return f;
-  }
-  function boardFitSection(sec, pad = 100) {
-    const kids = sec.children;
-    if (!kids.length) {
-      try {
-        sec.resizeWithoutConstraints(400, 200);
-      } catch (_e) {
-      }
-      return;
-    }
-    const maxR = Math.max(...kids.map((k) => k.x + k.width));
-    const maxB = Math.max(...kids.map((k) => k.y + k.height));
-    try {
-      sec.resizeWithoutConstraints(Math.max(400, maxR + pad), Math.max(200, maxB + pad));
-    } catch (_e) {
-      try {
-        sec.resize(Math.max(400, maxR + pad), Math.max(200, maxB + pad));
-      } catch (_e2) {
-      }
-    }
-  }
-  function insideInstance(n) {
-    for (let p = n.parent; p; p = p.parent) if (p.type === "INSTANCE") return true;
-    return false;
-  }
-  async function boardBuildStyles(scope, stylesSec, prefix) {
-    const PAD = 100;
-    const textNodes = [];
-    const fillNodes = [];
-    for (const s of scope) {
-      if ("findAll" in s) {
-        for (const n of s.findAll(() => true)) {
-          if (insideInstance(n)) continue;
-          if (n.type === "TEXT") textNodes.push(n);
-          else if ("fills" in n && n.fills !== figma.mixed) fillNodes.push(n);
-        }
-      }
-    }
-    const tGroups = /* @__PURE__ */ new Map();
-    for (const tn of textNodes) {
-      if (tn.fontName === figma.mixed || tn.fontSize === figma.mixed || tn.lineHeight === figma.mixed) continue;
-      const f = tn.fontName;
-      const lh = tn.lineHeight;
-      const lhKey = lh.unit === "AUTO" ? "auto" : Math.round(lh.value);
-      const key = `${f.family}|${f.style}|${tn.fontSize}|${lhKey}`;
-      if (!tGroups.has(key)) tGroups.set(key, { font: f, size: tn.fontSize, lh, nodes: [] });
-      tGroups.get(key).nodes.push(tn);
-    }
-    const typeScale = [...tGroups.values()].sort((a, b) => b.size - a.size || b.nodes.length - a.nodes.length).slice(0, 24);
-    let y = PAD;
-    const title = await boardLabel("Tipografía", 32, 700, { r: 0.1, g: 0.1, b: 0.12 });
-    stylesSec.appendChild(title);
-    title.x = PAD;
-    title.y = y;
-    y += 70;
-    for (const g of typeScale) {
-      try {
-        const st = figma.createTextStyle();
-        st.name = `${prefix}/Texto/${Math.round(g.size)} ${g.font.style}`;
-        st.fontName = g.font;
-        st.fontSize = g.size;
-        st.lineHeight = g.lh;
-        for (const tn of g.nodes) {
-          try {
-            tn.textStyleId = st.id;
-          } catch (_e) {
-          }
-        }
-        const sample = figma.createText();
-        sample.fontName = g.font;
-        sample.characters = `${Math.round(g.size)} · ${g.font.family} ${g.font.style} — Aa Bb 123`;
-        sample.fontSize = Math.min(g.size, 72);
-        try {
-          sample.textStyleId = st.id;
-        } catch (_e) {
-        }
-        sample.fontSize = Math.min(g.size, 72);
-        stylesSec.appendChild(sample);
-        sample.x = PAD;
-        sample.y = y;
-        const meta2 = await boardLabel(`${st.name.split("/").slice(-1)[0]} · ${g.nodes.length} usos`, 12, 400, { r: 0.45, g: 0.45, b: 0.5 });
-        stylesSec.appendChild(meta2);
-        meta2.x = PAD;
-        meta2.y = y + sample.height + 6;
-        y += sample.height + 48;
-      } catch (_e) {
-      }
-    }
-    const cGroups = /* @__PURE__ */ new Map();
-    for (const n of [...fillNodes, ...textNodes]) {
-      const fills = n.fills;
-      if (!Array.isArray(fills) || fills.length !== 1 || fills[0].type !== "SOLID" || fills[0].visible === false) continue;
-      const p = fills[0];
-      const key = boardColorKey({ ...p.color, a: p.opacity ?? 1 });
-      if (!cGroups.has(key)) cGroups.set(key, { paint: p, nodes: [] });
-      cGroups.get(key).nodes.push(n);
-    }
-    const palette = [...cGroups.entries()].sort((a, b) => b[1].nodes.length - a[1].nodes.length).slice(0, 32);
-    let cx = 1100;
-    let cy = PAD;
-    const ctitle = await boardLabel("Colores", 32, 700, { r: 0.1, g: 0.1, b: 0.12 });
-    stylesSec.appendChild(ctitle);
-    ctitle.x = cx;
-    ctitle.y = cy;
-    cy += 70;
-    let col = 0;
-    for (const [hex, g] of palette) {
-      try {
-        const st = figma.createPaintStyle();
-        st.name = `${prefix}/Color/${hex}`;
-        st.paints = [g.paint];
-        for (const n of g.nodes) {
-          try {
-            n.fillStyleId = st.id;
-          } catch (_e) {
-          }
-        }
-        const sw = figma.createRectangle();
-        sw.resize(120, 120);
-        sw.cornerRadius = 12;
-        sw.fills = [g.paint];
-        sw.strokes = [{ type: "SOLID", color: { r: 0, g: 0, b: 0 }, opacity: 0.08 }];
-        try {
-          sw.fillStyleId = st.id;
-        } catch (_e) {
-        }
-        const x = cx + col * 150, yy = cy;
-        stylesSec.appendChild(sw);
-        sw.x = x;
-        sw.y = yy;
-        const lbl = await boardLabel(`${hex}
-${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
-        stylesSec.appendChild(lbl);
-        lbl.x = x;
-        lbl.y = yy + 128;
-        col++;
-        if (col === 6) {
-          col = 0;
-          cy += 190;
-        }
-      } catch (_e) {
-      }
-    }
-  }
-  async function buildDesignBoard(payload) {
-    const root = payload.rootNode;
-    root.type = "FRAME";
-    let host = "Landing";
-    try {
-      host = new URL(payload.source?.url || "").hostname.replace(/^www\./, "") || host;
-    } catch (_e) {
-    }
-    const prefix = host;
-    const page = figma.currentPage;
-    const others = page.children;
-    const originX = others.length ? Math.round(Math.max(...others.map((c) => c.x + c.width)) + 400) : 0;
-    const originY = others.length ? Math.round(Math.min(...others.map((c) => c.y))) : 0;
-    const progress = (message) => figma.ui.postMessage({ type: "LOG", level: "info", message: `Tablero · ${message}` });
-    const groups = boardDetectComponents(root);
-    const compSec = boardNewSection("03 · Componentes");
-    page.appendChild(compSec);
-    const ctx = { masters: /* @__PURE__ */ new Map() };
-    setBoardCtx(ctx);
-    let gx = 100, gy = 100, rowH = 0;
-    const MAX_ROW = 2600;
-    for (const g of groups) {
-      let built = null;
-      try {
-        const data = JSON.parse(JSON.stringify(g.occurrences[0]));
-        (function strip(n) {
-          delete n.__cg;
-          (n.children || []).forEach(strip);
-        })(data);
-        data.type = "COMPONENT";
-        data.name = g.name;
-        data.layout = { ...data.layout, positioning: "AUTO", x: 0, y: 0 };
-        built = await buildFigmaNode(data);
-        if (!built || built.type !== "COMPONENT") throw new Error("no se generó como componente");
-        const master = built;
-        compSec.appendChild(master);
-        master.description = `${g.occurrences.length} usos en ${host}`;
-        if (gx > 100 && gx + master.width > MAX_ROW) {
-          gx = 100;
-          gy += rowH + 140;
-          rowH = 0;
-        }
-        master.x = gx;
-        master.y = gy + 40;
-        const lbl = await boardLabel(`${g.name} · ${g.occurrences.length} usos`, 16, 600, { r: 0.33, g: 0.2, b: 0.8 });
-        compSec.appendChild(lbl);
-        lbl.x = gx;
-        lbl.y = gy;
-        gx += master.width + 120;
-        rowH = Math.max(rowH, master.height + 40);
-        ctx.masters.set(g.id, master);
-      } catch (compErr) {
-        if (built && !built.removed) {
-          try {
-            built.remove();
-          } catch (_e) {
-          }
-        }
-        figma.ui.postMessage({ type: "LOG", level: "warn", message: `Componente "${g.name}" omitido: ${compErr?.message || compErr}` });
-      }
-    }
-    progress(`${ctx.masters.size} componentes creados`);
-    const fullSec = boardNewSection("01 · Página completa");
-    page.appendChild(fullSec);
-    const full = await buildFigmaNode(root);
-    const componentCount = ctx.masters.size;
-    setBoardCtx(null);
-    if (!full) throw new Error("No se pudo generar la vista completa");
-    fullSec.appendChild(full);
-    full.x = 100;
-    full.y = 100;
-    progress(`vista completa lista (${Math.round(full.width)}×${Math.round(full.height)})`);
-    const subSec = boardNewSection("02 · Secciones");
-    page.appendChild(subSec);
-    let sy = 100;
-    const isMulti = String(root.id || "").startsWith("multi_selection_bundle") && "children" in full;
-    const picked = isMulti ? [...full.children] : boardPickSections(full);
-    let subOk = 0;
-    for (let i = 0; i < picked.length; i++) {
-      let clone2 = null;
-      try {
-        const heading = boardHeadingOf(picked[i]);
-        const title = `${String(i + 1).padStart(2, "0")} · ${picked[i].name}` + (heading ? ` — ${heading}` : "");
-        const lbl = await boardLabel(title, 20, 600, { r: 0.1, g: 0.1, b: 0.12 });
-        subSec.appendChild(lbl);
-        lbl.x = 100;
-        lbl.y = sy;
-        clone2 = picked[i].clone();
-        subSec.appendChild(clone2);
-        clone2.x = 100;
-        clone2.y = sy + 44;
-        sy += 44 + clone2.height + 140;
-        subOk++;
-      } catch (subErr) {
-        if (clone2 && clone2.parent !== subSec) {
-          try {
-            clone2.remove();
-          } catch (_e) {
-          }
-        }
-        figma.ui.postMessage({ type: "LOG", level: "warn", message: `Sub-vista "${picked[i].name}" omitida: ${subErr?.message || subErr}` });
-      }
-    }
-    progress(`${subOk}/${picked.length} sub-vistas`);
-    const stylesSec = boardNewSection("04 · Estilos");
-    page.appendChild(stylesSec);
-    await boardBuildStyles([full, ...compSec.children.filter((c) => c.type === "COMPONENT")], stylesSec, prefix);
-    const order = [fullSec, subSec, compSec, stylesSec];
-    for (const s of order) boardFitSection(s);
-    let x = originX;
-    for (const s of order) {
-      if (s.children.length === 0) {
-        s.remove();
-        continue;
-      }
-      s.x = x;
-      s.y = originY;
-      x += s.width + 240;
-    }
-    figma.viewport.scrollAndZoomIntoView(order.filter((s) => !s.removed));
-    return { main: full, nodeCount: countNodes(root), components: componentCount, page };
-  }
-
-  // packages/figma-plugin/src/text-sizing.ts
-  async function applyTextSegments(tn, segments) {
-    const len = tn.characters.length;
-    for (const seg of segments) {
-      const start = Math.max(0, Math.min(len, seg.start));
-      const end = Math.max(start, Math.min(len, seg.end));
-      if (end <= start) continue;
-      try {
-        if (seg.fontFamily || seg.fontWeight) {
-          const f = await loadFontSafely(seg.fontFamily || "Inter", seg.fontWeight || 400);
-          tn.setRangeFontName(start, end, f);
-        }
-        if (seg.fontSize && seg.fontSize > 0) tn.setRangeFontSize(start, end, seg.fontSize);
-        if (seg.color) {
-          tn.setRangeFills(start, end, [{
-            type: "SOLID",
-            color: { r: seg.color.r, g: seg.color.g, b: seg.color.b },
-            opacity: seg.color.a !== void 0 ? seg.color.a : 1
-          }]);
-        }
-        if (seg.underline) tn.setRangeTextDecoration(start, end, "UNDERLINE");
-        else if (seg.strike) tn.setRangeTextDecoration(start, end, "STRIKETHROUGH");
-      } catch (err) {
-        console.warn("No se pudo aplicar tramo de texto:", err?.message || err);
-      }
-    }
-  }
-  function applyNoWrapSizing(tn, data, parentIsAutoLayout) {
-    const td = data.textData;
-    const measuredW = data.layout?.measuredWidth || (typeof data.layout?.width === "number" ? data.layout.width : 0);
-    tn.textAutoResize = "WIDTH_AND_HEIGHT";
-    const naturalW = tn.width;
-    const fitsMeasured = measuredW > 0 && naturalW <= measuredW + 0.5;
-    if (parentIsAutoLayout) {
-      if (data.layout?.width === "FILL" && fitsMeasured) {
-        try {
-          tn.layoutSizingHorizontal = "FILL";
-          tn.textAutoResize = "HEIGHT";
-        } catch (_e) {
-        }
-      } else if (typeof data.layout?.width === "number" && fitsMeasured) {
-        try {
-          tn.resize(Math.max(1, data.layout.width), tn.height);
-          tn.textAutoResize = "HEIGHT";
-        } catch (_e) {
-        }
-      }
-      return;
-    }
-    if (measuredW > 0 && fitsMeasured) {
-      try {
-        tn.resize(measuredW, tn.height);
-        tn.textAutoResize = "HEIGHT";
-      } catch (_e) {
-      }
-    } else if (measuredW > 0) {
-      const extra = naturalW - measuredW;
-      if (td.textAlign === "CENTER") tn.x = tn.x - extra / 2;
-      else if (td.textAlign === "RIGHT") tn.x = tn.x - extra;
-    }
-  }
-
-  // packages/figma-plugin/src/render.ts
-  function countNodes(node2) {
-    let count = 1;
-    if (node2.children) {
-      for (const child of node2.children) count += countNodes(child);
-    }
-    return count;
-  }
-  async function buildFigmaNode(nodeData) {
-    let createdNode = null;
-    const cg = nodeData.__cg;
-    const boardCtx = getBoardCtx();
-    if (boardCtx && cg && boardCtx.masters.has(cg)) {
-      try {
-        return await buildBoardInstance(nodeData, boardCtx.masters.get(cg));
-      } catch (instErr) {
-        figma.ui.postMessage({ type: "LOG", level: "warn", message: `Instancia "${nodeData.name}" no creada, se dibuja como copia: ${instErr?.message || instErr}` });
-      }
-    }
-    try {
-      if (nodeData.type === "TEXT" && nodeData.textData) {
-        try {
-          await figma.loadFontAsync({ family: "Inter", style: "Regular" });
-        } catch (_e) {
-        }
-        const font = await loadFontSafely(
-          nodeData.textData.fontFamily,
-          nodeData.textData.fontWeight
-        );
-        const textNode = figma.createText();
-        try {
-          textNode.fontName = font;
-        } catch (_fErr) {
-          try {
-            textNode.fontName = { family: "Inter", style: "Regular" };
-          } catch (_fErr2) {
-          }
-        }
-        textNode.characters = nodeData.textData.characters || " ";
-        try {
-          textNode.fontSize = Math.max(1, nodeData.textData.fontSize || 14);
-        } catch (_e) {
-        }
-        if (nodeData.textData.lineHeight && nodeData.textData.lineHeight > 0) {
-          try {
-            textNode.lineHeight = { value: nodeData.textData.lineHeight, unit: "PIXELS" };
-          } catch (_e) {
-          }
-        }
-        if (nodeData.textData.letterSpacing !== void 0 && nodeData.textData.letterSpacing !== 0) {
-          try {
-            textNode.letterSpacing = { value: nodeData.textData.letterSpacing, unit: "PIXELS" };
-          } catch (_e) {
-          }
-        }
-        if (nodeData.textData.textAlign) {
-          try {
-            const alignMap = {
-              LEFT: "LEFT",
-              CENTER: "CENTER",
-              RIGHT: "RIGHT",
-              JUSTIFIED: "JUSTIFIED"
-            };
-            textNode.textAlignHorizontal = alignMap[nodeData.textData.textAlign] || "LEFT";
-          } catch (_e) {
-          }
-        }
-        if (nodeData.styles?.fills && nodeData.styles.fills.length > 0) {
-          try {
-            textNode.fills = nodeData.styles.fills.map((f) => ({
-              type: "SOLID",
-              color: { r: f.r, g: f.g, b: f.b },
-              opacity: f.a !== void 0 ? f.a : 1
-            }));
-          } catch (_e) {
-          }
-        }
-        if (Array.isArray(nodeData.textData.segments) && nodeData.textData.segments.length > 0) {
-          await applyTextSegments(textNode, nodeData.textData.segments);
-        }
-        if (nodeData.textData.noWrap) {
-          try {
-            textNode.textAutoResize = "WIDTH_AND_HEIGHT";
-          } catch (_e) {
-          }
-        }
-        createdNode = textNode;
-      } else if (nodeData.type === "SVG" && nodeData.svgContent) {
-        try {
-          const svgNode = figma.createNodeFromSvg(nodeData.svgContent);
-          const targetW = typeof nodeData.layout?.width === "number" ? nodeData.layout.width : 24;
-          const targetH = typeof nodeData.layout?.height === "number" ? nodeData.layout.height : 24;
-          if (targetW > 0 && targetH > 0) {
-            svgNode.resize(targetW, targetH);
-          }
-          createdNode = svgNode;
-        } catch (err) {
-          console.warn("No se pudo crear SVG, creando placeholder frame:", err);
-          const fallback = figma.createFrame();
-          fallback.resize(24, 24);
-          createdNode = fallback;
-        }
-      } else {
-        const frame = nodeData.type === "COMPONENT" ? figma.createComponent() : figma.createFrame();
-        createdNode = frame;
-        frame.name = nodeData.name || "Frame";
-        const mode = nodeData.layout?.mode || "NONE";
-        if (mode === "HORIZONTAL") {
-          frame.layoutMode = "HORIZONTAL";
-        } else if (mode === "VERTICAL") {
-          frame.layoutMode = "VERTICAL";
-        } else {
-          frame.layoutMode = "NONE";
-        }
-        if (frame.layoutMode !== "NONE") {
-          frame.itemSpacing = Math.max(0, nodeData.layout?.itemSpacing || 0);
-          const pad = nodeData.layout?.padding || { top: 0, right: 0, bottom: 0, left: 0 };
-          frame.paddingTop = Math.max(0, pad.top || 0);
-          frame.paddingRight = Math.max(0, pad.right || 0);
-          frame.paddingBottom = Math.max(0, pad.bottom || 0);
-          frame.paddingLeft = Math.max(0, pad.left || 0);
-          if (nodeData.layout?.primaryAxisAlignItems) {
-            const mapPrimary = {
-              MIN: "MIN",
-              CENTER: "CENTER",
-              MAX: "MAX",
-              SPACE_BETWEEN: "SPACE_BETWEEN"
-            };
-            frame.primaryAxisAlignItems = mapPrimary[nodeData.layout.primaryAxisAlignItems] || "MIN";
-          }
-          if (nodeData.layout?.counterAxisAlignItems) {
-            const mapCounter = {
-              MIN: "MIN",
-              CENTER: "CENTER",
-              MAX: "MAX",
-              BASELINE: "BASELINE"
-            };
-            frame.counterAxisAlignItems = mapCounter[nodeData.layout.counterAxisAlignItems] || "MIN";
-          }
-          if (nodeData.layout?.layoutWrap === "WRAP") {
-            frame.layoutWrap = "WRAP";
-            const cas = nodeData.layout.counterAxisSpacing;
-            if (typeof cas === "number" && cas >= 0) {
-              try {
-                frame.counterAxisSpacing = cas;
-              } catch (_e) {
-              }
-            }
-          }
-        }
-        if (nodeData.imageData) {
-          try {
-            const image = figma.createImage(base64ToBytes(nodeData.imageData));
-            const baseFills = (nodeData.styles?.fills || []).filter((f) => !f.type || f.type === "SOLID");
-            const overlayFills = (nodeData.styles?.fills || []).filter((f) => f.type && f.type !== "SOLID");
-            const imagePaint = {
-              type: "IMAGE",
-              scaleMode: nodeData.styles?.imageScaleMode || "FILL",
-              imageHash: image.hash
-            };
-            frame.fills = [
-              ...baseFills.map(cssFillToPaint),
-              imagePaint,
-              ...overlayFills.map(cssFillToPaint)
-            ];
-          } catch (_imgErr) {
-            console.warn("Error decodificando imagen base64:", _imgErr);
-            figma.ui.postMessage({
-              type: "LOG",
-              level: "error",
-              message: `Imagen no aplicada en "${nodeData.name}": ${_imgErr?.message || _imgErr}`
-            });
-            frame.fills = [{ type: "SOLID", color: { r: 0.9, g: 0.9, b: 0.92 } }];
-          }
-        } else if (nodeData.styles?.fills) {
-          frame.fills = nodeData.styles.fills.map(cssFillToPaint);
-        }
-        if (nodeData.styles?.strokes && nodeData.styles.strokes.length > 0) {
-          const stroke = nodeData.styles.strokes[0];
-          frame.strokes = [{
-            type: "SOLID",
-            color: { r: stroke.r, g: stroke.g, b: stroke.b },
-            opacity: stroke.a !== void 0 ? stroke.a : 1
-          }];
-          frame.strokeAlign = "INSIDE";
-          if (nodeData.styles?.borderSides) {
-            const bs = nodeData.styles.borderSides;
-            try {
-              frame.strokeTopWeight = Math.max(0, bs.top ?? 0);
-              frame.strokeRightWeight = Math.max(0, bs.right ?? 0);
-              frame.strokeBottomWeight = Math.max(0, bs.bottom ?? 0);
-              frame.strokeLeftWeight = Math.max(0, bs.left ?? 0);
-            } catch (_e) {
-              frame.strokeWeight = Math.max(1, stroke.width || 1);
-            }
-          } else {
-            frame.strokeWeight = Math.max(1, stroke.width || 1);
-          }
-        }
-        if (nodeData.styles?.cornerRadius !== void 0) {
-          if (typeof nodeData.styles.cornerRadius === "number") {
-            frame.cornerRadius = Math.max(0, nodeData.styles.cornerRadius);
-          } else if (Array.isArray(nodeData.styles.cornerRadius) && nodeData.styles.cornerRadius.length === 4) {
-            const [tl, tr, br, bl] = nodeData.styles.cornerRadius;
-            frame.topLeftRadius = Math.max(0, tl);
-            frame.topRightRadius = Math.max(0, tr);
-            frame.bottomRightRadius = Math.max(0, br);
-            frame.bottomLeftRadius = Math.max(0, bl);
-          }
-        }
-        if (typeof nodeData.styles?.opacity === "number") {
-          frame.opacity = Math.max(0, Math.min(1, nodeData.styles.opacity));
-        }
-        const effects = [];
-        if (nodeData.styles?.boxShadow && nodeData.styles.boxShadow.length > 0) {
-          for (const shadow of nodeData.styles.boxShadow) {
-            effects.push({
-              type: "DROP_SHADOW",
-              color: {
-                r: shadow.color.r,
-                g: shadow.color.g,
-                b: shadow.color.b,
-                a: shadow.color.a
-              },
-              offset: { x: shadow.offset.x, y: shadow.offset.y },
-              radius: Math.max(0, shadow.radius),
-              spread: shadow.spread || 0,
-              visible: true,
-              blendMode: "NORMAL"
-            });
-          }
-        }
-        if (typeof nodeData.styles?.backdropBlur === "number" && nodeData.styles.backdropBlur > 0) {
-          effects.push({
-            type: "BACKGROUND_BLUR",
-            radius: Math.max(1, nodeData.styles.backdropBlur),
-            visible: true
-          });
-        }
-        if (effects.length > 0) {
-          frame.effects = effects;
-        }
-        const initW = typeof nodeData.layout?.width === "number" ? nodeData.layout.width : typeof nodeData.layout?.measuredWidth === "number" ? nodeData.layout.measuredWidth : 100;
-        const initH = typeof nodeData.layout?.height === "number" ? nodeData.layout.height : typeof nodeData.layout?.measuredHeight === "number" ? nodeData.layout.measuredHeight : 40;
-        frame.resize(Math.max(1, initW), Math.max(1, initH));
-        if (frame.layoutMode !== "NONE") {
-          try {
-            frame.layoutSizingHorizontal = "FIXED";
-            frame.layoutSizingVertical = "FIXED";
-          } catch (_e) {
-          }
-        }
-        const hasRoundCorners = typeof frame.cornerRadius === "number" ? frame.cornerRadius > 0 : false;
-        const hasFills = Array.isArray(frame.fills) && frame.fills.length > 0;
-        frame.clipsContent = !!(nodeData.clipsContent || hasRoundCorners && hasFills);
-        if (nodeData.children && nodeData.children.length > 0) {
-          for (const childData of nodeData.children) {
-            const childNode = await buildFigmaNode(childData);
-            if (childNode) try {
-              frame.appendChild(childNode);
-              if (frame.layoutMode !== "NONE") {
-                const layoutChild = childNode;
-                if (childData.layout?.positioning === "ABSOLUTE") {
-                  try {
-                    const targetW = typeof childData.layout.width === "number" && childData.layout.width > 0 ? childData.layout.width : childData.layout.measuredWidth || layoutChild.width || 100;
-                    const targetH = typeof childData.layout.height === "number" && childData.layout.height > 0 ? childData.layout.height : childData.layout.measuredHeight || layoutChild.height || 100;
-                    if (targetW > 0 && targetH > 0 && typeof layoutChild.resize === "function") {
-                      try {
-                        layoutChild.resize(targetW, targetH);
-                      } catch (_resErr) {
-                      }
-                    }
-                    if ("layoutPositioning" in layoutChild) {
-                      layoutChild.layoutPositioning = "ABSOLUTE";
-                    }
-                    if (typeof childData.layout.x === "number") childNode.x = childData.layout.x;
-                    if (typeof childData.layout.y === "number") childNode.y = childData.layout.y;
-                  } catch (absErr) {
-                    console.warn("Error configurando layoutPositioning ABSOLUTE:", absErr);
-                  }
-                } else {
-                  if (childNode.type === "TEXT" && childData.textData?.noWrap) {
-                    applyNoWrapSizing(childNode, childData, true);
-                  } else if (childNode.type === "TEXT") {
-                    const tn = childNode;
-                    const isMulti = childData.textData?.isMultiline || childData.textData?.characters && childData.textData.characters.includes("\n");
-                    if (childData.layout?.width === "FILL") {
-                      tn.textAutoResize = "HEIGHT";
-                      try {
-                        tn.layoutSizingHorizontal = "FILL";
-                      } catch (_e) {
-                        const fallbackW = childData.layout?.measuredWidth || frame.width;
-                        if (fallbackW > 0) {
-                          try {
-                            tn.resize(fallbackW, tn.height);
-                          } catch (_r) {
-                          }
-                        }
-                      }
-                    } else if (childData.layout?.width === "HUG") {
-                      if (isMulti && frame.layoutMode === "VERTICAL") {
-                        tn.textAutoResize = "HEIGHT";
-                        try {
-                          tn.layoutSizingHorizontal = "FILL";
-                        } catch (_e) {
-                          const fallbackW = childData.layout?.measuredWidth || frame.width;
-                          if (fallbackW > 0) {
-                            try {
-                              tn.resize(fallbackW, tn.height);
-                            } catch (_r) {
-                            }
-                          }
-                        }
-                      } else {
-                        tn.textAutoResize = "WIDTH_AND_HEIGHT";
-                      }
-                    } else if (typeof childData.layout?.width === "number") {
-                      try {
-                        tn.resize(Math.max(1, childData.layout.width), tn.height);
-                      } catch (_e) {
-                      }
-                      tn.textAutoResize = "HEIGHT";
-                    }
-                  } else {
-                    const hasFixedW = typeof childData.layout?.width === "number";
-                    const hasFixedH = typeof childData.layout?.height === "number";
-                    if (hasFixedW || hasFixedH) {
-                      const targetW = hasFixedW ? Math.max(1, childData.layout.width) : layoutChild.width;
-                      const targetH = hasFixedH ? Math.max(1, childData.layout.height) : layoutChild.height;
-                      try {
-                        layoutChild.resize(targetW, targetH);
-                      } catch (_e) {
-                      }
-                    }
-                    try {
-                      if (childData.layout?.width === "FILL" && "layoutSizingHorizontal" in layoutChild) {
-                        layoutChild.layoutSizingHorizontal = "FILL";
-                      } else if (childData.layout?.width === "HUG" && "layoutSizingHorizontal" in layoutChild) {
-                        layoutChild.layoutSizingHorizontal = "HUG";
-                      } else if (hasFixedW && "layoutSizingHorizontal" in layoutChild) {
-                        layoutChild.layoutSizingHorizontal = "FIXED";
-                      }
-                    } catch (_e) {
-                    }
-                    try {
-                      if (childData.layout?.height === "FILL" && "layoutSizingVertical" in layoutChild) {
-                        layoutChild.layoutSizingVertical = "FILL";
-                      } else if (childData.layout?.height === "HUG" && "layoutSizingVertical" in layoutChild) {
-                        layoutChild.layoutSizingVertical = "HUG";
-                      } else if (hasFixedH && "layoutSizingVertical" in layoutChild) {
-                        layoutChild.layoutSizingVertical = "FIXED";
-                      }
-                    } catch (_e) {
-                    }
-                  }
-                }
-              } else {
-                if (typeof childData.layout?.x === "number") childNode.x = childData.layout.x;
-                if (typeof childData.layout?.y === "number") childNode.y = childData.layout.y;
-                if (childNode.type === "FRAME" || childNode.type === "COMPONENT") {
-                  const targetW = (typeof childData.layout?.width === "number" ? childData.layout.width : childData.layout?.measuredWidth) || childNode.width;
-                  const targetH = (typeof childData.layout?.height === "number" ? childData.layout.height : childData.layout?.measuredHeight) || childNode.height;
-                  if (targetW > 0 && targetH > 0 && (targetW !== childNode.width || targetH !== childNode.height)) {
-                    childNode.resize(targetW, targetH);
-                  }
-                } else if (childNode.type === "TEXT" && childData.textData?.noWrap) {
-                  applyNoWrapSizing(childNode, childData, false);
-                } else if (childNode.type === "TEXT") {
-                  const tn = childNode;
-                  const isMulti = childData.textData?.isMultiline || childData.textData?.characters && childData.textData.characters.includes("\n");
-                  const targetW = typeof childData.layout?.width === "number" && childData.layout.width > 0 ? childData.layout.width : childData.layout?.measuredWidth || 0;
-                  if (targetW > 0 && (isMulti || childData.layout?.width !== "HUG")) {
-                    tn.resize(targetW, tn.height);
-                    tn.textAutoResize = "HEIGHT";
-                  } else {
-                    tn.textAutoResize = "WIDTH_AND_HEIGHT";
-                  }
-                }
-              }
-            } catch (childErr) {
-              figma.ui.postMessage({
-                type: "LOG",
-                level: "warn",
-                message: `Ajuste de capa "${childData.name}" incompleto: ${childErr?.message || childErr}`
-              });
-            }
-          }
-        }
-        const hasSelfFixedW = typeof nodeData.layout?.width === "number" && nodeData.layout.width > 0;
-        const hasSelfFixedH = typeof nodeData.layout?.height === "number" && nodeData.layout.height > 0;
-        const targetFrameW = hasSelfFixedW ? nodeData.layout.width : nodeData.layout?.measuredWidth || frame.width;
-        const targetFrameH = hasSelfFixedH ? nodeData.layout.height : nodeData.layout?.measuredHeight || frame.height;
-        if (targetFrameW > 0 && targetFrameH > 0 && (targetFrameW !== frame.width || targetFrameH !== frame.height)) {
-          try {
-            frame.resize(targetFrameW, targetFrameH);
-          } catch (_e) {
-          }
-        }
-        if (frame.layoutMode !== "NONE") {
-          try {
-            if (nodeData.layout?.width === "HUG") {
-              frame.layoutSizingHorizontal = "HUG";
-            } else if (nodeData.layout?.width === "FILL") {
-              frame.layoutSizingHorizontal = "FILL";
-            } else if (hasSelfFixedW) {
-              frame.layoutSizingHorizontal = "FIXED";
-            }
-          } catch (_e) {
-          }
-          try {
-            if (nodeData.layout?.height === "HUG") {
-              frame.layoutSizingVertical = "HUG";
-            } else if (nodeData.layout?.height === "FILL") {
-              frame.layoutSizingVertical = "FILL";
-            } else if (hasSelfFixedH) {
-              frame.layoutSizingVertical = "FIXED";
-            }
-          } catch (_e) {
-          }
-        }
-        createdNode = frame;
-      }
-      if (createdNode) {
-        createdNode.name = nodeData.name || createdNode.name;
-      }
-    } catch (error2) {
-      console.error("Error creando nodo Figma:", error2);
-      try {
-        figma.ui.postMessage({
-          type: "LOG",
-          level: "error",
-          message: `Error en capa "${nodeData.name}": ${error2?.message || error2}`
-        });
-      } catch (_logErr) {
-      }
-      if (nodeData.type === "TEXT" && nodeData.textData && !createdNode) {
-        try {
-          await figma.loadFontAsync({ family: "Inter", style: "Regular" });
-          const fb = figma.createText();
-          fb.name = nodeData.name || "Text";
-          fb.characters = nodeData.textData.characters || " ";
-          fb.fontSize = nodeData.textData.fontSize || 14;
-          if (nodeData.styles?.fills && nodeData.styles.fills.length > 0) {
-            fb.fills = nodeData.styles.fills.map((f) => ({
-              type: "SOLID",
-              color: { r: f.r, g: f.g, b: f.b },
-              opacity: f.a !== void 0 ? f.a : 1
-            }));
-          } else {
-            fb.fills = [{ type: "SOLID", color: { r: 0.95, g: 0.95, b: 0.95 }, opacity: 1 }];
-          }
-          createdNode = fb;
-        } catch (_fbErr) {
-          console.error("Fallback de texto también falló:", _fbErr);
-        }
-      }
-    }
-    return createdNode;
-  }
-
   // node_modules/zod/v4/core/util.js
   var util_exports = {};
   __export(util_exports, {
@@ -3848,6 +2660,89 @@ ${content.join("\n")}
       return Promise.all(results).then((results2) => {
         return handleUnionResults(results2, payload, inst, ctx);
       });
+    };
+  });
+  function discriminatorMap(def) {
+    const map = /* @__PURE__ */ new Map();
+    for (const option of def.options) {
+      const values = option._zod.propValues?.[def.discriminator];
+      if (!values || values.size === 0)
+        throw new Error(`Invalid discriminated union option at index "${def.options.indexOf(option)}"`);
+      for (const value of values) {
+        if (map.has(value)) {
+          if (value !== void 0)
+            throw new Error(`Duplicate discriminator value "${String(value)}"`);
+          map.set(value, null);
+        } else {
+          map.set(value, option);
+        }
+      }
+    }
+    return map;
+  }
+  var $ZodDiscriminatedUnion = /* @__PURE__ */ $constructor("$ZodDiscriminatedUnion", (inst, def) => {
+    def.inclusive = false;
+    $ZodUnion.init(inst, def);
+    const _super = inst._zod.parse;
+    defineLazyInternal(inst, "propValues", (zod) => {
+      const propValues = {};
+      let undefinedCount = 0;
+      for (const option of zod.def.options) {
+        const pv = option._zod.propValues;
+        if (!pv || Object.keys(pv).length === 0)
+          throw new Error(`Invalid discriminated union option at index "${zod.def.options.indexOf(option)}"`);
+        if (pv[zod.def.discriminator]?.has(void 0))
+          undefinedCount++;
+        for (const [k, v] of Object.entries(pv)) {
+          if (!Object.prototype.hasOwnProperty.call(propValues, k)) {
+            assignProp(propValues, k, /* @__PURE__ */ new Set());
+          }
+          for (const val of v) {
+            propValues[k].add(val);
+          }
+        }
+      }
+      if (!zod.def.unionFallback && undefinedCount > 1)
+        propValues[zod.def.discriminator]?.delete(void 0);
+      return propValues;
+    });
+    def.options.forEach((option, i) => {
+      const propShape = rawShape(option._zod.def);
+      if (propShape && !Object.prototype.hasOwnProperty.call(propShape, def.discriminator)) {
+        throw new Error(`Invalid discriminated union option at index "${i}"`);
+      }
+    });
+    const disc = cached(() => discriminatorMap(def));
+    inst._zod.parse = (payload, ctx) => {
+      const input = payload.value;
+      if (!isObject(input)) {
+        payload.issues.push({
+          code: "invalid_type",
+          expected: "object",
+          input,
+          inst
+        });
+        return payload;
+      }
+      const value = input?.[def.discriminator];
+      const opt = disc.value.get(value);
+      if (opt && (value !== void 0 || ctx.direction !== "backward")) {
+        return opt._zod.run(payload, ctx);
+      }
+      if (def.unionFallback || ctx.direction === "backward") {
+        return _super(payload, ctx);
+      }
+      payload.issues.push({
+        code: "invalid_union",
+        errors: [],
+        note: "No matching discriminator",
+        discriminator: def.discriminator,
+        options: Array.from(disc.value.keys()).filter((value2) => disc.value.get(value2) !== null),
+        input,
+        path: [def.discriminator],
+        inst
+      });
+      return payload;
     };
   });
   var $ZodIntersection = /* @__PURE__ */ $constructor("$ZodIntersection", (inst, def) => {
@@ -6859,6 +5754,18 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       ...util_exports.normalizeParams(params)
     });
   }
+  var ZodDiscriminatedUnion = /* @__PURE__ */ $constructor("ZodDiscriminatedUnion", (inst, def) => {
+    ZodUnion.init(inst, def);
+    $ZodDiscriminatedUnion.init(inst, def);
+  });
+  function discriminatedUnion(discriminator, options, params) {
+    return new ZodDiscriminatedUnion({
+      type: "union",
+      options,
+      discriminator,
+      ...util_exports.normalizeParams(params)
+    });
+  }
   var ZodIntersection = /* @__PURE__ */ $constructor("ZodIntersection", (inst, def) => {
     $ZodIntersection.init(inst, def);
     ZodType.init(inst, def);
@@ -7210,13 +6117,1464 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     type: string2().min(1).max(64)
   }).passthrough();
 
+  // packages/contracts/src/messages.ts
+  var RegisterSchema = object({
+    type: _enum(["REGISTER_CLIENT", "REGISTER"]),
+    clientType: string2().max(64).optional(),
+    role: string2().max(64).optional(),
+    client: string2().max(200).optional(),
+    pairingCode: string2().max(32).optional()
+  }).passthrough();
+  var HubInboundSchema = discriminatedUnion("type", [
+    RegisterSchema,
+    object({ type: literal("GET_STATUS") }).passthrough(),
+    object({ type: literal("PING") }).passthrough(),
+    object({ type: literal("GET_VIEWS_CATALOG") }).passthrough(),
+    object({ type: literal("REQUEST_VIEW_RENDER"), payload: object({}).passthrough().optional() }).passthrough(),
+    object({ type: literal("RENDER_NODES"), payload: unknown() }).passthrough(),
+    object({
+      type: literal("RENDER_SUCCESS"),
+      nodeId: string2().max(200).optional(),
+      name: string2().max(1e3).optional(),
+      durationMs: number2().finite().optional()
+    }).passthrough(),
+    object({ type: literal("RENDER_ERROR"), error: string2().max(5e3).optional() }).passthrough()
+  ]);
+
+  // packages/contracts/src/logger.ts
+  var ORDER = { debug: 10, info: 20, warn: 30, error: 40 };
+  function createLogger(scope, options) {
+    const min = ORDER[options.level || "info"];
+    const emit = (level, message, data) => {
+      if (ORDER[level] < min) return;
+      const record = { time: (/* @__PURE__ */ new Date()).toISOString(), level, scope, message, ...data ? { data } : {} };
+      for (const sink of options.sinks) {
+        try {
+          sink(record);
+        } catch (_e) {
+        }
+      }
+    };
+    return {
+      debug: (m, d) => emit("debug", m, d),
+      info: (m, d) => emit("info", m, d),
+      warn: (m, d) => emit("warn", m, d),
+      error: (m, d) => emit("error", m, d),
+      child: (sub) => createLogger(`${scope}:${sub}`, options)
+    };
+  }
+  function formatLogRecord(r) {
+    const data = r.data && Object.keys(r.data).length ? " " + JSON.stringify(r.data) : "";
+    return `[${r.scope}] ${r.message}${data}`;
+  }
+
+  // packages/figma-plugin/src/log.ts
+  var figmaConsoleSink = (r) => {
+    const line = formatLogRecord(r);
+    if (r.level === "error") console.error(line);
+    else if (r.level === "warn") console.warn(line);
+    else console.log(line);
+  };
+  var log = createLogger("plugin", { sinks: [figmaConsoleSink] });
+  var errText = (e) => String(e?.message || e);
+
+  // packages/figma-plugin/src/fonts.ts
+  var availableFontsCache = null;
+  var fontLookupMap = /* @__PURE__ */ new Map();
+  async function initFontCache() {
+    if (availableFontsCache && fontLookupMap.size > 0) return;
+    try {
+      if (typeof figma.listAvailableFontsAsync === "function") {
+        availableFontsCache = await figma.listAvailableFontsAsync();
+        fontLookupMap.clear();
+        for (const f of availableFontsCache) {
+          const famLower = f.fontName.family.toLowerCase();
+          if (!fontLookupMap.has(famLower)) {
+            fontLookupMap.set(famLower, []);
+          }
+          fontLookupMap.get(famLower).push(f.fontName);
+        }
+      }
+    } catch (err) {
+      log.warn("No se pudo obtener la lista de fuentes disponibles", { error: errText(err) });
+    }
+  }
+  function resolveFontWeight(weight) {
+    const num = typeof weight === "string" ? parseInt(weight, 10) : weight;
+    if (isNaN(num)) {
+      const lower = String(weight).toLowerCase();
+      if (lower.includes("black") || lower.includes("900")) return "Black";
+      if (lower.includes("extra") && lower.includes("bold") || lower.includes("800")) return "Extra Bold";
+      if (lower.includes("bold") || lower.includes("700")) return "Bold";
+      if (lower.includes("semibold") || lower.includes("semi-bold") || lower.includes("600")) return "Semi Bold";
+      if (lower.includes("medium") || lower.includes("500")) return "Medium";
+      if (lower.includes("light") || lower.includes("300")) return "Light";
+      if (lower.includes("thin") || lower.includes("100")) return "Thin";
+      return "Regular";
+    }
+    if (num >= 900) return "Black";
+    if (num >= 800) return "Extra Bold";
+    if (num >= 700) return "Bold";
+    if (num >= 600) return "Semi Bold";
+    if (num >= 500) return "Medium";
+    if (num >= 400) return "Regular";
+    if (num >= 300) return "Light";
+    return "Regular";
+  }
+  async function loadFontSafely(fontFamily, fontWeight) {
+    try {
+      await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+    } catch (_e) {
+    }
+    await initFontCache();
+    const rawFamily = (fontFamily || "Inter").split(",")[0].replace(/['"]/g, "").trim() || "Inter";
+    const targetStyle = resolveFontWeight(fontWeight);
+    const isApple = /^(sf pro|-apple-system|blinkmacsystemfont|apple)/i.test(rawFamily);
+    const candidates = isApple ? [rawFamily, "SF Pro Display", "SF Pro Text", "SF Pro", "Segoe UI", "Inter", "Helvetica Neue", "Arial", "Roboto"] : [rawFamily, "Inter", "Segoe UI", "Roboto", "Arial"];
+    const styleVariants = [targetStyle];
+    if (targetStyle === "Semi Bold") styleVariants.push("Semibold", "Semi-Bold", "Demibold");
+    else if (targetStyle === "Extra Bold") styleVariants.push("Extrabold", "Extra-Bold");
+    else if (targetStyle === "Bold") styleVariants.push("Bold");
+    else if (targetStyle === "Medium") styleVariants.push("Medium");
+    else if (targetStyle === "Regular") styleVariants.push("Regular");
+    if (!styleVariants.includes("Regular")) styleVariants.push("Regular");
+    if (fontLookupMap.size > 0) {
+      for (const cand of candidates) {
+        const availableStyles = fontLookupMap.get(cand.toLowerCase());
+        if (availableStyles && availableStyles.length > 0) {
+          for (const wantStyle of styleVariants) {
+            const match = availableStyles.find((s) => s.style.toLowerCase() === wantStyle.toLowerCase());
+            if (match) {
+              try {
+                await figma.loadFontAsync(match);
+                return match;
+              } catch (_e) {
+              }
+            }
+          }
+          const regularMatch = availableStyles.find((s) => s.style.toLowerCase() === "regular") || availableStyles[0];
+          try {
+            await figma.loadFontAsync(regularMatch);
+            return regularMatch;
+          } catch (_e) {
+          }
+        }
+      }
+    }
+    const interVariants = [targetStyle, "Regular"];
+    for (const st of interVariants) {
+      try {
+        const f = { family: "Inter", style: st };
+        await figma.loadFontAsync(f);
+        return f;
+      } catch (_e) {
+      }
+    }
+    return { family: "Inter", style: "Regular" };
+  }
+  async function prewarmFonts(node2) {
+    try {
+      await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+    } catch (_e) {
+    }
+    await initFontCache();
+    const fontsToLoad = /* @__PURE__ */ new Set();
+    function traverse(n) {
+      if (n.type === "TEXT" && n.textData) {
+        const fam = n.textData.fontFamily || "Inter";
+        const weight = n.textData.fontWeight || 400;
+        fontsToLoad.add(`${fam}:::${weight}`);
+      }
+      if (n.children) {
+        for (const child of n.children) traverse(child);
+      }
+    }
+    traverse(node2);
+    await Promise.all(
+      Array.from(fontsToLoad).map(async (key) => {
+        const [family, weight] = key.split(":::");
+        await loadFontSafely(family, weight);
+      })
+    );
+  }
+
+  // packages/figma-plugin/src/paint.ts
+  function base64ToBytes(dataUrl) {
+    const clean = dataUrl.replace(/^data:[^;]+;base64,/, "").replace(/\s/g, "");
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const lookup = new Uint8Array(256);
+    for (let i = 0; i < chars.length; i++) lookup[chars.charCodeAt(i)] = i;
+    let len = Math.floor(clean.length * 0.75);
+    if (clean.endsWith("==")) len -= 2;
+    else if (clean.endsWith("=")) len -= 1;
+    const bytes = new Uint8Array(len);
+    let p = 0;
+    for (let i = 0; i < clean.length; i += 4) {
+      const e1 = lookup[clean.charCodeAt(i)], e2 = lookup[clean.charCodeAt(i + 1)];
+      const e3 = lookup[clean.charCodeAt(i + 2)], e4 = lookup[clean.charCodeAt(i + 3)];
+      bytes[p++] = e1 << 2 | e2 >> 4;
+      if (clean[i + 2] !== "=") bytes[p++] = (e2 & 15) << 4 | e3 >> 2;
+      if (clean[i + 3] !== "=") bytes[p++] = (e3 & 3) << 6 | e4 & 63;
+    }
+    return bytes;
+  }
+  function cssFillToPaint(f) {
+    if (f.type === "GRADIENT_RADIAL") {
+      const transform2 = [
+        [0.5, 0, 0.5],
+        [0, 0.5, 0.5]
+      ];
+      return {
+        type: "GRADIENT_RADIAL",
+        gradientTransform: transform2,
+        gradientStops: (f.stops || []).map((s) => ({
+          position: Math.max(0, Math.min(1, s.position)),
+          color: { r: s.color.r, g: s.color.g, b: s.color.b, a: s.color.a !== void 0 ? s.color.a : 1 }
+        }))
+      };
+    }
+    if (f.type === "GRADIENT_LINEAR") {
+      const angleDeg = typeof f.angle === "number" ? f.angle : 180;
+      const rad = (angleDeg - 90) * Math.PI / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      const x1 = 0.5 - 0.5 * cos;
+      const y1 = 0.5 - 0.5 * sin;
+      const x2 = 0.5 + 0.5 * cos;
+      const y2 = 0.5 + 0.5 * sin;
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const transform2 = [
+        [dx, dy, x1],
+        [-dy, dx, y1]
+      ];
+      return {
+        type: "GRADIENT_LINEAR",
+        gradientTransform: transform2,
+        gradientStops: (f.stops || []).map((s) => ({
+          position: Math.max(0, Math.min(1, s.position)),
+          color: { r: s.color.r, g: s.color.g, b: s.color.b, a: s.color.a !== void 0 ? s.color.a : 1 }
+        }))
+      };
+    }
+    return {
+      type: "SOLID",
+      color: { r: f.r, g: f.g, b: f.b },
+      opacity: f.a !== void 0 ? f.a : 1
+    };
+  }
+
+  // packages/figma-plugin/src/board/context.ts
+  var current = null;
+  function getBoardCtx() {
+    return current;
+  }
+  function setBoardCtx(ctx) {
+    current = ctx;
+  }
+
+  // packages/figma-plugin/src/board/pure.ts
+  function boardHash(str) {
+    let h = 5381;
+    for (let i = 0; i < str.length; i++) h = (h << 5) + h + str.charCodeAt(i) | 0;
+    return (h >>> 0).toString(36);
+  }
+  function boardColorKey(f) {
+    if (!f) return "-";
+    if (f.type && f.type !== "SOLID") {
+      return f.type + "(" + (f.stops || []).map((s) => boardColorKey(s.color)).join(",") + ")";
+    }
+    const c = (v) => Math.round((v || 0) * 255).toString(16).padStart(2, "0");
+    return "#" + c(f.r) + c(f.g) + c(f.b) + (f.a !== void 0 && f.a < 0.995 ? "/" + Math.round(f.a * 100) : "");
+  }
+  function boardSignature(n, memo2) {
+    if (memo2.has(n)) return memo2.get(n);
+    let sig;
+    const L = n.layout || {};
+    const S = n.styles || {};
+    if (n.type === "TEXT") {
+      const t = n.textData || {};
+      sig = ["T", t.fontFamily, t.fontSize, t.fontWeight, t.textAlign, (S.fills || []).map(boardColorKey).join(",")].join("|");
+    } else if (n.type === "SVG") {
+      sig = "S|" + boardHash(n.svgContent || "") + "|" + L.width + "x" + L.height;
+    } else {
+      const pad = L.padding || {};
+      const style = [
+        L.mode,
+        L.primaryAxisAlignItems,
+        L.counterAxisAlignItems,
+        L.itemSpacing,
+        [pad.top, pad.right, pad.bottom, pad.left].join(","),
+        (S.fills || []).map(boardColorKey).join(","),
+        (S.strokes || []).map((s) => boardColorKey(s) + "@" + s.width).join(","),
+        JSON.stringify(S.cornerRadius ?? 0),
+        S.opacity ?? 1,
+        (S.boxShadow || []).length,
+        n.imageData ? "IMG:" + (S.imageScaleMode || "FILL") : ""
+      ].join("|");
+      const h = Math.round(L.measuredHeight ?? (typeof L.height === "number" ? L.height : 0));
+      sig = "F|" + style + "|h" + h + "[" + (n.children || []).map((c) => boardSignature(c, memo2)).join(";") + "]";
+    }
+    memo2.set(n, sig);
+    return sig;
+  }
+  function boardCountNodes(n) {
+    let c = 1;
+    for (const ch of n.children || []) c += boardCountNodes(ch);
+    return c;
+  }
+  function boardCleanName(raw) {
+    let s = String(raw || "").split("(")[0].trim();
+    if (s.includes("/")) return s.replace(/\s+/g, " ");
+    if (!/[-_]/.test(s)) return s.replace(/\s+/g, " ") || "Componente";
+    s = s.split(/\s+/)[0] || s;
+    const isHash = (p) => /^[A-Za-z0-9]{4,8}$/.test(p) && (/\d/.test(p) || /[A-Z].*[A-Z]/.test(p.slice(1)) || /^[a-z][A-Z]/.test(p));
+    const parts = s.split(/__|--/).map((p) => p.replace(/^_+|_+$/g, "")).filter((p) => p && !isHash(p)).filter((p) => !/-module$/i.test(p));
+    let core = parts.length ? parts[parts.length - 1] : s;
+    if (parts.length >= 2 && core.length <= 6) core = parts[parts.length - 2] + " " + core;
+    core = core.replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
+    return core ? core.replace(/\b\w/g, (c) => c.toUpperCase()) : "Componente";
+  }
+  function boardDetectComponents(root) {
+    const memo2 = /* @__PURE__ */ new Map();
+    boardSignature(root, memo2);
+    const rootArea = Math.max(1, (root.layout?.measuredWidth || 1) * (root.layout?.measuredHeight || 1));
+    const eligible = (n) => {
+      if (n === root || n.type === "TEXT" || n.type === "SVG") return false;
+      if (!n.children || n.children.length === 0) return false;
+      const styled = (n.styles?.fills || []).length > 0 || (n.styles?.strokes || []).length > 0;
+      if (boardCountNodes(n) < 3 && !styled) return false;
+      const area = (n.layout?.measuredWidth || 0) * (n.layout?.measuredHeight || 0);
+      return area > 0 && area / rootArea < 0.35;
+    };
+    const counts = /* @__PURE__ */ new Map();
+    (function count(n) {
+      if (eligible(n)) counts.set(memo2.get(n), (counts.get(memo2.get(n)) || 0) + 1);
+      (n.children || []).forEach(count);
+    })(root);
+    let allowed = new Set([...counts.entries()].filter(([, c]) => c >= 2).map(([s]) => s));
+    let assigned = /* @__PURE__ */ new Map();
+    for (let iter = 0; iter < 4; iter++) {
+      assigned = /* @__PURE__ */ new Map();
+      (function pick2(n) {
+        const s = memo2.get(n);
+        if (eligible(n) && allowed.has(s)) {
+          if (!assigned.has(s)) assigned.set(s, []);
+          assigned.get(s).push(n);
+          return;
+        }
+        (n.children || []).forEach(pick2);
+      })(root);
+      const next = new Set([...assigned.entries()].filter(([, occ]) => occ.length >= 2).map(([s]) => s));
+      if (next.size === allowed.size) break;
+      allowed = next;
+    }
+    const groups = [];
+    const usedNames = /* @__PURE__ */ new Map();
+    for (const [, occ] of assigned) {
+      if (occ.length < 2) continue;
+      const base = boardCleanName(occ[0].name);
+      const k = (usedNames.get(base) || 0) + 1;
+      usedNames.set(base, k);
+      const id = "cg_" + groups.length;
+      groups.push({ id, name: k > 1 ? `${base} ${k}` : base, occurrences: occ });
+      for (const o of occ) o.__cg = id;
+    }
+    return groups;
+  }
+  function boardCollect(n, pred, out = []) {
+    if (pred(n)) out.push(n);
+    for (const c of n.children || []) boardCollect(c, pred, out);
+    return out;
+  }
+
+  // packages/figma-plugin/src/board/board.ts
+  async function buildBoardInstance(nodeData, master) {
+    const inst = master.createInstance();
+    inst.name = nodeData.name || master.name;
+    const dataTexts = boardCollect(nodeData, (x) => x.type === "TEXT");
+    const figTexts = inst.findAll((n) => n.type === "TEXT");
+    if (dataTexts.length === figTexts.length) {
+      for (let i = 0; i < figTexts.length; i++) {
+        const want = dataTexts[i].textData?.characters ?? "";
+        const tn = figTexts[i];
+        if (tn.characters === want) continue;
+        try {
+          const fonts = tn.characters.length ? tn.getRangeAllFontNames(0, tn.characters.length) : [tn.fontName];
+          for (const f of fonts) await figma.loadFontAsync(f);
+          tn.characters = want || " ";
+        } catch (_e) {
+        }
+      }
+    }
+    const dataImgs = boardCollect(nodeData, (x) => !!x.imageData);
+    const figImgs = inst.findAll((n) => "fills" in n && Array.isArray(n.fills) && n.fills.some((p) => p.type === "IMAGE"));
+    if (dataImgs.length === figImgs.length) {
+      for (let i = 0; i < figImgs.length; i++) {
+        try {
+          const image = figma.createImage(base64ToBytes(dataImgs[i].imageData));
+          figImgs[i].fills = figImgs[i].fills.map((p) => p.type === "IMAGE" ? { ...p, imageHash: image.hash } : p);
+        } catch (_e) {
+        }
+      }
+    }
+    const w = nodeData.layout?.measuredWidth ?? (typeof nodeData.layout?.width === "number" ? nodeData.layout.width : inst.width);
+    const h = nodeData.layout?.measuredHeight ?? (typeof nodeData.layout?.height === "number" ? nodeData.layout.height : inst.height);
+    try {
+      if (w > 0 && h > 0) inst.resize(w, h);
+    } catch (_e) {
+    }
+    return inst;
+  }
+  function boardPickSections(root) {
+    const bigKids = (n) => {
+      if (!("children" in n)) return [];
+      return n.children.filter((c) => c.visible !== false && c.type !== "TEXT" && c.height >= 60 && c.width >= n.width * 0.4).sort((a, b) => a.y - b.y);
+    };
+    const SECTION_MAX_H = 1400;
+    function expand(n, depth) {
+      const kids = bigKids(n);
+      if (depth < 4 && n.height > SECTION_MAX_H && kids.length >= 2) {
+        return kids.flatMap((k) => expand(k, depth + 1));
+      }
+      if (depth < 4 && kids.length === 1 && kids[0].height >= n.height * 0.9 && n.height > SECTION_MAX_H) {
+        return expand(kids[0], depth + 1);
+      }
+      return [n];
+    }
+    let top = bigKids(root);
+    for (let depth = 0; top.length === 1 && depth < 5; depth++) top = bigKids(top[0]);
+    return top.flatMap((k) => expand(k, 0));
+  }
+  function boardHeadingOf(n) {
+    if (!("findAll" in n)) return "";
+    const texts = n.findAll((c) => c.type === "TEXT").slice(0, 12);
+    let best = null;
+    for (const t of texts) {
+      const fs = typeof t.fontSize === "number" ? t.fontSize : 0;
+      const bestFs = best && typeof best.fontSize === "number" ? best.fontSize : -1;
+      if (t.characters.trim().length > 2 && fs > bestFs) best = t;
+    }
+    const s = best ? best.characters.replace(/\s+/g, " ").trim() : "";
+    return s.length > 48 ? s.slice(0, 47) + "…" : s;
+  }
+  async function boardLabel(text, size, weight, color, opacity = 1) {
+    const font = await loadFontSafely("Inter", weight);
+    const t = figma.createText();
+    t.fontName = font;
+    t.characters = text;
+    t.fontSize = size;
+    t.fills = [{ type: "SOLID", color, opacity }];
+    return t;
+  }
+  function boardNewSection(name) {
+    if (typeof figma.createSection === "function") {
+      const s = figma.createSection();
+      s.name = name;
+      return s;
+    }
+    const f = figma.createFrame();
+    f.name = name;
+    f.fills = [{ type: "SOLID", color: { r: 0.97, g: 0.97, b: 0.98 } }];
+    return f;
+  }
+  function boardFitSection(sec, pad = 100) {
+    const kids = sec.children;
+    if (!kids.length) {
+      try {
+        sec.resizeWithoutConstraints(400, 200);
+      } catch (_e) {
+      }
+      return;
+    }
+    const maxR = Math.max(...kids.map((k) => k.x + k.width));
+    const maxB = Math.max(...kids.map((k) => k.y + k.height));
+    try {
+      sec.resizeWithoutConstraints(Math.max(400, maxR + pad), Math.max(200, maxB + pad));
+    } catch (_e) {
+      try {
+        sec.resize(Math.max(400, maxR + pad), Math.max(200, maxB + pad));
+      } catch (_e2) {
+      }
+    }
+  }
+  function insideInstance(n) {
+    for (let p = n.parent; p; p = p.parent) if (p.type === "INSTANCE") return true;
+    return false;
+  }
+  async function boardBuildStyles(scope, stylesSec, prefix) {
+    const PAD = 100;
+    const textNodes = [];
+    const fillNodes = [];
+    for (const s of scope) {
+      if ("findAll" in s) {
+        for (const n of s.findAll(() => true)) {
+          if (insideInstance(n)) continue;
+          if (n.type === "TEXT") textNodes.push(n);
+          else if ("fills" in n && n.fills !== figma.mixed) fillNodes.push(n);
+        }
+      }
+    }
+    const tGroups = /* @__PURE__ */ new Map();
+    for (const tn of textNodes) {
+      if (tn.fontName === figma.mixed || tn.fontSize === figma.mixed || tn.lineHeight === figma.mixed) continue;
+      const f = tn.fontName;
+      const lh = tn.lineHeight;
+      const lhKey = lh.unit === "AUTO" ? "auto" : Math.round(lh.value);
+      const key = `${f.family}|${f.style}|${tn.fontSize}|${lhKey}`;
+      if (!tGroups.has(key)) tGroups.set(key, { font: f, size: tn.fontSize, lh, nodes: [] });
+      tGroups.get(key).nodes.push(tn);
+    }
+    const typeScale = [...tGroups.values()].sort((a, b) => b.size - a.size || b.nodes.length - a.nodes.length).slice(0, 24);
+    let y = PAD;
+    const title = await boardLabel("Tipografía", 32, 700, { r: 0.1, g: 0.1, b: 0.12 });
+    stylesSec.appendChild(title);
+    title.x = PAD;
+    title.y = y;
+    y += 70;
+    for (const g of typeScale) {
+      try {
+        const st = figma.createTextStyle();
+        st.name = `${prefix}/Texto/${Math.round(g.size)} ${g.font.style}`;
+        st.fontName = g.font;
+        st.fontSize = g.size;
+        st.lineHeight = g.lh;
+        for (const tn of g.nodes) {
+          try {
+            tn.textStyleId = st.id;
+          } catch (_e) {
+          }
+        }
+        const sample = figma.createText();
+        sample.fontName = g.font;
+        sample.characters = `${Math.round(g.size)} · ${g.font.family} ${g.font.style} — Aa Bb 123`;
+        sample.fontSize = Math.min(g.size, 72);
+        try {
+          sample.textStyleId = st.id;
+        } catch (_e) {
+        }
+        sample.fontSize = Math.min(g.size, 72);
+        stylesSec.appendChild(sample);
+        sample.x = PAD;
+        sample.y = y;
+        const meta2 = await boardLabel(`${st.name.split("/").slice(-1)[0]} · ${g.nodes.length} usos`, 12, 400, { r: 0.45, g: 0.45, b: 0.5 });
+        stylesSec.appendChild(meta2);
+        meta2.x = PAD;
+        meta2.y = y + sample.height + 6;
+        y += sample.height + 48;
+      } catch (_e) {
+      }
+    }
+    const cGroups = /* @__PURE__ */ new Map();
+    for (const n of [...fillNodes, ...textNodes]) {
+      const fills = n.fills;
+      if (!Array.isArray(fills) || fills.length !== 1 || fills[0].type !== "SOLID" || fills[0].visible === false) continue;
+      const p = fills[0];
+      const key = boardColorKey({ ...p.color, a: p.opacity ?? 1 });
+      if (!cGroups.has(key)) cGroups.set(key, { paint: p, nodes: [] });
+      cGroups.get(key).nodes.push(n);
+    }
+    const palette = [...cGroups.entries()].sort((a, b) => b[1].nodes.length - a[1].nodes.length).slice(0, 32);
+    const cx = 1100;
+    let cy = PAD;
+    const ctitle = await boardLabel("Colores", 32, 700, { r: 0.1, g: 0.1, b: 0.12 });
+    stylesSec.appendChild(ctitle);
+    ctitle.x = cx;
+    ctitle.y = cy;
+    cy += 70;
+    let col = 0;
+    for (const [hex, g] of palette) {
+      try {
+        const st = figma.createPaintStyle();
+        st.name = `${prefix}/Color/${hex}`;
+        st.paints = [g.paint];
+        for (const n of g.nodes) {
+          try {
+            n.fillStyleId = st.id;
+          } catch (_e) {
+          }
+        }
+        const sw = figma.createRectangle();
+        sw.resize(120, 120);
+        sw.cornerRadius = 12;
+        sw.fills = [g.paint];
+        sw.strokes = [{ type: "SOLID", color: { r: 0, g: 0, b: 0 }, opacity: 0.08 }];
+        try {
+          sw.fillStyleId = st.id;
+        } catch (_e) {
+        }
+        const x = cx + col * 150, yy = cy;
+        stylesSec.appendChild(sw);
+        sw.x = x;
+        sw.y = yy;
+        const lbl = await boardLabel(`${hex}
+${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
+        stylesSec.appendChild(lbl);
+        lbl.x = x;
+        lbl.y = yy + 128;
+        col++;
+        if (col === 6) {
+          col = 0;
+          cy += 190;
+        }
+      } catch (_e) {
+      }
+    }
+  }
+  async function buildDesignBoard(payload) {
+    const root = payload.rootNode;
+    root.type = "FRAME";
+    let host = "Landing";
+    try {
+      host = new URL(payload.source?.url || "").hostname.replace(/^www\./, "") || host;
+    } catch (_e) {
+    }
+    const prefix = host;
+    const page = figma.currentPage;
+    const others = page.children;
+    const originX = others.length ? Math.round(Math.max(...others.map((c) => c.x + c.width)) + 400) : 0;
+    const originY = others.length ? Math.round(Math.min(...others.map((c) => c.y))) : 0;
+    const progress = (message) => figma.ui.postMessage({ type: "LOG", level: "info", message: `Tablero · ${message}` });
+    const groups = boardDetectComponents(root);
+    const compSec = boardNewSection("03 · Componentes");
+    page.appendChild(compSec);
+    const ctx = { masters: /* @__PURE__ */ new Map() };
+    setBoardCtx(ctx);
+    let gx = 100, gy = 100, rowH = 0;
+    const MAX_ROW = 2600;
+    for (const g of groups) {
+      let built = null;
+      try {
+        const data = JSON.parse(JSON.stringify(g.occurrences[0]));
+        (function strip(n) {
+          delete n.__cg;
+          (n.children || []).forEach(strip);
+        })(data);
+        data.type = "COMPONENT";
+        data.name = g.name;
+        data.layout = { ...data.layout, positioning: "AUTO", x: 0, y: 0 };
+        built = await buildFigmaNode(data);
+        if (!built || built.type !== "COMPONENT") throw new Error("no se generó como componente");
+        const master = built;
+        compSec.appendChild(master);
+        master.description = `${g.occurrences.length} usos en ${host}`;
+        if (gx > 100 && gx + master.width > MAX_ROW) {
+          gx = 100;
+          gy += rowH + 140;
+          rowH = 0;
+        }
+        master.x = gx;
+        master.y = gy + 40;
+        const lbl = await boardLabel(`${g.name} · ${g.occurrences.length} usos`, 16, 600, { r: 0.33, g: 0.2, b: 0.8 });
+        compSec.appendChild(lbl);
+        lbl.x = gx;
+        lbl.y = gy;
+        gx += master.width + 120;
+        rowH = Math.max(rowH, master.height + 40);
+        ctx.masters.set(g.id, master);
+      } catch (compErr) {
+        if (built && !built.removed) {
+          try {
+            built.remove();
+          } catch (_e) {
+          }
+        }
+        figma.ui.postMessage({ type: "LOG", level: "warn", message: `Componente "${g.name}" omitido: ${compErr?.message || compErr}` });
+      }
+    }
+    progress(`${ctx.masters.size} componentes creados`);
+    const fullSec = boardNewSection("01 · Página completa");
+    page.appendChild(fullSec);
+    const full = await buildFigmaNode(root);
+    const componentCount = ctx.masters.size;
+    setBoardCtx(null);
+    if (!full) throw new Error("No se pudo generar la vista completa");
+    fullSec.appendChild(full);
+    full.x = 100;
+    full.y = 100;
+    progress(`vista completa lista (${Math.round(full.width)}×${Math.round(full.height)})`);
+    const subSec = boardNewSection("02 · Secciones");
+    page.appendChild(subSec);
+    let sy = 100;
+    const isMulti = String(root.id || "").startsWith("multi_selection_bundle") && "children" in full;
+    const picked = isMulti ? [...full.children] : boardPickSections(full);
+    let subOk = 0;
+    for (let i = 0; i < picked.length; i++) {
+      let clone2 = null;
+      try {
+        const heading = boardHeadingOf(picked[i]);
+        const title = `${String(i + 1).padStart(2, "0")} · ${picked[i].name}` + (heading ? ` — ${heading}` : "");
+        const lbl = await boardLabel(title, 20, 600, { r: 0.1, g: 0.1, b: 0.12 });
+        subSec.appendChild(lbl);
+        lbl.x = 100;
+        lbl.y = sy;
+        clone2 = picked[i].clone();
+        subSec.appendChild(clone2);
+        clone2.x = 100;
+        clone2.y = sy + 44;
+        sy += 44 + clone2.height + 140;
+        subOk++;
+      } catch (subErr) {
+        if (clone2 && clone2.parent !== subSec) {
+          try {
+            clone2.remove();
+          } catch (_e) {
+          }
+        }
+        figma.ui.postMessage({ type: "LOG", level: "warn", message: `Sub-vista "${picked[i].name}" omitida: ${subErr?.message || subErr}` });
+      }
+    }
+    progress(`${subOk}/${picked.length} sub-vistas`);
+    const stylesSec = boardNewSection("04 · Estilos");
+    page.appendChild(stylesSec);
+    await boardBuildStyles([full, ...compSec.children.filter((c) => c.type === "COMPONENT")], stylesSec, prefix);
+    const order = [fullSec, subSec, compSec, stylesSec];
+    for (const s of order) boardFitSection(s);
+    let x = originX;
+    for (const s of order) {
+      if (s.children.length === 0) {
+        s.remove();
+        continue;
+      }
+      s.x = x;
+      s.y = originY;
+      x += s.width + 240;
+    }
+    figma.viewport.scrollAndZoomIntoView(order.filter((s) => !s.removed));
+    return { main: full, nodeCount: countNodes(root), components: componentCount, page };
+  }
+
+  // packages/figma-plugin/src/text-sizing.ts
+  async function applyTextSegments(tn, segments) {
+    const len = tn.characters.length;
+    for (const seg of segments) {
+      const start = Math.max(0, Math.min(len, seg.start));
+      const end = Math.max(start, Math.min(len, seg.end));
+      if (end <= start) continue;
+      try {
+        if (seg.fontFamily || seg.fontWeight) {
+          const f = await loadFontSafely(seg.fontFamily || "Inter", seg.fontWeight || 400);
+          tn.setRangeFontName(start, end, f);
+        }
+        if (seg.fontSize && seg.fontSize > 0) tn.setRangeFontSize(start, end, seg.fontSize);
+        if (seg.color) {
+          tn.setRangeFills(start, end, [{
+            type: "SOLID",
+            color: { r: seg.color.r, g: seg.color.g, b: seg.color.b },
+            opacity: seg.color.a !== void 0 ? seg.color.a : 1
+          }]);
+        }
+        if (seg.underline) tn.setRangeTextDecoration(start, end, "UNDERLINE");
+        else if (seg.strike) tn.setRangeTextDecoration(start, end, "STRIKETHROUGH");
+      } catch (err) {
+        log.warn("No se pudo aplicar tramo de texto", { error: errText(err) });
+      }
+    }
+  }
+  function applyNoWrapSizing(tn, data, parentIsAutoLayout) {
+    const td = data.textData;
+    const measuredW = data.layout?.measuredWidth || (typeof data.layout?.width === "number" ? data.layout.width : 0);
+    tn.textAutoResize = "WIDTH_AND_HEIGHT";
+    const naturalW = tn.width;
+    const fitsMeasured = measuredW > 0 && naturalW <= measuredW + 0.5;
+    if (parentIsAutoLayout) {
+      if (data.layout?.width === "FILL" && fitsMeasured) {
+        try {
+          tn.layoutSizingHorizontal = "FILL";
+          tn.textAutoResize = "HEIGHT";
+        } catch (_e) {
+        }
+      } else if (typeof data.layout?.width === "number" && fitsMeasured) {
+        try {
+          tn.resize(Math.max(1, data.layout.width), tn.height);
+          tn.textAutoResize = "HEIGHT";
+        } catch (_e) {
+        }
+      }
+      return;
+    }
+    if (measuredW > 0 && fitsMeasured) {
+      try {
+        tn.resize(measuredW, tn.height);
+        tn.textAutoResize = "HEIGHT";
+      } catch (_e) {
+      }
+    } else if (measuredW > 0) {
+      const extra = naturalW - measuredW;
+      if (td.textAlign === "CENTER") tn.x = tn.x - extra / 2;
+      else if (td.textAlign === "RIGHT") tn.x = tn.x - extra;
+    }
+  }
+
+  // packages/figma-plugin/src/render.ts
+  function countNodes(node2) {
+    let count = 1;
+    if (node2.children) {
+      for (const child of node2.children) count += countNodes(child);
+    }
+    return count;
+  }
+  async function buildFigmaNode(nodeData) {
+    let createdNode = null;
+    const cg = nodeData.__cg;
+    const boardCtx = getBoardCtx();
+    if (boardCtx && cg && boardCtx.masters.has(cg)) {
+      try {
+        return await buildBoardInstance(nodeData, boardCtx.masters.get(cg));
+      } catch (instErr) {
+        figma.ui.postMessage({ type: "LOG", level: "warn", message: `Instancia "${nodeData.name}" no creada, se dibuja como copia: ${instErr?.message || instErr}` });
+      }
+    }
+    try {
+      if (nodeData.type === "TEXT" && nodeData.textData) {
+        try {
+          await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+        } catch (_e) {
+        }
+        const font = await loadFontSafely(
+          nodeData.textData.fontFamily,
+          nodeData.textData.fontWeight
+        );
+        const textNode = figma.createText();
+        try {
+          textNode.fontName = font;
+        } catch (_fErr) {
+          try {
+            textNode.fontName = { family: "Inter", style: "Regular" };
+          } catch (_fErr2) {
+          }
+        }
+        textNode.characters = nodeData.textData.characters || " ";
+        try {
+          textNode.fontSize = Math.max(1, nodeData.textData.fontSize || 14);
+        } catch (_e) {
+        }
+        if (nodeData.textData.lineHeight && nodeData.textData.lineHeight > 0) {
+          try {
+            textNode.lineHeight = { value: nodeData.textData.lineHeight, unit: "PIXELS" };
+          } catch (_e) {
+          }
+        }
+        if (nodeData.textData.letterSpacing !== void 0 && nodeData.textData.letterSpacing !== 0) {
+          try {
+            textNode.letterSpacing = { value: nodeData.textData.letterSpacing, unit: "PIXELS" };
+          } catch (_e) {
+          }
+        }
+        if (nodeData.textData.textAlign) {
+          try {
+            const alignMap = {
+              LEFT: "LEFT",
+              CENTER: "CENTER",
+              RIGHT: "RIGHT",
+              JUSTIFIED: "JUSTIFIED"
+            };
+            textNode.textAlignHorizontal = alignMap[nodeData.textData.textAlign] || "LEFT";
+          } catch (_e) {
+          }
+        }
+        if (nodeData.styles?.fills && nodeData.styles.fills.length > 0) {
+          try {
+            textNode.fills = nodeData.styles.fills.map((f) => ({
+              type: "SOLID",
+              color: { r: f.r, g: f.g, b: f.b },
+              opacity: f.a !== void 0 ? f.a : 1
+            }));
+          } catch (_e) {
+          }
+        }
+        if (Array.isArray(nodeData.textData.segments) && nodeData.textData.segments.length > 0) {
+          await applyTextSegments(textNode, nodeData.textData.segments);
+        }
+        if (nodeData.textData.noWrap) {
+          try {
+            textNode.textAutoResize = "WIDTH_AND_HEIGHT";
+          } catch (_e) {
+          }
+        }
+        createdNode = textNode;
+      } else if (nodeData.type === "SVG" && nodeData.svgContent) {
+        try {
+          const svgNode = figma.createNodeFromSvg(nodeData.svgContent);
+          const targetW = typeof nodeData.layout?.width === "number" ? nodeData.layout.width : 24;
+          const targetH = typeof nodeData.layout?.height === "number" ? nodeData.layout.height : 24;
+          if (targetW > 0 && targetH > 0) {
+            svgNode.resize(targetW, targetH);
+          }
+          createdNode = svgNode;
+        } catch (err) {
+          log.warn("No se pudo crear SVG, se usa un frame de reemplazo", { error: errText(err) });
+          const fallback = figma.createFrame();
+          fallback.resize(24, 24);
+          createdNode = fallback;
+        }
+      } else {
+        const frame = nodeData.type === "COMPONENT" ? figma.createComponent() : figma.createFrame();
+        createdNode = frame;
+        frame.name = nodeData.name || "Frame";
+        const mode = nodeData.layout?.mode || "NONE";
+        if (mode === "HORIZONTAL") {
+          frame.layoutMode = "HORIZONTAL";
+        } else if (mode === "VERTICAL") {
+          frame.layoutMode = "VERTICAL";
+        } else {
+          frame.layoutMode = "NONE";
+        }
+        if (frame.layoutMode !== "NONE") {
+          frame.itemSpacing = Math.max(0, nodeData.layout?.itemSpacing || 0);
+          const pad = nodeData.layout?.padding || { top: 0, right: 0, bottom: 0, left: 0 };
+          frame.paddingTop = Math.max(0, pad.top || 0);
+          frame.paddingRight = Math.max(0, pad.right || 0);
+          frame.paddingBottom = Math.max(0, pad.bottom || 0);
+          frame.paddingLeft = Math.max(0, pad.left || 0);
+          if (nodeData.layout?.primaryAxisAlignItems) {
+            const mapPrimary = {
+              MIN: "MIN",
+              CENTER: "CENTER",
+              MAX: "MAX",
+              SPACE_BETWEEN: "SPACE_BETWEEN"
+            };
+            frame.primaryAxisAlignItems = mapPrimary[nodeData.layout.primaryAxisAlignItems] || "MIN";
+          }
+          if (nodeData.layout?.counterAxisAlignItems) {
+            const mapCounter = {
+              MIN: "MIN",
+              CENTER: "CENTER",
+              MAX: "MAX",
+              BASELINE: "BASELINE"
+            };
+            frame.counterAxisAlignItems = mapCounter[nodeData.layout.counterAxisAlignItems] || "MIN";
+          }
+          if (nodeData.layout?.layoutWrap === "WRAP") {
+            frame.layoutWrap = "WRAP";
+            const cas = nodeData.layout.counterAxisSpacing;
+            if (typeof cas === "number" && cas >= 0) {
+              try {
+                frame.counterAxisSpacing = cas;
+              } catch (_e) {
+              }
+            }
+          }
+        }
+        if (nodeData.imageData) {
+          try {
+            const image = figma.createImage(base64ToBytes(nodeData.imageData));
+            const baseFills = (nodeData.styles?.fills || []).filter((f) => !f.type || f.type === "SOLID");
+            const overlayFills = (nodeData.styles?.fills || []).filter((f) => f.type && f.type !== "SOLID");
+            const imagePaint = {
+              type: "IMAGE",
+              scaleMode: nodeData.styles?.imageScaleMode || "FILL",
+              imageHash: image.hash
+            };
+            frame.fills = [
+              ...baseFills.map(cssFillToPaint),
+              imagePaint,
+              ...overlayFills.map(cssFillToPaint)
+            ];
+          } catch (_imgErr) {
+            log.warn("Error decodificando imagen base64", { error: errText(_imgErr) });
+            figma.ui.postMessage({
+              type: "LOG",
+              level: "error",
+              message: `Imagen no aplicada en "${nodeData.name}": ${_imgErr?.message || _imgErr}`
+            });
+            frame.fills = [{ type: "SOLID", color: { r: 0.9, g: 0.9, b: 0.92 } }];
+          }
+        } else if (nodeData.styles?.fills) {
+          frame.fills = nodeData.styles.fills.map(cssFillToPaint);
+        }
+        if (nodeData.styles?.strokes && nodeData.styles.strokes.length > 0) {
+          const stroke = nodeData.styles.strokes[0];
+          frame.strokes = [{
+            type: "SOLID",
+            color: { r: stroke.r, g: stroke.g, b: stroke.b },
+            opacity: stroke.a !== void 0 ? stroke.a : 1
+          }];
+          frame.strokeAlign = "INSIDE";
+          if (nodeData.styles?.borderSides) {
+            const bs = nodeData.styles.borderSides;
+            try {
+              frame.strokeTopWeight = Math.max(0, bs.top ?? 0);
+              frame.strokeRightWeight = Math.max(0, bs.right ?? 0);
+              frame.strokeBottomWeight = Math.max(0, bs.bottom ?? 0);
+              frame.strokeLeftWeight = Math.max(0, bs.left ?? 0);
+            } catch (_e) {
+              frame.strokeWeight = Math.max(1, stroke.width || 1);
+            }
+          } else {
+            frame.strokeWeight = Math.max(1, stroke.width || 1);
+          }
+        }
+        if (nodeData.styles?.cornerRadius !== void 0) {
+          if (typeof nodeData.styles.cornerRadius === "number") {
+            frame.cornerRadius = Math.max(0, nodeData.styles.cornerRadius);
+          } else if (Array.isArray(nodeData.styles.cornerRadius) && nodeData.styles.cornerRadius.length === 4) {
+            const [tl, tr, br, bl] = nodeData.styles.cornerRadius;
+            frame.topLeftRadius = Math.max(0, tl);
+            frame.topRightRadius = Math.max(0, tr);
+            frame.bottomRightRadius = Math.max(0, br);
+            frame.bottomLeftRadius = Math.max(0, bl);
+          }
+        }
+        if (typeof nodeData.styles?.opacity === "number") {
+          frame.opacity = Math.max(0, Math.min(1, nodeData.styles.opacity));
+        }
+        const effects = [];
+        if (nodeData.styles?.boxShadow && nodeData.styles.boxShadow.length > 0) {
+          for (const shadow of nodeData.styles.boxShadow) {
+            effects.push({
+              type: "DROP_SHADOW",
+              color: {
+                r: shadow.color.r,
+                g: shadow.color.g,
+                b: shadow.color.b,
+                a: shadow.color.a
+              },
+              offset: { x: shadow.offset.x, y: shadow.offset.y },
+              radius: Math.max(0, shadow.radius),
+              spread: shadow.spread || 0,
+              visible: true,
+              blendMode: "NORMAL"
+            });
+          }
+        }
+        if (typeof nodeData.styles?.backdropBlur === "number" && nodeData.styles.backdropBlur > 0) {
+          effects.push({
+            type: "BACKGROUND_BLUR",
+            radius: Math.max(1, nodeData.styles.backdropBlur),
+            visible: true
+          });
+        }
+        if (effects.length > 0) {
+          frame.effects = effects;
+        }
+        const initW = typeof nodeData.layout?.width === "number" ? nodeData.layout.width : typeof nodeData.layout?.measuredWidth === "number" ? nodeData.layout.measuredWidth : 100;
+        const initH = typeof nodeData.layout?.height === "number" ? nodeData.layout.height : typeof nodeData.layout?.measuredHeight === "number" ? nodeData.layout.measuredHeight : 40;
+        frame.resize(Math.max(1, initW), Math.max(1, initH));
+        if (frame.layoutMode !== "NONE") {
+          try {
+            frame.layoutSizingHorizontal = "FIXED";
+            frame.layoutSizingVertical = "FIXED";
+          } catch (_e) {
+          }
+        }
+        const hasRoundCorners = typeof frame.cornerRadius === "number" ? frame.cornerRadius > 0 : false;
+        const hasFills = Array.isArray(frame.fills) && frame.fills.length > 0;
+        frame.clipsContent = !!(nodeData.clipsContent || hasRoundCorners && hasFills);
+        if (nodeData.children && nodeData.children.length > 0) {
+          for (const childData of nodeData.children) {
+            const childNode = await buildFigmaNode(childData);
+            if (childNode) try {
+              frame.appendChild(childNode);
+              if (frame.layoutMode !== "NONE") {
+                const layoutChild = childNode;
+                if (childData.layout?.positioning === "ABSOLUTE") {
+                  try {
+                    const targetW = typeof childData.layout.width === "number" && childData.layout.width > 0 ? childData.layout.width : childData.layout.measuredWidth || layoutChild.width || 100;
+                    const targetH = typeof childData.layout.height === "number" && childData.layout.height > 0 ? childData.layout.height : childData.layout.measuredHeight || layoutChild.height || 100;
+                    if (targetW > 0 && targetH > 0 && typeof layoutChild.resize === "function") {
+                      try {
+                        layoutChild.resize(targetW, targetH);
+                      } catch (_resErr) {
+                      }
+                    }
+                    if ("layoutPositioning" in layoutChild) {
+                      layoutChild.layoutPositioning = "ABSOLUTE";
+                    }
+                    if (typeof childData.layout.x === "number") childNode.x = childData.layout.x;
+                    if (typeof childData.layout.y === "number") childNode.y = childData.layout.y;
+                  } catch (absErr) {
+                    log.warn("Error configurando layoutPositioning ABSOLUTE", { error: errText(absErr) });
+                  }
+                } else {
+                  if (childNode.type === "TEXT" && childData.textData?.noWrap) {
+                    applyNoWrapSizing(childNode, childData, true);
+                  } else if (childNode.type === "TEXT") {
+                    const tn = childNode;
+                    const isMulti = childData.textData?.isMultiline || childData.textData?.characters && childData.textData.characters.includes("\n");
+                    if (childData.layout?.width === "FILL") {
+                      tn.textAutoResize = "HEIGHT";
+                      try {
+                        tn.layoutSizingHorizontal = "FILL";
+                      } catch (_e) {
+                        const fallbackW = childData.layout?.measuredWidth || frame.width;
+                        if (fallbackW > 0) {
+                          try {
+                            tn.resize(fallbackW, tn.height);
+                          } catch (_r) {
+                          }
+                        }
+                      }
+                    } else if (childData.layout?.width === "HUG") {
+                      if (isMulti && frame.layoutMode === "VERTICAL") {
+                        tn.textAutoResize = "HEIGHT";
+                        try {
+                          tn.layoutSizingHorizontal = "FILL";
+                        } catch (_e) {
+                          const fallbackW = childData.layout?.measuredWidth || frame.width;
+                          if (fallbackW > 0) {
+                            try {
+                              tn.resize(fallbackW, tn.height);
+                            } catch (_r) {
+                            }
+                          }
+                        }
+                      } else {
+                        tn.textAutoResize = "WIDTH_AND_HEIGHT";
+                      }
+                    } else if (typeof childData.layout?.width === "number") {
+                      try {
+                        tn.resize(Math.max(1, childData.layout.width), tn.height);
+                      } catch (_e) {
+                      }
+                      tn.textAutoResize = "HEIGHT";
+                    }
+                  } else {
+                    const hasFixedW = typeof childData.layout?.width === "number";
+                    const hasFixedH = typeof childData.layout?.height === "number";
+                    if (hasFixedW || hasFixedH) {
+                      const targetW = hasFixedW ? Math.max(1, childData.layout.width) : layoutChild.width;
+                      const targetH = hasFixedH ? Math.max(1, childData.layout.height) : layoutChild.height;
+                      try {
+                        layoutChild.resize(targetW, targetH);
+                      } catch (_e) {
+                      }
+                    }
+                    try {
+                      if (childData.layout?.width === "FILL" && "layoutSizingHorizontal" in layoutChild) {
+                        layoutChild.layoutSizingHorizontal = "FILL";
+                      } else if (childData.layout?.width === "HUG" && "layoutSizingHorizontal" in layoutChild) {
+                        layoutChild.layoutSizingHorizontal = "HUG";
+                      } else if (hasFixedW && "layoutSizingHorizontal" in layoutChild) {
+                        layoutChild.layoutSizingHorizontal = "FIXED";
+                      }
+                    } catch (_e) {
+                    }
+                    try {
+                      if (childData.layout?.height === "FILL" && "layoutSizingVertical" in layoutChild) {
+                        layoutChild.layoutSizingVertical = "FILL";
+                      } else if (childData.layout?.height === "HUG" && "layoutSizingVertical" in layoutChild) {
+                        layoutChild.layoutSizingVertical = "HUG";
+                      } else if (hasFixedH && "layoutSizingVertical" in layoutChild) {
+                        layoutChild.layoutSizingVertical = "FIXED";
+                      }
+                    } catch (_e) {
+                    }
+                  }
+                }
+              } else {
+                if (typeof childData.layout?.x === "number") childNode.x = childData.layout.x;
+                if (typeof childData.layout?.y === "number") childNode.y = childData.layout.y;
+                if (childNode.type === "FRAME" || childNode.type === "COMPONENT") {
+                  const targetW = (typeof childData.layout?.width === "number" ? childData.layout.width : childData.layout?.measuredWidth) || childNode.width;
+                  const targetH = (typeof childData.layout?.height === "number" ? childData.layout.height : childData.layout?.measuredHeight) || childNode.height;
+                  if (targetW > 0 && targetH > 0 && (targetW !== childNode.width || targetH !== childNode.height)) {
+                    childNode.resize(targetW, targetH);
+                  }
+                } else if (childNode.type === "TEXT" && childData.textData?.noWrap) {
+                  applyNoWrapSizing(childNode, childData, false);
+                } else if (childNode.type === "TEXT") {
+                  const tn = childNode;
+                  const isMulti = childData.textData?.isMultiline || childData.textData?.characters && childData.textData.characters.includes("\n");
+                  const targetW = typeof childData.layout?.width === "number" && childData.layout.width > 0 ? childData.layout.width : childData.layout?.measuredWidth || 0;
+                  if (targetW > 0 && (isMulti || childData.layout?.width !== "HUG")) {
+                    tn.resize(targetW, tn.height);
+                    tn.textAutoResize = "HEIGHT";
+                  } else {
+                    tn.textAutoResize = "WIDTH_AND_HEIGHT";
+                  }
+                }
+              }
+            } catch (childErr) {
+              figma.ui.postMessage({
+                type: "LOG",
+                level: "warn",
+                message: `Ajuste de capa "${childData.name}" incompleto: ${childErr?.message || childErr}`
+              });
+            }
+          }
+        }
+        const hasSelfFixedW = typeof nodeData.layout?.width === "number" && nodeData.layout.width > 0;
+        const hasSelfFixedH = typeof nodeData.layout?.height === "number" && nodeData.layout.height > 0;
+        const targetFrameW = hasSelfFixedW ? nodeData.layout.width : nodeData.layout?.measuredWidth || frame.width;
+        const targetFrameH = hasSelfFixedH ? nodeData.layout.height : nodeData.layout?.measuredHeight || frame.height;
+        if (targetFrameW > 0 && targetFrameH > 0 && (targetFrameW !== frame.width || targetFrameH !== frame.height)) {
+          try {
+            frame.resize(targetFrameW, targetFrameH);
+          } catch (_e) {
+          }
+        }
+        if (frame.layoutMode !== "NONE") {
+          try {
+            if (nodeData.layout?.width === "HUG") {
+              frame.layoutSizingHorizontal = "HUG";
+            } else if (nodeData.layout?.width === "FILL") {
+              frame.layoutSizingHorizontal = "FILL";
+            } else if (hasSelfFixedW) {
+              frame.layoutSizingHorizontal = "FIXED";
+            }
+          } catch (_e) {
+          }
+          try {
+            if (nodeData.layout?.height === "HUG") {
+              frame.layoutSizingVertical = "HUG";
+            } else if (nodeData.layout?.height === "FILL") {
+              frame.layoutSizingVertical = "FILL";
+            } else if (hasSelfFixedH) {
+              frame.layoutSizingVertical = "FIXED";
+            }
+          } catch (_e) {
+          }
+        }
+        createdNode = frame;
+      }
+      if (createdNode) {
+        createdNode.name = nodeData.name || createdNode.name;
+      }
+    } catch (error2) {
+      log.error("Error creando nodo Figma", { error: errText(error2) });
+      try {
+        figma.ui.postMessage({
+          type: "LOG",
+          level: "error",
+          message: `Error en capa "${nodeData.name}": ${error2?.message || error2}`
+        });
+      } catch (_logErr) {
+      }
+      if (nodeData.type === "TEXT" && nodeData.textData && !createdNode) {
+        try {
+          await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+          const fb = figma.createText();
+          fb.name = nodeData.name || "Text";
+          fb.characters = nodeData.textData.characters || " ";
+          fb.fontSize = nodeData.textData.fontSize || 14;
+          if (nodeData.styles?.fills && nodeData.styles.fills.length > 0) {
+            fb.fills = nodeData.styles.fills.map((f) => ({
+              type: "SOLID",
+              color: { r: f.r, g: f.g, b: f.b },
+              opacity: f.a !== void 0 ? f.a : 1
+            }));
+          } else {
+            fb.fills = [{ type: "SOLID", color: { r: 0.95, g: 0.95, b: 0.95 }, opacity: 1 }];
+          }
+          createdNode = fb;
+        } catch (_fbErr) {
+          log.error("El texto de reemplazo también falló", { error: errText(_fbErr) });
+        }
+      }
+    }
+    return createdNode;
+  }
+
   // packages/figma-plugin/src/validation.ts
   function guardRenderPayload(payload) {
     const result = validateRenderPayload(payload);
     return result.ok ? null : result.error;
   }
 
+  // packages/figma-plugin/src/render-command.ts
+  async function renderNodesCommand(rawPayload, post2, log2) {
+    const payload = rawPayload;
+    const rootNode = payload?.rootNode || (Array.isArray(payload?.nodes) ? payload.nodes[0] : null);
+    if (!payload || !rootNode) {
+      throw new Error("Payload vacío o inválido (se esperaba rootNode o nodes[0])");
+    }
+    payload.rootNode = rootNode;
+    const invalid = guardRenderPayload(payload);
+    if (invalid) throw new Error(`Payload inválido: ${invalid}`);
+    let targetPage = figma.currentPage;
+    if (payload.pageName) {
+      const found = figma.root.children.find((p) => p.name === payload.pageName);
+      if (found) {
+        targetPage = found;
+      } else {
+        const newPage = figma.createPage();
+        newPage.name = payload.pageName;
+        targetPage = newPage;
+      }
+      figma.currentPage = targetPage;
+    }
+    if (payload.createAsComponent) {
+      payload.rootNode.type = "COMPONENT";
+    }
+    let createdTokensCount = 0;
+    if (payload.tokens?.colors && typeof figma.createPaintStyle === "function") {
+      for (const [tokenName, rgba] of Object.entries(payload.tokens.colors)) {
+        try {
+          const cleanName = "Token / " + tokenName.replace(/^--/, "");
+          const existing = figma.getLocalPaintStyles().find((s) => s.name === cleanName);
+          const style = existing || figma.createPaintStyle();
+          style.name = cleanName;
+          style.paints = [{
+            type: "SOLID",
+            color: { r: rgba.r, g: rgba.g, b: rgba.b },
+            opacity: rgba.a !== void 0 ? rgba.a : 1
+          }];
+          createdTokensCount++;
+        } catch (_tokErr) {
+        }
+      }
+    }
+    try {
+      await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+    } catch (_e) {
+    }
+    await prewarmFonts(payload.rootNode);
+    if (payload.board) {
+      const boardStart = Date.now();
+      const pageBefore = figma.currentPage;
+      const nodesBefore = new Set(pageBefore.children.map((c) => c.id));
+      const pagesBefore = new Set(figma.root.children.map((p) => p.id));
+      let board = null;
+      try {
+        board = await buildDesignBoard(payload);
+      } catch (boardErr) {
+        setBoardCtx(null);
+        try {
+          figma.currentPage = pageBefore;
+        } catch (_e) {
+          try {
+            await figma.setCurrentPageAsync(pageBefore);
+          } catch (_e2) {
+          }
+        }
+        for (const p of [...figma.root.children]) {
+          if (!pagesBefore.has(p.id)) {
+            try {
+              p.remove();
+            } catch (_e) {
+            }
+          }
+        }
+        for (const c of [...pageBefore.children]) {
+          if (!nodesBefore.has(c.id)) {
+            try {
+              c.remove();
+            } catch (_e) {
+            }
+          }
+        }
+        log2.error("Tablero falló", { error: String(boardErr?.message || boardErr) });
+        post2({
+          type: "LOG",
+          level: "error",
+          message: `No se pudo organizar como tablero (${boardErr?.message || boardErr}). Se dibuja en modo normal.`
+        });
+      }
+      if (board) {
+        figma.currentPage.selection = [board.main];
+        post2({
+          type: "LOG",
+          level: "success",
+          message: `Tablero creado en "${board.page.name}": ${board.components} componentes enlazados, secciones y estilos organizados`
+        });
+        post2({
+          type: "RENDER_SUCCESS",
+          nodeId: board.main.id,
+          name: board.main.name,
+          nodeCount: board.nodeCount,
+          pageName: board.page.name,
+          width: Math.round(board.main.width),
+          height: Math.round(board.main.height),
+          nodeType: board.main.type,
+          tokensCount: createdTokensCount,
+          rawPayload: payload.rootNode,
+          durationMs: Date.now() - boardStart
+        });
+        return;
+      }
+    }
+    const totalNodeCount = countNodes(payload.rootNode);
+    const renderStartTime = Date.now();
+    const rootFigmaNode = await buildFigmaNode(payload.rootNode);
+    const durationMs = Date.now() - renderStartTime;
+    if (rootFigmaNode) {
+      targetPage.appendChild(rootFigmaNode);
+      if (payload.targetCanvasPosition) {
+        rootFigmaNode.x = payload.targetCanvasPosition.x;
+        rootFigmaNode.y = payload.targetCanvasPosition.y;
+        if (payload.sectionTitle) {
+          try {
+            const headerFont = await loadFontSafely("Inter", 700);
+            const headerText = figma.createText();
+            headerText.fontName = headerFont;
+            headerText.characters = payload.sectionTitle;
+            headerText.fontSize = 18;
+            headerText.fills = [{ type: "SOLID", color: { r: 0.2, g: 0.3, b: 0.5 }, opacity: 0.9 }];
+            headerText.x = payload.targetCanvasPosition.x;
+            headerText.y = payload.targetCanvasPosition.y - 65;
+            targetPage.appendChild(headerText);
+          } catch (_hdrErr) {
+          }
+        }
+      } else {
+        const GAP = Number(payload.placementGap) || 120;
+        const placementMode = (payload.placementMode || "SIDE").toUpperCase();
+        const otherChildren = targetPage.children.filter((child) => child.id !== rootFigmaNode.id);
+        if (otherChildren.length === 0 || placementMode === "CENTER") {
+          const center = figma.viewport.center;
+          rootFigmaNode.x = Math.round(center.x - rootFigmaNode.width / 2);
+          rootFigmaNode.y = Math.round(center.y - rootFigmaNode.height / 2);
+        } else if (placementMode === "BELOW") {
+          const selected = targetPage.selection.find((s) => s.id !== rootFigmaNode.id);
+          if (selected) {
+            rootFigmaNode.x = Math.round(selected.x);
+            rootFigmaNode.y = Math.round(selected.y + selected.height + GAP);
+          } else {
+            let maxBottom = -Infinity;
+            let alignX = otherChildren[0].x;
+            for (const child of otherChildren) {
+              const bottom = child.y + child.height;
+              if (bottom > maxBottom) {
+                maxBottom = bottom;
+                alignX = child.x;
+              }
+            }
+            rootFigmaNode.x = Math.round(alignX);
+            rootFigmaNode.y = Math.round(maxBottom + GAP);
+          }
+        } else {
+          const selected = targetPage.selection.find((s) => s.id !== rootFigmaNode.id);
+          if (selected) {
+            rootFigmaNode.x = Math.round(selected.x + selected.width + GAP);
+            rootFigmaNode.y = Math.round(selected.y);
+          } else {
+            let maxRight = -Infinity;
+            let alignY = otherChildren[0].y;
+            for (const child of otherChildren) {
+              const right = child.x + child.width;
+              if (right > maxRight) {
+                maxRight = right;
+                alignY = child.y;
+              }
+            }
+            rootFigmaNode.x = Math.round(maxRight + GAP);
+            rootFigmaNode.y = Math.round(alignY);
+          }
+        }
+      }
+      figma.viewport.scrollAndZoomIntoView([rootFigmaNode]);
+      targetPage.selection = [rootFigmaNode];
+      post2({
+        type: "RENDER_SUCCESS",
+        nodeId: rootFigmaNode.id,
+        name: rootFigmaNode.name,
+        nodeCount: totalNodeCount,
+        pageName: targetPage.name,
+        width: Math.round(rootFigmaNode.width),
+        height: Math.round(rootFigmaNode.height),
+        nodeType: rootFigmaNode.type,
+        tokensCount: createdTokensCount,
+        rawPayload: payload.rootNode,
+        durationMs
+      });
+    } else {
+      throw new Error("No se pudo generar el nodo raíz");
+    }
+  }
+
   // packages/figma-plugin/src/code.ts
+  var post = (m) => figma.ui.postMessage(m);
   figma.showUI(__html__, {
     width: 470,
     height: 630,
@@ -7224,54 +7582,44 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
   });
   figma.on("currentpagechange", () => {
     try {
-      figma.ui.postMessage({
-        type: "PAGE_INFO",
-        pageName: figma.currentPage.name
-      });
+      post({ type: "PAGE_INFO", pageName: figma.currentPage.name });
     } catch (_e) {
     }
   });
-  figma.ui.onmessage = async (msg) => {
-    if (msg.type === "GET_PAIRING_CODE") {
+  var handlers = {
+    // Código de vinculación con el hub: se pide una vez y se guarda en el almacenamiento local de Figma
+    GET_PAIRING_CODE: async () => {
       let code = "";
       try {
         code = await figma.clientStorage.getAsync("hubPairingCode") || "";
       } catch (_e) {
       }
-      figma.ui.postMessage({ type: "PAIRING_CODE", code });
-      return;
-    }
-    if (msg.type === "SET_PAIRING_CODE") {
+      post({ type: "PAIRING_CODE", code });
+    },
+    SET_PAIRING_CODE: async (msg) => {
       try {
         await figma.clientStorage.setAsync("hubPairingCode", String(msg.code || ""));
       } catch (_e) {
       }
-      return;
-    }
-    if (msg.type === "CLEAR_PAGE") {
-      for (const child of figma.currentPage.children) {
-        child.remove();
-      }
-      return;
-    }
-    if (msg.type === "DELETE_NODE" && msg.nodeId) {
+    },
+    CLEAR_PAGE: () => {
+      for (const child of figma.currentPage.children) child.remove();
+    },
+    DELETE_NODE: (msg) => {
+      if (!msg.nodeId) return;
       try {
         const node2 = figma.getNodeById(msg.nodeId);
         if (node2 && !node2.removed) {
           const name = node2.name;
           node2.remove();
-          figma.ui.postMessage({
-            type: "LOG",
-            message: `"${name}" eliminado del lienzo de Figma`,
-            level: "info"
-          });
+          post({ type: "LOG", message: `"${name}" eliminado del lienzo de Figma`, level: "info" });
         }
       } catch (delErr) {
-        console.warn("Error al borrar nodo:", delErr);
+        log.warn("Error al borrar nodo", { error: String(delErr?.message || delErr) });
       }
-      return;
-    }
-    if (msg.type === "DELETE_MULTIPLE_NODES" && Array.isArray(msg.nodeIds)) {
+    },
+    DELETE_MULTIPLE_NODES: (msg) => {
+      if (!Array.isArray(msg.nodeIds)) return;
       try {
         let count = 0;
         for (const id of msg.nodeIds) {
@@ -7281,30 +7629,21 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
             count++;
           }
         }
-        figma.ui.postMessage({
-          type: "LOG",
-          message: `${count} componentes eliminados del lienzo de Figma`,
-          level: "info"
-        });
+        post({ type: "LOG", message: `${count} componentes eliminados del lienzo de Figma`, level: "info" });
       } catch (batchDelErr) {
-        console.warn("Error al borrar nodos múltiples:", batchDelErr);
+        log.warn("Error al borrar nodos múltiples", { error: String(batchDelErr?.message || batchDelErr) });
       }
-      return;
-    }
-    if (msg.type === "ZOOM_ALL") {
+    },
+    ZOOM_ALL: () => {
       if (figma.currentPage.children.length > 0) {
         figma.viewport.scrollAndZoomIntoView(figma.currentPage.children);
       }
-      return;
-    }
-    if (msg.type === "GET_PAGE_INFO") {
-      figma.ui.postMessage({
-        type: "PAGE_INFO",
-        pageName: figma.currentPage.name
-      });
-      return;
-    }
-    if (msg.type === "FOCUS_NODE" && msg.nodeId) {
+    },
+    GET_PAGE_INFO: () => {
+      post({ type: "PAGE_INFO", pageName: figma.currentPage.name });
+    },
+    FOCUS_NODE: (msg) => {
+      if (!msg.nodeId) return;
       try {
         const node2 = figma.getNodeById(msg.nodeId);
         if (node2) {
@@ -7313,9 +7652,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         }
       } catch (_e) {
       }
-      return;
-    }
-    if (msg.type === "CONVERT_TO_COMPONENT" && msg.nodeId) {
+    },
+    CONVERT_TO_COMPONENT: (msg) => {
+      if (!msg.nodeId) return;
       try {
         const node2 = figma.getNodeById(msg.nodeId);
         if (node2 && node2.type === "FRAME") {
@@ -7344,232 +7683,27 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
           node2.remove();
           figma.currentPage.selection = [comp];
           figma.viewport.scrollAndZoomIntoView([comp]);
-          figma.ui.postMessage({
-            type: "LOG",
-            message: `Frame "${comp.name}" convertido a Componente nativo de Figma`,
-            level: "success"
-          });
+          post({ type: "LOG", message: `Frame "${comp.name}" convertido a Componente nativo de Figma`, level: "success" });
         }
       } catch (convErr) {
-        figma.ui.postMessage({
-          type: "LOG",
-          message: `Error al convertir a componente: ${convErr.message}`,
-          level: "error"
-        });
+        post({ type: "LOG", message: `Error al convertir a componente: ${convErr.message}`, level: "error" });
       }
+    },
+    RENDER_NODES: async (msg) => {
+      try {
+        await renderNodesCommand(msg.payload, post, log);
+      } catch (err) {
+        log.error("Fallo en RENDER_NODES", { error: err?.message || String(err) });
+        post({ type: "RENDER_ERROR", error: err?.message || String(err) });
+      }
+    }
+  };
+  figma.ui.onmessage = async (msg) => {
+    const handler = msg && typeof msg.type === "string" && Object.prototype.hasOwnProperty.call(handlers, msg.type) ? handlers[msg.type] : null;
+    if (!handler) {
+      log.warn("Mensaje de la UI desconocido", { type: String(msg?.type) });
       return;
     }
-    if (msg.type === "RENDER_NODES") {
-      try {
-        const payload = msg.payload;
-        const rootNode = payload?.rootNode || (Array.isArray(payload?.nodes) ? payload.nodes[0] : null);
-        if (!payload || !rootNode) {
-          throw new Error("Payload vacío o inválido (se esperaba rootNode o nodes[0])");
-        }
-        payload.rootNode = rootNode;
-        const invalid = guardRenderPayload(payload);
-        if (invalid) throw new Error(`Payload inválido: ${invalid}`);
-        let targetPage = figma.currentPage;
-        if (payload.pageName) {
-          const found = figma.root.children.find((p) => p.name === payload.pageName);
-          if (found) {
-            targetPage = found;
-          } else {
-            const newPage = figma.createPage();
-            newPage.name = payload.pageName;
-            targetPage = newPage;
-          }
-          figma.currentPage = targetPage;
-        }
-        if (false) {
-          for (const child of targetPage.children) {
-            child.remove();
-          }
-        }
-        if (payload.createAsComponent) {
-          payload.rootNode.type = "COMPONENT";
-        }
-        let createdTokensCount = 0;
-        if (payload.tokens?.colors && typeof figma.createPaintStyle === "function") {
-          for (const [tokenName, rgba] of Object.entries(payload.tokens.colors)) {
-            try {
-              const cleanName = "Token / " + tokenName.replace(/^--/, "");
-              const existing = figma.getLocalPaintStyles().find((s) => s.name === cleanName);
-              const style = existing || figma.createPaintStyle();
-              style.name = cleanName;
-              style.paints = [{
-                type: "SOLID",
-                color: { r: rgba.r, g: rgba.g, b: rgba.b },
-                opacity: rgba.a !== void 0 ? rgba.a : 1
-              }];
-              createdTokensCount++;
-            } catch (_tokErr) {
-            }
-          }
-        }
-        try {
-          await figma.loadFontAsync({ family: "Inter", style: "Regular" });
-        } catch (_e) {
-        }
-        await prewarmFonts(payload.rootNode);
-        if (payload.board) {
-          const boardStart = Date.now();
-          const pageBefore = figma.currentPage;
-          const nodesBefore = new Set(pageBefore.children.map((c) => c.id));
-          const pagesBefore = new Set(figma.root.children.map((p) => p.id));
-          let board = null;
-          try {
-            board = await buildDesignBoard(payload);
-          } catch (boardErr) {
-            setBoardCtx(null);
-            try {
-              figma.currentPage = pageBefore;
-            } catch (_e) {
-              try {
-                await figma.setCurrentPageAsync(pageBefore);
-              } catch (_e2) {
-              }
-            }
-            for (const p of [...figma.root.children]) {
-              if (!pagesBefore.has(p.id)) {
-                try {
-                  p.remove();
-                } catch (_e) {
-                }
-              }
-            }
-            for (const c of [...pageBefore.children]) {
-              if (!nodesBefore.has(c.id)) {
-                try {
-                  c.remove();
-                } catch (_e) {
-                }
-              }
-            }
-            console.error("Tablero falló:", boardErr);
-            figma.ui.postMessage({
-              type: "LOG",
-              level: "error",
-              message: `No se pudo organizar como tablero (${boardErr?.message || boardErr}). Se dibuja en modo normal.`
-            });
-          }
-          if (board) {
-            figma.currentPage.selection = [board.main];
-            figma.ui.postMessage({
-              type: "LOG",
-              level: "success",
-              message: `Tablero creado en "${board.page.name}": ${board.components} componentes enlazados, secciones y estilos organizados`
-            });
-            figma.ui.postMessage({
-              type: "RENDER_SUCCESS",
-              nodeId: board.main.id,
-              name: board.main.name,
-              nodeCount: board.nodeCount,
-              pageName: board.page.name,
-              width: Math.round(board.main.width),
-              height: Math.round(board.main.height),
-              nodeType: board.main.type,
-              tokensCount: createdTokensCount,
-              rawPayload: payload.rootNode,
-              durationMs: Date.now() - boardStart
-            });
-            return;
-          }
-        }
-        const totalNodeCount = countNodes(payload.rootNode);
-        const renderStartTime = Date.now();
-        const rootFigmaNode = await buildFigmaNode(payload.rootNode);
-        const durationMs = Date.now() - renderStartTime;
-        if (rootFigmaNode) {
-          targetPage.appendChild(rootFigmaNode);
-          if (payload.targetCanvasPosition) {
-            rootFigmaNode.x = payload.targetCanvasPosition.x;
-            rootFigmaNode.y = payload.targetCanvasPosition.y;
-            if (payload.sectionTitle) {
-              try {
-                const headerFont = await loadFontSafely("Inter", 700);
-                const headerText = figma.createText();
-                headerText.fontName = headerFont;
-                headerText.characters = payload.sectionTitle;
-                headerText.fontSize = 18;
-                headerText.fills = [{ type: "SOLID", color: { r: 0.2, g: 0.3, b: 0.5 }, opacity: 0.9 }];
-                headerText.x = payload.targetCanvasPosition.x;
-                headerText.y = payload.targetCanvasPosition.y - 65;
-                targetPage.appendChild(headerText);
-              } catch (_hdrErr) {
-              }
-            }
-          } else {
-            const GAP = Number(payload.placementGap) || 120;
-            const placementMode = (payload.placementMode || "SIDE").toUpperCase();
-            const otherChildren = targetPage.children.filter((child) => child.id !== rootFigmaNode.id);
-            if (otherChildren.length === 0 || placementMode === "CENTER") {
-              const center = figma.viewport.center;
-              rootFigmaNode.x = Math.round(center.x - rootFigmaNode.width / 2);
-              rootFigmaNode.y = Math.round(center.y - rootFigmaNode.height / 2);
-            } else if (placementMode === "BELOW") {
-              const selected = targetPage.selection.find((s) => s.id !== rootFigmaNode.id);
-              if (selected) {
-                rootFigmaNode.x = Math.round(selected.x);
-                rootFigmaNode.y = Math.round(selected.y + selected.height + GAP);
-              } else {
-                let maxBottom = -Infinity;
-                let alignX = otherChildren[0].x;
-                for (const child of otherChildren) {
-                  const bottom = child.y + child.height;
-                  if (bottom > maxBottom) {
-                    maxBottom = bottom;
-                    alignX = child.x;
-                  }
-                }
-                rootFigmaNode.x = Math.round(alignX);
-                rootFigmaNode.y = Math.round(maxBottom + GAP);
-              }
-            } else {
-              const selected = targetPage.selection.find((s) => s.id !== rootFigmaNode.id);
-              if (selected) {
-                rootFigmaNode.x = Math.round(selected.x + selected.width + GAP);
-                rootFigmaNode.y = Math.round(selected.y);
-              } else {
-                let maxRight = -Infinity;
-                let alignY = otherChildren[0].y;
-                for (const child of otherChildren) {
-                  const right = child.x + child.width;
-                  if (right > maxRight) {
-                    maxRight = right;
-                    alignY = child.y;
-                  }
-                }
-                rootFigmaNode.x = Math.round(maxRight + GAP);
-                rootFigmaNode.y = Math.round(alignY);
-              }
-            }
-          }
-          figma.viewport.scrollAndZoomIntoView([rootFigmaNode]);
-          targetPage.selection = [rootFigmaNode];
-          figma.ui.postMessage({
-            type: "RENDER_SUCCESS",
-            nodeId: rootFigmaNode.id,
-            name: rootFigmaNode.name,
-            nodeCount: totalNodeCount,
-            pageName: targetPage.name,
-            width: Math.round(rootFigmaNode.width),
-            height: Math.round(rootFigmaNode.height),
-            nodeType: rootFigmaNode.type,
-            tokensCount: createdTokensCount,
-            rawPayload: payload.rootNode,
-            durationMs
-          });
-        } else {
-          throw new Error("No se pudo generar el nodo raíz");
-        }
-      } catch (err) {
-        console.error("Fallo en RENDER_NODES:", err);
-        figma.ui.postMessage({
-          type: "RENDER_ERROR",
-          error: err.message || String(err)
-        });
-      }
-    }
+    await handler(msg);
   };
 })();

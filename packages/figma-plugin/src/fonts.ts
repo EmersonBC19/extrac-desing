@@ -2,6 +2,7 @@
  * Fuentes: caché de fuentes disponibles, equivalencias de peso y carga segura (Inter como respaldo).
  */
 import type { UINode } from './types';
+import { errText, log } from './log';
 
 // Cache de fuentes disponibles en el entorno Figma del usuario
 export let availableFontsCache: Font[] | null = null;
@@ -23,7 +24,7 @@ export async function initFontCache(): Promise<void> {
       }
     }
   } catch (err) {
-    console.warn('Advertencia: No se pudo obtener la lista de fuentes disponibles:', err);
+    log.warn('No se pudo obtener la lista de fuentes disponibles', { error: errText(err) });
   }
 }
 

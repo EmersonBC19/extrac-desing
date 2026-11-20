@@ -7,6 +7,7 @@ import { base64ToBytes, cssFillToPaint } from './paint';
 import { buildBoardInstance } from './board/board';
 import { getBoardCtx } from './board/context';
 import { applyTextSegments, applyNoWrapSizing } from './text-sizing';
+import { errText, log } from './log';
 
 export function countNodes(node: UINode): number {
   let count = 1;
@@ -123,7 +124,7 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
         }
         createdNode = svgNode;
       } catch (err) {
-        console.warn('No se pudo crear SVG, creando placeholder frame:', err);
+        log.warn('No se pudo crear SVG, se usa un frame de reemplazo', { error: errText(err) });
         const fallback = figma.createFrame();
         fallback.resize(24, 24);
         createdNode = fallback;
@@ -208,7 +209,7 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
             ...overlayFills.map(cssFillToPaint)
           ];
         } catch (_imgErr: any) {
-          console.warn('Error decodificando imagen base64:', _imgErr);
+          log.warn('Error decodificando imagen base64', { error: errText(_imgErr) });
           figma.ui.postMessage({
             type: 'LOG',
             level: 'error',
@@ -356,7 +357,7 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
                   if (typeof childData.layout.x === 'number') childNode.x = childData.layout.x;
                   if (typeof childData.layout.y === 'number') childNode.y = childData.layout.y;
                 } catch (absErr) {
-                  console.warn('Error configurando layoutPositioning ABSOLUTE:', absErr);
+                  log.warn('Error configurando layoutPositioning ABSOLUTE', { error: errText(absErr) });
                 }
               } else {
                 // Si el hijo es texto dentro de Auto Layout
@@ -506,7 +507,7 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
       createdNode.name = nodeData.name || createdNode.name;
     }
   } catch (error: any) {
-    console.error('Error creando nodo Figma:', error);
+    log.error('Error creando nodo Figma', { error: errText(error) });
     try {
       figma.ui.postMessage({
         type: 'LOG',
@@ -533,7 +534,7 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
         }
         createdNode = fb;
       } catch (_fbErr) {
-        console.error('Fallback de texto también falló:', _fbErr);
+        log.error('El texto de reemplazo también falló', { error: errText(_fbErr) });
       }
     }
   }

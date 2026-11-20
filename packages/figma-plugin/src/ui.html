@@ -1129,34 +1129,33 @@
     }
 
     // ── WebSocket Handler ──
-    function handleWebSocketMessage(msg) {
-      if (msg.type === 'AUTH_REQUIRED') {
+    // Un manejador por mensaje del hub (catálogo: packages/contracts/src/messages.ts, canal "hub")
+    const HUB_HANDLERS = {
+      AUTH_REQUIRED() {
         hubAuthRequired = true;
         if (!pairingCode) {
           awaitingPairing = true;
           showPairing();
           log('El hub pide vincular el plugin. Ingresa el código que muestra su terminal.', 'warn');
         }
-        return;
-      }
-      if (msg.type === 'AUTH_FAILED') {
+      },
+      AUTH_FAILED(msg) {
         // Código inválido o hub con código nuevo: olvidarlo y pedirlo otra vez
         pairingCode = '';
         parent.postMessage({ pluginMessage: { type: 'SET_PAIRING_CODE', code: '' } }, '*');
         awaitingPairing = true;
         showPairing(msg.reason || 'Código de vinculación incorrecto');
-        return;
-      }
-      if (msg.type === 'AUTH_OK') {
+      },
+      AUTH_OK() {
         awaitingPairing = false;
         hidePairing();
         log('Plugin vinculado con el hub.', 'success');
-        return;
-      }
-      if (msg.type === 'VIEWS_CATALOG') {
+      },
+      VIEWS_CATALOG(msg) {
         viewsList = msg.payload?.views || [];
         renderViewsList();
-      } else if (msg.type === 'RENDER_NODES') {
+      },
+      RENDER_NODES(msg) {
         lastRenderStartTime = performance.now();
         log(`Recibido componente desde WebSocket: "${msg.payload?.rootNode?.name || 'Component'}"`, 'info');
 
@@ -1187,7 +1186,24 @@
             }
           }, '*');
         });
-      }
+      },
+      EXTRACT_PROGRESS(msg) {
+        const p = msg.payload || {};
+        log(p.message || `Extracción ${p.status || ''} (${p.viewId || ''})`, p.status === 'error' ? 'error' : 'info');
+      },
+      RENDER_ERROR(msg) {
+        log(`Hub: ${msg.error || 'error desconocido'}`, 'error');
+      },
+      STATUS_RESPONSE() {},
+      RENDER_SUCCESS() {},
+    };
+
+    function handleWebSocketMessage(msg) {
+      const handler = msg && typeof msg.type === 'string' && Object.prototype.hasOwnProperty.call(HUB_HANDLERS, msg.type)
+        ? HUB_HANDLERS[msg.type]
+        : null;
+      if (handler) handler(msg);
+      else console.warn('[ui] Mensaje del hub desconocido:', msg && msg.type);
     }
 
     // ── Normalización de imágenes para figma.createImage ──
@@ -1252,24 +1268,22 @@
     // ── Fin normalización de imágenes ──
 
     // ── Recepción de Respuestas desde Figma (code.ts) ──
-    window.onmessage = (event) => {
-      const msg = event.data.pluginMessage;
-      if (!msg) return;
+    function notifyHub(message) {
+      if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
+    }
 
-      if (msg.type === 'PAIRING_CODE') {
+    // Un manejador por mensaje del sandbox (code.ts)
+    const SANDBOX_HANDLERS = {
+      PAIRING_CODE(msg) {
         pairingCode = msg.code || '';
         if (!socket) connect();
-        return;
-      }
-
-      if (msg.type === 'PAGE_INFO') {
+      },
+      PAGE_INFO(msg) {
         if (msg.pageName) {
           activePageName.textContent = `Página: ${msg.pageName}`;
         }
-        return;
-      }
-
-      if (msg.type === 'RENDER_SUCCESS') {
+      },
+      RENDER_SUCCESS(msg) {
         const measuredDuration = (msg.durationMs !== undefined && msg.durationMs >= 0) 
           ? msg.durationMs 
           : Math.round(performance.now() - lastRenderStartTime);
@@ -1299,19 +1313,31 @@
         });
 
         // Notificar al Hub
-        if (socket && socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify({
-            type: 'RENDER_COMPLETED',
-            nodeId: msg.nodeId,
-            name: msg.name,
-            durationMs: stats.latencyMs
-          }));
-        }
-      } else if (msg.type === 'RENDER_ERROR') {
+        notifyHub({
+          type: 'RENDER_SUCCESS',
+          nodeId: String(msg.nodeId || '').slice(0, 200),
+          name: String(msg.name || '').slice(0, 1000),
+          durationMs: stats.latencyMs
+        });
+      },
+      RENDER_ERROR(msg) {
         log(`Error al renderizar en Figma: ${msg.error}`, 'error');
-      } else if (msg.type === 'LOG') {
+        // Avisar al Hub para que el CLI/MCP que pidió el render se entere
+        notifyHub({ type: 'RENDER_ERROR', error: String(msg.error || 'Error desconocido').slice(0, 5000) });
+      },
+      LOG(msg) {
         log(msg.message, msg.level || 'info');
-      }
+      },
+    };
+
+    window.onmessage = (event) => {
+      const msg = event.data && event.data.pluginMessage;
+      if (!msg) return;
+      const handler = typeof msg.type === 'string' && Object.prototype.hasOwnProperty.call(SANDBOX_HANDLERS, msg.type)
+        ? SANDBOX_HANDLERS[msg.type]
+        : null;
+      if (handler) handler(msg);
+      else console.warn('[ui] Mensaje del sandbox desconocido:', msg.type);
     };
 
     // ── Gestión del Historial de Componentes Recibidos ──

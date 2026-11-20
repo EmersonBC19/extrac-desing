@@ -3,6 +3,7 @@
  */
 import type { UITextSegment, UINode } from './types';
 import { loadFontSafely } from './fonts';
+import { errText, log } from './log';
 
 // Aplica estilos por rango (fuente/peso, tamaño, color, decoración) a un TextNode
 export async function applyTextSegments(tn: TextNode, segments: UITextSegment[]): Promise<void> {
@@ -27,7 +28,7 @@ export async function applyTextSegments(tn: TextNode, segments: UITextSegment[])
       if (seg.underline) tn.setRangeTextDecoration(start, end, 'UNDERLINE');
       else if (seg.strike) tn.setRangeTextDecoration(start, end, 'STRIKETHROUGH');
     } catch (err: any) {
-      console.warn('No se pudo aplicar tramo de texto:', err?.message || err);
+      log.warn('No se pudo aplicar tramo de texto', { error: errText(err) });
     }
   }
 }

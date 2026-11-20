@@ -164,7 +164,7 @@ async function captureRegions(windowId, rects, viewportWidth) {
 }
 
 // Connect to WebSocket Hub (ws://localhost:8080) in background environment
-function sendToWebSocketHub(data, clearPage = false) {
+function sendToWebSocketHub(data) {
   return new Promise((resolve, reject) => {
     let ws;
     try {
@@ -285,36 +285,36 @@ function checkHubStatus() {
   });
 }
 
-// Message listener for content script requests
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message.type === "TRANSMIT_TO_FIGMA") {
-    sendToWebSocketHub(message.payload, message.clearPage === true)
-      .then(() => sendResponse({ success: true }))
-      .catch((err) => sendResponse({ success: false, error: err.message || String(err) }));
-    return true; // Keep message channel open for async response
-  }
+// Mensajes del content script (catálogo: packages/contracts/src/messages.ts, canal "extension").
+// Cada manejador devuelve una promesa; su resultado se fusiona en { success: true, ... }.
+const MESSAGE_HANDLERS = {
+  TRANSMIT_TO_FIGMA: (message) =>
+    sendToWebSocketHub(message.payload).then(() => ({})),
 
-  if (message.type === "CHECK_FIGMA_STATUS") {
-    checkHubStatus()
-      .then((status) => sendResponse({ success: true, status }))
-      .catch((err) => sendResponse({ success: false, error: err.message || String(err) }));
-    return true;
-  }
+  CHECK_FIGMA_STATUS: () =>
+    checkHubStatus().then((status) => ({ status })),
 
-  if (message.type === "CAPTURE_REGIONS") {
-    const windowId = _sender && _sender.tab ? _sender.tab.windowId : undefined;
-    captureRegions(windowId, message.rects, message.viewportWidth)
-      .then((crops) => sendResponse({ success: true, crops }))
-      .catch((err) => sendResponse({ success: false, error: err.message || String(err) }));
-    return true;
-  }
+  CAPTURE_REGIONS: (message, sender) => {
+    const windowId = sender && sender.tab ? sender.tab.windowId : undefined;
+    return captureRegions(windowId, message.rects, message.viewportWidth).then((crops) => ({ crops }));
+  },
 
-  if (message.type === "FETCH_IMAGE_AS_BASE64") {
-    // La pestaña que pide la imagen la da Chrome (no el mensaje): la página no puede falsearla
-    const tabUrl = _sender && _sender.tab ? _sender.tab.url : undefined;
-    fetchImageBase64(message.url, tabUrl)
-      .then((base64) => sendResponse({ success: true, base64 }))
-      .catch((err) => sendResponse({ success: false, error: err.message || String(err) }));
-    return true; // Keep message channel open for async response
-  }
+  // La pestaña que pide la imagen la da Chrome (no el mensaje): la página no puede falsearla
+  FETCH_IMAGE_AS_BASE64: (message, sender) => {
+    const tabUrl = sender && sender.tab ? sender.tab.url : undefined;
+    return fetchImageBase64(message.url, tabUrl).then((base64) => ({ base64 }));
+  },
+};
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  const type = message && message.type;
+  const handler = typeof type === "string" && Object.prototype.hasOwnProperty.call(MESSAGE_HANDLERS, type)
+    ? MESSAGE_HANDLERS[type]
+    : null;
+  if (!handler) return false; // no es para nosotros
+  Promise.resolve()
+    .then(() => handler(message, sender))
+    .then((result) => sendResponse({ success: true, ...result }))
+    .catch((err) => sendResponse({ success: false, error: (err && err.message) || String(err) }));
+  return true; // respuesta asíncrona: mantener abierto el canal
 });

@@ -48,7 +48,6 @@ function createFigma(opts = {}) {
     }
     clone() {
       const c = Object.create(Object.getPrototypeOf(this));
-      Node.call ? null : null;
       c.id = 'n' + (++idc); byId.set(c.id, c);
       for (const k of Object.keys(this)) {
         if (['id', 'parent', 'children'].includes(k)) continue;
@@ -136,17 +135,24 @@ function createFigma(opts = {}) {
     createPaintStyle: () => { const s = { id: 'ps' + styles.paint.length, name: '', paints: [] }; styles.paint.push(s); return s; },
     getLocalPaintStyles: () => styles.paint,
     getNodeById: id => byId.get(id) || null,
+    clientStorage: (() => { const m = new Map(); return { getAsync: async k => m.get(k), setAsync: async (k, v) => { m.set(k, v); } }; })(),
   };
   return figma;
 }
 
-async function runPlugin(payload, opts) {
+/** Carga el plugin empaquetado (dist/code.js) en un sandbox con el Figma simulado */
+function loadPlugin(opts, consoleImpl = console) {
   const figma = createFigma(opts);
-  const ctx = { figma, __html__: '', console, setTimeout, clearTimeout, URL, Promise, Uint8Array, Date, Math, JSON, Map, Set, Symbol };
+  const ctx = { figma, __html__: '', console: consoleImpl, setTimeout, clearTimeout, URL, Promise, Uint8Array, Date, Math, JSON, Map, Set, Symbol };
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(require('path').resolve(__dirname, '../../packages/figma-plugin/dist/code.js'), 'utf8'), ctx);
+  return figma;
+}
+
+async function runPlugin(payload, opts) {
+  const figma = loadPlugin(opts);
   await figma.ui.onmessage({ type: 'RENDER_NODES', payload });
   return figma;
 }
 
-module.exports = { runPlugin };
+module.exports = { runPlugin, loadPlugin };

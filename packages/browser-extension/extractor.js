@@ -127,7 +127,7 @@
   function cssColorToRgba(str) {
     const m = (str || "").match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+%?))?\s*\)/);
     if (!m) return null;
-    let a = m[4] === void 0 ? 1 : m[4].endsWith("%") ? parseFloat(m[4]) / 100 : parseFloat(m[4]);
+    const a = m[4] === void 0 ? 1 : m[4].endsWith("%") ? parseFloat(m[4]) / 100 : parseFloat(m[4]);
     return { r: +m[1] / 255, g: +m[2] / 255, b: +m[3] / 255, a };
   }
   var SUP_MAP = { "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹", "+": "⁺", "-": "⁻", "=": "⁼", "(": "⁽", ")": "⁾", "n": "ⁿ", "i": "ⁱ" };
@@ -207,7 +207,7 @@
       const preserve = /^pre/.test(st._ws) || st._ws === "break-spaces";
       const data = node.data;
       for (let i = 0; i < data.length && !truncated; i++) {
-        let ch = data[i];
+        const ch = data[i];
         const isSpace = /\s/.test(ch);
         if (preserve && ch === "\n") {
           newLine();
@@ -278,8 +278,8 @@
       if (ch === " " && (i === 0 || out[i - 1] === "\n" || i === out.length - 1 || out[i + 1] === "\n")) continue;
       keep.push(i);
     }
-    let chars = keep.map((i) => out[i]);
-    let styles = keep.map((i) => charStyles[i]);
+    const chars = keep.map((i) => out[i]);
+    const styles = keep.map((i) => charStyles[i]);
     while (chars.length && chars[chars.length - 1] === "\n") {
       chars.pop();
       styles.pop();
@@ -763,7 +763,7 @@
           if ((!bg || bg.a <= 0.05) && !hasBgGrad) return null;
           if (w <= 0 || h <= 0) return null;
         }
-        let rawText = (content || "").replace(/^['"]|['"]$/g, "").trim();
+        const rawText = (content || "").replace(/^['"]|['"]$/g, "").trim();
         const tc = parseColor(style2.color) || { r: 0.1, g: 0.1, b: 0.1, a: 1 };
         const isPosAbs = style2.position === "absolute" || style2.position === "fixed";
         const br = parseFloat(style2.borderRadius) || 0;

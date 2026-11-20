@@ -198,7 +198,7 @@ export async function boardBuildStyles(scope: SceneNode[], stylesSec: SectionNod
   }
   const palette = [...cGroups.entries()].sort((a, b) => b[1].nodes.length - a[1].nodes.length).slice(0, 32);
 
-  let cx = 1100;
+  const cx = 1100;
   let cy = PAD;
   const ctitle = await boardLabel('Colores', 32, 700, { r: 0.1, g: 0.1, b: 0.12 });
   stylesSec.appendChild(ctitle); ctitle.x = cx; ctitle.y = cy; cy += 70;

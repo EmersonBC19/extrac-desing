@@ -29,6 +29,9 @@ jobs:
       - name: Archivos generados al día
         run: npm run check:generated
 
+      - name: Lint (ESLint)
+        run: npm run lint
+
       - name: Instalar Chromium para Playwright
         run: npx playwright install --with-deps chromium
 

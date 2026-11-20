@@ -5,8 +5,11 @@
 import { CLIPPING_OVERFLOW, isCarouselSlide, isCarouselTrack, extractBgUrl, isVisuallyHidden, pseudoHasImage, bgScaleMode, vpRectOf, canvasPixels } from './dom-helpers';
 import { isInlineTextRoot, buildRichText } from './text';
 import { fitAutoLayoutToGeometry, pseudoPosition } from './geometry';
+import type { ExtractCounter, RawLayout, RawNode, Rgba } from './types';
 
-export function extractNodeTree(element, counter: any = { id: 0 }, parentRect = null, parentLayout = null) {
+// `element` es any: el extractor lee propiedades de muchos subtipos (img, video, input, select, slot…)
+// según tagName; tiparlo exigiría reescribir cada rama con guardas.
+export function extractNodeTree(element: any, counter: ExtractCounter = { id: 0 }, parentRect: DOMRect | null = null, parentLayout: RawLayout | null = null): RawNode | null {
   if (!element || element.nodeType !== Node.ELEMENT_NODE) return null;
 
   const tagName = element.tagName.toLowerCase();
@@ -69,7 +72,7 @@ export function extractNodeTree(element, counter: any = { id: 0 }, parentRect = 
   }
 
   // ── Helper para dividir valores CSS respetando paréntesis ──
-  function splitCssList(str) {
+  function splitCssList(str: string) {
     if (!str) return [];
     const parts = [];
     let depth = 0;
@@ -90,9 +93,9 @@ export function extractNodeTree(element, counter: any = { id: 0 }, parentRect = 
   }
 
   // ── 1. Color Parser Robusto ──
-  let _sharedCanvas = null;
-  let _sharedCtx = null;
-  function parseColor(str, fallbackColor = null) {
+  let _sharedCanvas: HTMLCanvasElement | null = null;
+  let _sharedCtx: CanvasRenderingContext2D | null = null;
+  function parseColor(str: string | null | undefined, fallbackColor: string | null = null): Rgba | null {
     if (!str || str === 'transparent' || str === 'inherit' || str === 'initial') return null;
     str = str.trim();
     if (str.toLowerCase() === 'currentcolor') {
@@ -145,7 +148,7 @@ export function extractNodeTree(element, counter: any = { id: 0 }, parentRect = 
   }
 
   // ── 2. Gradient Parser (Linear & Radial) ──
-  function parseGradient(bgStr) {
+  function parseGradient(bgStr: string) {
     if (!bgStr || !bgStr.includes('gradient')) return null;
 
     // Gradientes Radiales
@@ -221,7 +224,7 @@ export function extractNodeTree(element, counter: any = { id: 0 }, parentRect = 
   }
 
   // ── 3. Box Shadow Parser ──
-  function parseBoxShadow(shadowStr) {
+  function parseBoxShadow(shadowStr: string) {
     if (!shadowStr || shadowStr === 'none') return [];
     const shadows = [];
     const parts = splitCssList(shadowStr);
@@ -245,7 +248,7 @@ export function extractNodeTree(element, counter: any = { id: 0 }, parentRect = 
   }
 
   // ── 3.5 Pseudo-element (::before / ::after) Extractor ──
-  function extractPseudoElement(element, pseudo, parentRect, parentLayout, counter) {
+  function extractPseudoElement(element: Element, pseudo: string, parentRect: DOMRect, parentLayout: RawLayout | null, counter: ExtractCounter) {
     try {
       const style = window.getComputedStyle(element, pseudo);
       const content = style.content;
@@ -290,7 +293,7 @@ export function extractNodeTree(element, counter: any = { id: 0 }, parentRect = 
         if (w <= 0 || h <= 0) return null;
       }
 
-      let rawText = (content || '').replace(/^['"]|['"]$/g, '').trim();
+      const rawText = (content || '').replace(/^['"]|['"]$/g, '').trim();
       const tc = parseColor(style.color) || { r: 0.1, g: 0.1, b: 0.1, a: 1 };
       const isPosAbs = style.position === 'absolute' || style.position === 'fixed';
       const br = parseFloat(style.borderRadius) || 0;
@@ -343,7 +346,7 @@ export function extractNodeTree(element, counter: any = { id: 0 }, parentRect = 
   }
 
   // ── 4. Clasificador Semántico de Capas ──
-  function getSemanticName(el, tag, st, r) {
+  function getSemanticName(el: Element, tag: string, st: CSSStyleDeclaration, r: DOMRect) {
     const customName = el.getAttribute('data-component-name') || el.getAttribute('data-testid');
     if (customName) return customName;
 
@@ -379,7 +382,7 @@ export function extractNodeTree(element, counter: any = { id: 0 }, parentRect = 
 
     // Detectar inputs
     if (tag === 'input') {
-      const type = el.type || 'text';
+      const type = (el as HTMLInputElement).type || 'text';
       let labelText = '';
       const parentWrap = el.closest('.mb-4, .form-group, .input-group, div');
       if (parentWrap) {
@@ -566,7 +569,7 @@ export function extractNodeTree(element, counter: any = { id: 0 }, parentRect = 
           const c = document.createElement('canvas');
           c.width = element.videoWidth;
           c.height = element.videoHeight;
-          c.getContext('2d').drawImage(element, 0, 0);
+          c.getContext('2d')!.drawImage(element, 0, 0); // canvas nuevo: siempre hay contexto 2d
           frame = c.toDataURL('image/jpeg', 0.88);
         } catch (_e) { frame = null; }
       }
@@ -599,7 +602,7 @@ export function extractNodeTree(element, counter: any = { id: 0 }, parentRect = 
     // 1. Recolectar todas las fuentes candidatas en orden de máxima resolución
     const candidates = [];
 
-    function addSrcset(srcsetString) {
+    function addSrcset(srcsetString: string) {
       if (!srcsetString || srcsetString.includes('data:image/gif')) return;
       const parts = srcsetString.split(',').map(s => s.trim());
       for (const p of parts) {
@@ -1437,7 +1440,7 @@ export function extractNodeTree(element, counter: any = { id: 0 }, parentRect = 
   // y en Auto Layout vertical de arriba a abajo, evitando inversiones por orden del DOM o CSS order/reverse.
   if (node.children.length > 1) {
     if (mode === 'NONE') {
-      node.children.sort((a, b) => {
+      node.children.sort((a: RawNode, b: RawNode) => {
         const pW = (typeof node.layout?.width === 'number' ? node.layout.width : node.layout?.measuredWidth) || 200;
         const pH = (typeof node.layout?.height === 'number' ? node.layout.height : node.layout?.measuredHeight) || 200;
         const aW = (typeof a.layout?.width === 'number' ? a.layout.width : a.layout?.measuredWidth) || 0;
@@ -1451,7 +1454,7 @@ export function extractNodeTree(element, counter: any = { id: 0 }, parentRect = 
         return 0;
       });
     } else if (mode === 'HORIZONTAL') {
-      node.children.sort((a, b) => (a.layout?.x || 0) - (b.layout?.x || 0));
+      node.children.sort((a: RawNode, b: RawNode) => (a.layout?.x || 0) - (b.layout?.x || 0));
       // Si el último hijo está empujado hacia la derecha (ej. chevron o botón de acción o shortcut CTRL K), el elemento central debe ser FILL
       if (node.children.length === 3 && cName.includes('search')) {
         const c1 = node.children[1];
@@ -1464,7 +1467,7 @@ export function extractNodeTree(element, counter: any = { id: 0 }, parentRect = 
         }
       }
     } else if (mode === 'VERTICAL') {
-      node.children.sort((a, b) => (a.layout?.y || 0) - (b.layout?.y || 0));
+      node.children.sort((a: RawNode, b: RawNode) => (a.layout?.y || 0) - (b.layout?.y || 0));
     }
   }
 

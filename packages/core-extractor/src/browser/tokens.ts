@@ -2,12 +2,14 @@
  * Design tokens desde variables CSS de :root.
  * Fuente única del extractor: se empaqueta en packages/browser-extension/extractor.js (scripts/build-extractor.mjs).
  */
+import type { Rgba } from './types';
+
 // ── 21. Extractor Automático de Design Tokens (CSS Variables) ──
 export function extractDesignTokens() {
-  const colors = {};
-  const radii = {};
+  const colors: Record<string, Rgba> = {};
+  const radii: Record<string, number> = {};
 
-  function parseTokenColor(str) {
+  function parseTokenColor(str: string): Rgba | null {
     if (!str || str === 'transparent' || str === 'inherit' || str === 'initial') return null;
     str = str.trim();
     if (str.startsWith('#')) {

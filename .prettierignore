@@ -1,0 +1,8 @@
+node_modules/
+**/dist/
+swarm-cursors-main/
+scratch/
+packages/browser-extension/extractor.js
+packages/figma-plugin/src/ui.html
+package-lock.json
+*.md

@@ -3,6 +3,39 @@
  * Fuente única del extractor: se empaqueta en packages/browser-extension/extractor.js (scripts/build-extractor.mjs).
  */
 import { isVisuallyHidden } from './dom-helpers';
+import type { Rgba } from './types';
+
+type ScriptBaseline = 'SUPER' | 'SUB';
+
+/** Estilo de un carácter (cacheado por elemento); _tt/_ws son text-transform y white-space del elemento. */
+interface CharStyle {
+  fontFamily: string;
+  fontWeight: string | number;
+  fontSize: number;
+  italic: boolean;
+  color: Rgba | null;
+  underline: boolean;
+  strike: boolean;
+  baseline: ScriptBaseline | null;
+  _tt: string;
+  _ws: string;
+  key?: string;
+}
+
+/** Tramo de texto con estilo propio (índices [start, end) sobre characters). */
+interface RichSegment {
+  start: number;
+  end: number;
+  _key?: string;
+  fontFamily: string;
+  fontWeight: string | number;
+  fontSize: number;
+  italic?: boolean;
+  color?: Rgba;
+  underline?: boolean;
+  strike?: boolean;
+  baseline?: ScriptBaseline;
+}
 
 export const INLINE_SKIP = /^(script|style|noscript|template)$/;
 
@@ -12,10 +45,10 @@ export const INLINE_BLOCKERS = /^(img|picture|svg|video|canvas|iframe|input|sele
  * ¿Todos los hijos son inline (span, a, sup, strong, em, br…) y hay texto?
  * Entonces el elemento es UN bloque de texto con estilos internos, no capas separadas.
  */
-export function isInlineTextRoot(el) {
+export function isInlineTextRoot(el: Element) {
   if (el.children.length === 0) return false;
   if (!(el.textContent || '').trim()) return false;
-  const check = (node) => {
+  const check = (node: Element): boolean => {
     for (const c of node.children) {
       const tag = c.localName;
       if (INLINE_SKIP.test(tag) || tag === 'br' || tag === 'wbr') continue;
@@ -35,22 +68,22 @@ export function isInlineTextRoot(el) {
   return check(el);
 }
 
-export function cssColorToRgba(str) {
+export function cssColorToRgba(str: string | null | undefined): Rgba | null {
   const m = (str || '').match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+%?))?\s*\)/);
   if (!m) return null;
-  let a = m[4] === undefined ? 1 : (m[4].endsWith('%') ? parseFloat(m[4]) / 100 : parseFloat(m[4]));
+  const a = m[4] === undefined ? 1 : (m[4].endsWith('%') ? parseFloat(m[4]) / 100 : parseFloat(m[4]));
   return { r: +m[1] / 255, g: +m[2] / 255, b: +m[3] / 255, a };
 }
 
 // Superíndices/subíndices: Figma no permite aplicar vertical-align ni OpenType "sups/numr" por API,
 // así que se usan los caracteres Unicode equivalentes (1 a 1, no altera los índices de los tramos).
-export const SUP_MAP = { '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹', '+': '⁺', '-': '⁻', '=': '⁼', '(': '⁽', ')': '⁾', 'n': 'ⁿ', 'i': 'ⁱ' };
+export const SUP_MAP: Record<string, string> = { '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹', '+': '⁺', '-': '⁻', '=': '⁼', '(': '⁽', ')': '⁾', 'n': 'ⁿ', 'i': 'ⁱ' };
 
-export const SUB_MAP = { '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄', '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉', '+': '₊', '-': '₋', '=': '₌', '(': '₍', ')': '₎' };
+export const SUB_MAP: Record<string, string> = { '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄', '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉', '+': '₊', '-': '₋', '=': '₌', '(': '₍', ')': '₎' };
 
 /** SUPER / SUB si el elemento o algún ancestro (hasta root) lo convierte en super/subíndice */
-export function scriptPosition(el, root) {
-  for (let e = el; e && e !== root.parentElement; e = e.parentElement) {
+export function scriptPosition(el: Element, root: Element): ScriptBaseline | null {
+  for (let e: Element | null = el; e && e !== root.parentElement; e = e.parentElement) {
     const tag = e.localName;
     if (tag === 'sup') return 'SUPER';
     if (tag === 'sub') return 'SUB';
@@ -67,7 +100,7 @@ export function scriptPosition(el, root) {
   return null;
 }
 
-export function applyTextTransform(ch, tt) {
+export function applyTextTransform(ch: string, tt: string) {
   if (tt === 'uppercase') return ch.toUpperCase();
   if (tt === 'lowercase') return ch.toLowerCase();
   return ch;
@@ -81,9 +114,9 @@ export function applyTextTransform(ch, tt) {
  * Conservar los saltos reales evita que Figma re-acomode el texto al sustituir la fuente
  * (ej. SF Pro → Inter, más ancha), que es lo que hacía que el texto pisara los botones.
  */
-export function buildRichText(root, rootStyle) {
-  const out = [];
-  const charStyles = [];
+export function buildRichText(root: Element, rootStyle: CSSStyleDeclaration) {
+  const out: string[] = [];
+  const charStyles: Array<CharStyle | null> = [];
   const rootRect = root.getBoundingClientRect();
   const rootFs = parseFloat(rootStyle.fontSize) || 16;
   const rootLh = parseFloat(rootStyle.lineHeight) || rootFs * 1.2;
@@ -93,16 +126,16 @@ export function buildRichText(root, rootStyle) {
   const MAX_MEASURE = 4000;
   let measured = 0;
   let measureOk = true;
-  let lineCenter = null;
+  let lineCenter: number | null = null;
   let lastWasSpace = true;
   let truncated = false;
   let lines = 1;
 
-  const styleKeyCache = new Map();
-  function styleFor(el) {
-    if (styleKeyCache.has(el)) return styleKeyCache.get(el);
+  const styleKeyCache = new Map<Element, CharStyle>();
+  function styleFor(el: Element): CharStyle {
+    if (styleKeyCache.has(el)) return styleKeyCache.get(el)!;
     const cs = window.getComputedStyle(el);
-    const st: any = {
+    const st: CharStyle = {
       fontFamily: (cs.fontFamily || '').split(',')[0].replace(/['"]/g, '').trim() || 'Inter',
       fontWeight: cs.fontWeight || 400,
       fontSize: Math.round((parseFloat(cs.fontSize) || rootFs) * 10) / 10,
@@ -119,7 +152,7 @@ export function buildRichText(root, rootStyle) {
     return st;
   }
 
-  function pushChar(ch, st) {
+  function pushChar(ch: string, st: CharStyle | null) {
     out.push(ch);
     charStyles.push(st);
   }
@@ -131,13 +164,13 @@ export function buildRichText(root, rootStyle) {
     lastWasSpace = true;
   }
 
-  function emitText(node) {
+  function emitText(node: Text) {
     const parent = node.parentElement || root;
     const st = styleFor(parent);
     const preserve = /^pre/.test(st._ws) || st._ws === 'break-spaces';
     const data = node.data;
     for (let i = 0; i < data.length && !truncated; i++) {
-      let ch = data[i];
+      const ch = data[i];
       const isSpace = /\s/.test(ch);
       if (preserve && ch === '\n') { newLine(); lineCenter = null; continue; }
       if (isSpace && !preserve) {
@@ -175,31 +208,31 @@ export function buildRichText(root, rootStyle) {
     }
   }
 
-  (function walk(node) {
+  (function walk(node: Node) {
     for (const ch of node.childNodes) {
       if (truncated) return;
-      if (ch.nodeType === Node.TEXT_NODE) { emitText(ch); continue; }
+      if (ch.nodeType === Node.TEXT_NODE) { emitText(ch as Text); continue; }
       if (ch.nodeType !== Node.ELEMENT_NODE) continue;
-      const tag = ch.localName;
+      const tag = (ch as Element).localName;
       if (INLINE_SKIP.test(tag)) continue;
       if (tag === 'br') { newLine(); lineCenter = null; continue; }
-      const cs = window.getComputedStyle(ch);
+      const cs = window.getComputedStyle(ch as Element);
       if (cs.display === 'none' || cs.visibility === 'hidden') continue;
-      if (isVisuallyHidden(cs, ch.getBoundingClientRect())) continue;
+      if (isVisuallyHidden(cs, (ch as Element).getBoundingClientRect())) continue;
       walk(ch);
     }
   })(root);
 
   // Recortar espacios al inicio/fin y alrededor de los saltos
   let text = out.join('');
-  const keep = [];
+  const keep: number[] = [];
   for (let i = 0; i < out.length; i++) {
     const ch = out[i];
     if (ch === ' ' && (i === 0 || out[i - 1] === '\n' || i === out.length - 1 || out[i + 1] === '\n')) continue;
     keep.push(i);
   }
-  let chars = keep.map(i => out[i]);
-  let styles = keep.map(i => charStyles[i]);
+  const chars = keep.map(i => out[i]);
+  const styles = keep.map(i => charStyles[i]);
   while (chars.length && chars[chars.length - 1] === '\n') { chars.pop(); styles.pop(); }
   while (chars.length && chars[0] === '\n') { chars.shift(); styles.shift(); }
   if (truncated && ellipsis && chars.length) { chars.push('…'); styles.push(styles[styles.length - 1]); }
@@ -207,7 +240,7 @@ export function buildRichText(root, rootStyle) {
   lines = text.split('\n').length;
 
   // Agrupar caracteres contiguos con el mismo estilo
-  const segments = [];
+  const segments: RichSegment[] = [];
   for (let i = 0; i < styles.length; i++) {
     const st = styles[i] || styles[i - 1];
     if (!st) continue;

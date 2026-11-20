@@ -2,6 +2,16 @@
  * Ajuste de Auto Layout a la geometría medida (padding, gap, alineación, wrap) y posición de pseudo-elementos.
  * Fuente única del extractor: se empaqueta en packages/browser-extension/extractor.js (scripts/build-extractor.mjs).
  */
+import type { RawNode } from './types';
+
+/** Caja medida de un hijo (posición y tamaño relativos al padre). */
+interface Box {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 /**
  * Reescribe padding / gap / alineación de un nodo Auto Layout a partir de las posiciones
  * MEDIDAS de sus hijos, para que Figma los coloque exactamente donde los pinta el navegador.
@@ -10,7 +20,7 @@
  *  - eje transversal: MIN / MAX / CENTER según dónde caen realmente los hijos (si no encaja → NONE)
  * Los hijos sin posición medida (etiquetas sintéticas de botones) dejan el nodo como estaba.
  */
-export function fitAutoLayoutToGeometry(node) {
+export function fitAutoLayoutToGeometry(node: RawNode) {
   const L = node.layout;
   if (!L || (L.mode !== 'VERTICAL' && L.mode !== 'HORIZONTAL')) return;
   if (L.counterAxisAlignItems === 'BASELINE') return;
@@ -22,15 +32,15 @@ export function fitAutoLayoutToGeometry(node) {
     return;
   }
 
-  const dim = (c, horizontal) => {
+  const dim = (c: RawNode, horizontal: boolean): number | null => {
     const m = horizontal ? c.layout.measuredWidth : c.layout.measuredHeight;
     if (typeof m === 'number') return m;
     const n = horizontal ? c.layout.width : c.layout.height;
     return typeof n === 'number' ? n : null;
   };
-  const flow = (node.children || []).filter(c => c.layout && c.layout.positioning !== 'ABSOLUTE');
+  const flow: RawNode[] = (node.children || []).filter((c: RawNode) => c.layout && c.layout.positioning !== 'ABSOLUTE');
   if (flow.length === 0) return;
-  const boxes = [];
+  const boxes: Box[] = [];
   for (const c of flow) {
     const x = c.layout.x, y = c.layout.y, w = dim(c, true), h = dim(c, false);
     if (typeof x !== 'number' || typeof y !== 'number' || w == null || h == null) return;
@@ -38,10 +48,10 @@ export function fitAutoLayoutToGeometry(node) {
   }
 
   const V = L.mode === 'VERTICAL';
-  const main = b => (V ? b.y : b.x);
-  const mainSize = b => (V ? b.h : b.w);
-  const cross = b => (V ? b.x : b.y);
-  const crossSize = b => (V ? b.w : b.h);
+  const main = (b: Box) => (V ? b.y : b.x);
+  const mainSize = (b: Box) => (V ? b.h : b.w);
+  const cross = (b: Box) => (V ? b.x : b.y);
+  const crossSize = (b: Box) => (V ? b.w : b.h);
   const MAIN = V ? H : W;
   const CROSS = V ? W : H;
 
@@ -71,7 +81,7 @@ export function fitAutoLayoutToGeometry(node) {
     });
     if (ok) return;
   }
-  const gaps = [];
+  const gaps: number[] = [];
   for (let i = 1; i < sorted.length; i++) gaps.push(main(sorted[i]) - (main(sorted[i - 1]) + mainSize(sorted[i - 1])));
 
   // Separaciones irregulares, solapes o desbordes: Auto Layout no puede reproducirlo → posiciones exactas
@@ -80,7 +90,7 @@ export function fitAutoLayoutToGeometry(node) {
 
   const before = boxes.map(cross);
   const after = boxes.map(b => CROSS - (cross(b) + crossSize(b)));
-  const same = arr => Math.max(...arr) - Math.min(...arr) <= 1.5;
+  const same = (arr: number[]) => Math.max(...arr) - Math.min(...arr) <= 1.5;
   let counter, padBefore, padAfter;
   // CENTER primero: si los hijos están centrados, seguir centrados al redimensionar en Figma
   // (antes un icono centrado salía como MIN + padding: igual a la vista, pero se descentraba al editar)
@@ -93,12 +103,12 @@ export function fitAutoLayoutToGeometry(node) {
   else { L.mode = 'NONE'; return; }
   if (padBefore < -1 || padAfter < -1) { L.mode = 'NONE'; return; }
 
-  const r = v => Math.max(0, Math.round(v));
+  const r = (v: number) => Math.max(0, Math.round(v));
   // Hijos marcados FILL en el eje transversal que en la web NO ocupan todo el ancho/alto
   // disponible (ej. bloque con max-width centrado): FILL los estiraría → tamaño fijo real.
   const available = CROSS - padBefore - padAfter;
   const crossProp = V ? 'width' : 'height';
-  flow.forEach((c, i) => {
+  flow.forEach((c: RawNode, i: number) => {
     if (c.layout[crossProp] === 'FILL' && Math.abs(crossSize(boxes[i]) - available) > 2) {
       c.layout[crossProp] = Math.round(crossSize(boxes[i]));
     }
@@ -116,26 +126,26 @@ export function fitAutoLayoutToGeometry(node) {
  * Figma lo puede reproducir (filas alineadas arriba, gap horizontal y entre filas uniformes,
  * todas las filas empiezan en el mismo x). Una sola fila → fila normal. Si no → NONE.
  */
-export function fitWrapToGeometry(node, W, H) {
+export function fitWrapToGeometry(node: RawNode, W: number, H: number) {
   const L = node.layout;
-  const kids = (node.children || []).filter(c => c.layout && c.layout.positioning !== 'ABSOLUTE');
-  const sz = (c, h) => {
+  const kids: RawNode[] = (node.children || []).filter((c: RawNode) => c.layout && c.layout.positioning !== 'ABSOLUTE');
+  const sz = (c: RawNode, h: boolean): number | null => {
     const m = h ? c.layout.measuredWidth : c.layout.measuredHeight;
     if (typeof m === 'number') return m;
     const v = h ? c.layout.width : c.layout.height;
     return typeof v === 'number' ? v : null;
   };
-  if (!kids.length || kids.some(c => typeof c.layout.x !== 'number' || typeof c.layout.y !== 'number' || sz(c, true) == null || sz(c, false) == null)) return;
+  if (!kids.length || kids.some((c: RawNode) => typeof c.layout.x !== 'number' || typeof c.layout.y !== 'number' || sz(c, true) == null || sz(c, false) == null)) return;
 
   // Agrupar en filas por y
-  const rows = [];
+  const rows: Array<{ y: number; items: RawNode[] }> = [];
   for (const c of [...kids].sort((a, b) => a.layout.y - b.layout.y || a.layout.x - b.layout.x)) {
     const row = rows.find(r => Math.abs(r.y - c.layout.y) <= 2);
     if (row) row.items.push(c); else rows.push({ y: c.layout.y, items: [c] });
   }
   rows.forEach(r => r.items.sort((a, b) => a.layout.x - b.layout.x));
   // Reordenar hijos: fila por fila (los absolutos al final, conservan su posición)
-  const abs = (node.children || []).filter(c => !kids.includes(c));
+  const abs = (node.children || []).filter((c: RawNode) => !kids.includes(c));
   node.children = rows.flatMap(r => r.items).concat(abs);
 
   if (rows.length === 1) {
@@ -144,24 +154,24 @@ export function fitWrapToGeometry(node, W, H) {
     return;
   }
 
-  const gaps = [];
+  const gaps: number[] = [];
   for (const r of rows) for (let i = 1; i < r.items.length; i++) {
     const a = r.items[i - 1], b = r.items[i];
     gaps.push(b.layout.x - (a.layout.x + sz(a, true)));
   }
-  const rowGaps = [];
+  const rowGaps: number[] = [];
   for (let i = 1; i < rows.length; i++) {
     const prevBottom = Math.max(...rows[i - 1].items.map(c => c.layout.y + sz(c, false)));
     rowGaps.push(rows[i].y - prevBottom);
   }
-  const uniform = arr => !arr.length || Math.max(...arr) - Math.min(...arr) <= 2;
+  const uniform = (arr: number[]) => !arr.length || Math.max(...arr) - Math.min(...arr) <= 2;
   const starts = rows.map(r => r.items[0].layout.x);
   if (!uniform(gaps) || !uniform(rowGaps) || !uniform(starts) || Math.min(...rowGaps) < -1 || (gaps.length && Math.min(...gaps) < -1)) {
     L.mode = 'NONE';
     return;
   }
-  const r = v => Math.max(0, Math.round(v));
-  const avg = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
+  const r = (v: number) => Math.max(0, Math.round(v));
+  const avg = (arr: number[]) => arr.reduce((a, b) => a + b, 0) / arr.length;
   const top = rows[0].y;
   const lastRowBottom = Math.max(...rows[rows.length - 1].items.map(c => c.layout.y + sz(c, false)));
   const maxRight = Math.max(...kids.map(c => c.layout.x + sz(c, true)));
@@ -176,13 +186,13 @@ export function fitWrapToGeometry(node, W, H) {
  * Posición de un pseudo-elemento absoluto relativa a su elemento (left/top/right/bottom + translate).
  * Solo cuando el elemento es su bloque contenedor (está posicionado); si no, null.
  */
-export function pseudoPosition(element, ps, w, h) {
+export function pseudoPosition(element: Element, ps: CSSStyleDeclaration, w: number, h: number) {
   const es = window.getComputedStyle(element);
   if (es.position === 'static') return null;
   const er = element.getBoundingClientRect();
   const bl = parseFloat(es.borderLeftWidth) || 0, bt = parseFloat(es.borderTopWidth) || 0;
   const br = parseFloat(es.borderRightWidth) || 0, bb = parseFloat(es.borderBottomWidth) || 0;
-  const px = v => (v && v.endsWith('px') ? parseFloat(v) : null);
+  const px = (v: string) => (v && v.endsWith('px') ? parseFloat(v) : null);
   let x = null, y = null;
   const left = px(ps.left), right = px(ps.right), top = px(ps.top), bottom = px(ps.bottom);
   if (left !== null) x = bl + left;

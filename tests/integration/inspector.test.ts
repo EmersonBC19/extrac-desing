@@ -26,7 +26,7 @@ async function openInspector(): Promise<Page> {
     (window as any).__sent = [];
     (window as any).chrome = { runtime: { lastError: null, sendMessage(m: any, cb: any) {
       if (m.type === 'TRANSMIT_TO_FIGMA') (window as any).__sent.push(m.payload);
-      cb && cb({ success: true, status: { hubRunning: true, figmaConnected: true, figmaCount: 1 } });
+      if (cb) cb({ success: true, status: { hubRunning: true, figmaConnected: true, figmaCount: 1 } });
     } } };
   });
   await page.evaluate((c) => (0, eval)(c), read('packages/browser-extension/extractor.js'));

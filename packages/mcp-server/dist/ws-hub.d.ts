@@ -1,4 +1,8 @@
-import type { WSMessage, WSRenderPayload } from '@code-to-figma/contracts';
+import { type HubOutboundMessage, type Logger, type WSMessage, type WSRenderPayload } from '@code-to-figma/contracts';
+export interface FigmaWsHubOptions {
+    /** El servidor MCP pasa un logger a stderr: su stdout es el protocolo JSON-RPC */
+    logger?: Logger;
+}
 export declare class FigmaWsHub {
     private wss;
     private figmaSockets;
@@ -6,8 +10,15 @@ export declare class FigmaWsHub {
     private lastRenderPayload;
     private pairing;
     private pairingLimiter;
+    private log;
+    constructor(options?: FigmaWsHubOptions);
     private getCatalog;
+    private send;
     start(port?: number): void;
+    private onConnection;
+    private handlers;
+    private sendStatus;
+    private onRegister;
     /**
      * Renderizar una vista del catálogo. Antes los datos del mensaje se interpolaban en un
      * comando de shell (inyección de comandos) y en rutas de archivo (path traversal).
@@ -17,7 +28,9 @@ export declare class FigmaWsHub {
     private saveDebugCapture;
     broadcastToFigma(message: WSMessage<WSRenderPayload>): boolean;
     /** Solo a clientes autenticados (únicos que llegan a otherClients) */
-    broadcastToClients(message: any): void;
+    broadcastToClients(message: HubOutboundMessage): void;
     getConnectedPluginsCount(): number;
+    /** ¿Escuchando? (false si el puerto estaba ocupado) */
+    isListening(): boolean;
 }
 //# sourceMappingURL=ws-hub.d.ts.map

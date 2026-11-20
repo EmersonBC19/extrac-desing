@@ -1,5 +1,9 @@
 import { SiteCrawler } from '@code-to-figma/core-extractor';
 import { WebSocket } from 'ws';
+import { consoleSink, createLogger, parseLogLevel } from '@code-to-figma/contracts';
+const log = createLogger('crawl', { sinks: [consoleSink()], level: parseLogLevel(process.env.CTF_LOG_LEVEL) });
+// El hub escucha solo en 127.0.0.1 ("localhost" puede resolverse a ::1 y fallar)
+const HUB_URL = `ws://127.0.0.1:${Number(process.env.WS_PORT) || 8080}`;
 // Parsear argumentos de terminal
 function parseArgs() {
     const args = process.argv.slice(2);
@@ -63,13 +67,13 @@ function parseArgs() {
 // Utilidades de logging con formato profesional
 // ══════════════════════════════════════════════════════════════════
 function logModuleStart(moduleName, moduleIndex, totalModules) {
-    console.log(`\n${'═'.repeat(60)}`);
-    console.log(`📦 MÓDULO [${moduleIndex + 1}/${totalModules}]: ${moduleName.toUpperCase()}`);
-    console.log(`${'═'.repeat(60)}`);
+    log.info(`\n${'═'.repeat(60)}`);
+    log.info(`📦 MÓDULO [${moduleIndex + 1}/${totalModules}]: ${moduleName.toUpperCase()}`);
+    log.info(`${'═'.repeat(60)}`);
 }
 function logViewStart(viewName, viewIndex, totalViews, variant) {
     const badge = variant === 'BASE' ? '🖥️' : variant === 'TAB' ? '📑' : variant === 'MODAL' ? '🗂️' : '📄';
-    console.log(`  ${badge} Vista [${viewIndex + 1}/${totalViews}]: "${viewName}" (${variant})`);
+    log.info(`  ${badge} Vista [${viewIndex + 1}/${totalViews}]: "${viewName}" (${variant})`);
 }
 function logRenderWait() {
     process.stdout.write(`     ⏳ Esperando confirmación de Figma...`);
@@ -82,17 +86,17 @@ function logRenderTimeout() {
 }
 async function main() {
     const options = parseArgs();
-    console.log(`\n╔${'═'.repeat(58)}╗`);
-    console.log(`║  🌐 Code-to-Figma · Generador Profesional de Mockups      ║`);
-    console.log(`╠${'═'.repeat(58)}╣`);
-    console.log(`║  URL Base: ${options.url.padEnd(46)}║`);
-    console.log(`║  Viewport: ${options.width}×${options.height}px${''.padEnd(36)}║`);
-    console.log(`║  Modo: ${options.routes.length > 0 ? 'Rutas manuales' : 'Auto-detección profunda'}${''.padEnd(33)}║`);
-    console.log(`║  Design System: ${options.includeDesignSystem ? 'Sí' : 'No'}${''.padEnd(39)}║`);
-    console.log(`║  Tabs: ${options.exploreTabs ? 'Sí' : 'No'} │ Modales: ${options.exploreModals ? 'Sí' : 'No'}${''.padEnd(29)}║`);
-    console.log(`╚${'═'.repeat(58)}╝\n`);
+    log.info(`\n╔${'═'.repeat(58)}╗`);
+    log.info(`║  🌐 Code-to-Figma · Generador Profesional de Mockups      ║`);
+    log.info(`╠${'═'.repeat(58)}╣`);
+    log.info(`║  URL Base: ${options.url.padEnd(46)}║`);
+    log.info(`║  Viewport: ${options.width}×${options.height}px${''.padEnd(36)}║`);
+    log.info(`║  Modo: ${options.routes.length > 0 ? 'Rutas manuales' : 'Auto-detección profunda'}${''.padEnd(33)}║`);
+    log.info(`║  Design System: ${options.includeDesignSystem ? 'Sí' : 'No'}${''.padEnd(39)}║`);
+    log.info(`║  Tabs: ${options.exploreTabs ? 'Sí' : 'No'} │ Modales: ${options.exploreModals ? 'Sí' : 'No'}${''.padEnd(29)}║`);
+    log.info(`╚${'═'.repeat(58)}╝\n`);
     // ── 1. Conectar con el WebSocket Hub ──
-    const ws = new WebSocket('ws://localhost:8080');
+    const ws = new WebSocket(HUB_URL);
     // Cola de promesas para esperar confirmación de Figma
     let renderResolve = null;
     await new Promise((resolve, reject) => {
@@ -101,7 +105,7 @@ async function main() {
             resolve();
         });
         ws.on('error', (err) => {
-            console.error('❌ No se pudo conectar a ws://localhost:8080. ¿El Hub está corriendo?');
+            log.error(`No se pudo conectar a ${HUB_URL}. ¿El Hub está corriendo? (npm run start:hub)`);
             reject(err);
         });
     });
@@ -140,10 +144,11 @@ async function main() {
         });
     }
     const crawler = new SiteCrawler();
+    let exitCode = 0;
     const moduleQueues = new Map();
     const NAV_ORIGIN_X = options.includeDesignSystem ? 1900 : 0;
     // ── 3. Fase de recolección: crawl + agrupación por módulo ──
-    console.log('🔍 Fase 1: Recolectando todas las pantallas del sistema...\n');
+    log.info('🔍 Fase 1: Recolectando todas las pantallas del sistema...\n');
     let dsScreen = null;
     try {
         await crawler.crawl({
@@ -172,28 +177,27 @@ async function main() {
         // ── 4. Resumen de lo recolectado ──
         const totalScreens = Array.from(moduleQueues.values()).reduce((sum, q) => sum + q.length, 0) + (dsScreen ? 1 : 0);
         const moduleNames = Array.from(moduleQueues.keys());
-        console.log(`\n${'─'.repeat(60)}`);
-        console.log(`📊 Resumen de recolección:`);
-        console.log(`   Total de pantallas: ${totalScreens}`);
-        console.log(`   Módulos detectados: ${moduleNames.length}`);
+        log.info(`\n${'─'.repeat(60)}`);
+        log.info(`📊 Resumen de recolección:`);
+        log.info(`   Total de pantallas: ${totalScreens}`);
+        log.info(`   Módulos detectados: ${moduleNames.length}`);
         for (const [mod, queue] of moduleQueues) {
             const bases = queue.filter(q => q.screen.variantType === 'BASE').length;
             const tabs = queue.filter(q => q.screen.variantType === 'TAB').length;
             const modals = queue.filter(q => q.screen.variantType === 'MODAL').length;
-            console.log(`     📦 ${mod}: ${queue.length} vistas (${bases} base, ${tabs} tabs, ${modals} modales)`);
+            log.info(`     📦 ${mod}: ${queue.length} vistas (${bases} base, ${tabs} tabs, ${modals} modales)`);
         }
-        console.log(`${'─'.repeat(60)}\n`);
+        log.info(`${'─'.repeat(60)}\n`);
         // ── 5. Fase de transmisión: enviar a Figma módulo por módulo ──
-        console.log('🎨 Fase 2: Transmitiendo a Figma módulo por módulo...\n');
+        log.info('🎨 Fase 2: Transmitiendo a Figma módulo por módulo...\n');
         let currentCanvasY = 0;
         const FRAME_GAP_X = options.gap || 120;
         const FRAME_GAP_Y = options.rowGap || 140;
         const MODULE_GAP_Y = 240;
-        let globalScreenIndex = 0;
         let isFirstTransmission = true;
         // 5.1 Primero el Design System
         if (dsScreen) {
-            console.log('🎨 Transmitiendo Design System & UI Kit...');
+            log.info('🎨 Transmitiendo Design System & UI Kit...');
             await sendAndWait({
                 rootNode: dsScreen.screen.rootNode,
                 clearPage: options.clear && isFirstTransmission,
@@ -201,7 +205,6 @@ async function main() {
                 groupName: 'Design System'
             }, 10000);
             isFirstTransmission = false;
-            globalScreenIndex++;
         }
         // 5.2 Luego cada módulo en orden
         const moduleList = Array.from(moduleQueues.entries());
@@ -233,7 +236,6 @@ async function main() {
                 let colX = options.pages ? 0 : NAV_ORIGIN_X;
                 for (let si = 0; si < sorted.length; si++) {
                     const { screen } = sorted[si];
-                    globalScreenIndex++;
                     logViewStart(screen.title, si, sorted.length, screen.variantType || 'BASE');
                     // Section title solo para la primera pantalla de cada ruta
                     const sectionTitle = si === 0
@@ -259,16 +261,17 @@ async function main() {
             }
             // Separación adicional limpia entre módulos diferentes
             currentCanvasY += MODULE_GAP_Y;
-            console.log(`  ✅ Módulo "${moduleName}" completado (${screens.length} frames)\n`);
+            log.info(`  ✅ Módulo "${moduleName}" completado (${screens.length} frames)\n`);
         }
-        console.log(`\n╔${'═'.repeat(58)}╗`);
-        console.log(`║  🎉 ¡PROCESO COMPLETADO!                                  ║`);
-        console.log(`║  ${totalScreens} pantallas exportadas a Figma${''.padEnd(29)}║`);
-        console.log(`║  ${moduleList.length} módulos procesados${''.padEnd(36)}║`);
-        console.log(`╚${'═'.repeat(58)}╝\n`);
+        log.info(`\n╔${'═'.repeat(58)}╗`);
+        log.info(`║  🎉 ¡PROCESO COMPLETADO!                                  ║`);
+        log.info(`║  ${totalScreens} pantallas exportadas a Figma${''.padEnd(29)}║`);
+        log.info(`║  ${moduleList.length} módulos procesados${''.padEnd(36)}║`);
+        log.info(`╚${'═'.repeat(58)}╝\n`);
     }
     catch (err) {
-        console.error('\n❌ Error durante el crawling:', err.message);
+        log.error('Error durante el crawling', { error: err.message });
+        exitCode = 1;
     }
     finally {
         try {
@@ -276,8 +279,11 @@ async function main() {
             ws.close();
         }
         catch (_e) { }
-        process.exit(0);
+        process.exit(exitCode);
     }
 }
-main().catch(console.error);
+main().catch((err) => {
+    log.error('Fallo del CLI', { error: String(err?.message || err) });
+    process.exit(1);
+});
 //# sourceMappingURL=crawl-cli.js.map

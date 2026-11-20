@@ -1,11 +1,24 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import type { IncomingMessage } from 'http';
-import type { WSMessage, WSRenderPayload } from '@code-to-figma/contracts';
-import { validateRenderPayload, WSMessageEnvelopeSchema } from '@code-to-figma/contracts';
+import {
+  consoleSink,
+  createLogger,
+  HubInboundSchema,
+  parseLogLevel,
+  validateRenderPayload,
+  type HubInboundMessage,
+  type HubInboundType,
+  type HubOutboundMessage,
+  type Logger,
+  type LogSink,
+  type WSMessage,
+  type WSRenderPayload,
+} from '@code-to-figma/contracts';
 import * as fs from 'fs';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { createRequire } from 'module';
+import { rotatingFileSink } from './log-file.js';
 import { fileURLToPath } from 'url';
 import {
   classifyOrigin,
@@ -32,6 +45,21 @@ interface ClientState {
   originClass: OriginClass;
   authenticated: boolean;
   isFigma: boolean;
+  pairingTimer: NodeJS.Timeout | null;
+}
+
+type HandlerOf<K extends HubInboundType> = (ws: WebSocket, state: ClientState, msg: Extract<HubInboundMessage, { type: K }>) => void;
+type HandlerTable = { [K in HubInboundType]: HandlerOf<K> };
+
+function defaultLogger(): Logger {
+  const sinks: LogSink[] = [consoleSink()];
+  if (process.env.CTF_LOG_FILE) sinks.push(rotatingFileSink(process.env.CTF_LOG_FILE));
+  return createLogger('hub', { sinks, level: parseLogLevel(process.env.CTF_LOG_LEVEL) });
+}
+
+export interface FigmaWsHubOptions {
+  /** El servidor MCP pasa un logger a stderr: su stdout es el protocolo JSON-RPC */
+  logger?: Logger;
 }
 
 export class FigmaWsHub {
@@ -41,6 +69,11 @@ export class FigmaWsHub {
   private lastRenderPayload: WSMessage<WSRenderPayload> | null = null;
   private pairing = loadOrCreatePairingCode();
   private pairingLimiter = new PairingRateLimiter();
+  private log: Logger;
+
+  constructor(options: FigmaWsHubOptions = {}) {
+    this.log = options.logger || defaultLogger();
+  }
 
   private getCatalog(): any[] {
     try {
@@ -58,6 +91,10 @@ export class FigmaWsHub {
     return [];
   }
 
+  private send(ws: WebSocket, msg: HubOutboundMessage): void {
+    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+  }
+
   start(port: number = PORT): void {
     this.wss = new WebSocketServer({
       port,
@@ -67,7 +104,7 @@ export class FigmaWsHub {
       verifyClient: (info: { origin: string; req: IncomingMessage }, done: (ok: boolean, code?: number, msg?: string) => void) => {
         const cls = classifyOrigin(info.origin || undefined, ALLOWED_EXTENSION_IDS);
         if (cls === 'rejected') {
-          console.warn(`[✗] Conexión rechazada desde origen no permitido: ${info.origin}`);
+          this.log.warn('Conexión rechazada: origen no permitido', { origin: info.origin });
           return done(false, 403, 'Origen no permitido');
         }
         (info.req as any).__ctfOrigin = cls;
@@ -75,129 +112,149 @@ export class FigmaWsHub {
       },
     });
 
-    console.log(`\n======================================================`);
-    console.log(`⚡ Figma WebSocket Hub en ws://${HOST}:${port}`);
-    console.log(`🔑 Código de vinculación para el plugin de Figma: ${this.pairing.code}`);
-    console.log(`   (se pide una sola vez; guardado en ${this.pairing.file})`);
-    if (DEBUG_CAPTURE) console.log(`🐞 CTF_DEBUG_CAPTURE=1: se guardará el último render en scratch/captured-last-payload.json`);
-    console.log(`Esperando conexión del Plugin de Figma...`);
-    console.log(`======================================================\n`);
-
-    this.wss.on('connection', (ws, req) => {
-      const originClass: OriginClass = (req as any).__ctfOrigin || 'needs-pairing';
-      const state: ClientState = {
-        originClass,
-        authenticated: originClass !== 'needs-pairing',
-        isFigma: false,
-      };
-
-      // Clientes con origen "null" (plugin de Figma) deben vincularse a tiempo
-      let pairingTimer: NodeJS.Timeout | null = null;
-      if (!state.authenticated) {
-        ws.send(JSON.stringify({ type: 'AUTH_REQUIRED' }));
-        pairingTimer = setTimeout(() => {
-          if (!state.authenticated) ws.close(4401, 'Vinculación requerida');
-        }, PAIRING_TIMEOUT_MS);
+    // Puerto ocupado (p. ej. otro hub ya corriendo): avisar en lugar de tumbar el proceso.
+    // Antes el error era asíncrono y el try/catch de quien llamaba no lo atrapaba.
+    this.wss.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EADDRINUSE') {
+        this.log.warn(`El puerto ${port} ya está en uso (¿otro hub corriendo?). Este hub no escuchará.`);
+      } else {
+        this.log.error('Error del servidor WebSocket', { error: err.message });
       }
-
-      ws.on('message', async (raw) => {
-        try {
-          const msg = JSON.parse(raw.toString()) as any;
-          if (!WSMessageEnvelopeSchema.safeParse(msg).success) return;
-
-          if (msg.type === 'REGISTER_CLIENT' || msg.type === 'REGISTER') {
-            if (!state.authenticated) {
-              if (this.pairingLimiter.isLocked()) {
-                ws.send(JSON.stringify({ type: 'AUTH_FAILED', reason: 'Demasiados intentos. Espera un minuto.' }));
-                return ws.close(4429, 'Demasiados intentos');
-              }
-              if (!pairingCodeMatches(this.pairing.code, msg.pairingCode)) {
-                this.pairingLimiter.recordFailure();
-                console.warn(`[✗] Código de vinculación incorrecto (origen ${state.originClass}).`);
-                ws.send(JSON.stringify({ type: 'AUTH_FAILED', reason: 'Código de vinculación incorrecto' }));
-                return ws.close(4401, 'Código incorrecto');
-              }
-              state.authenticated = true;
-              if (pairingTimer) clearTimeout(pairingTimer);
-              ws.send(JSON.stringify({ type: 'AUTH_OK' }));
-            }
-
-            const isFigmaPlugin = msg.clientType === 'FIGMA_PLUGIN' ||
-                                  msg.role === 'plugin' ||
-                                  (typeof msg.client === 'string' && msg.client.toLowerCase().includes('figma'));
-            if (isFigmaPlugin) {
-              state.isFigma = true;
-              this.figmaSockets.add(ws);
-              console.log(`[+] Plugin de Figma conectado con éxito. Total activos: ${this.figmaSockets.size}`);
-
-              // Enviar catálogo de vistas al plugin automáticamente
-              ws.send(JSON.stringify({ type: 'VIEWS_CATALOG', payload: { views: this.getCatalog() } }));
-
-              if (this.lastRenderPayload) {
-                console.log(`[->] Reenviando último diseño en caché al plugin de Figma recién conectado...`);
-                ws.send(JSON.stringify(this.lastRenderPayload));
-              }
-            } else {
-              this.otherClients.add(ws);
-              console.log(`[+] Cliente externo conectado (${msg.clientType || msg.client || 'CLI'}).`);
-            }
-            return;
-          }
-
-          // Nada más se atiende hasta que el cliente esté autenticado
-          if (!state.authenticated) return;
-
-          if (msg.type === 'GET_VIEWS_CATALOG') {
-            ws.send(JSON.stringify({ type: 'VIEWS_CATALOG', payload: { views: this.getCatalog() } }));
-          } else if (msg.type === 'GET_STATUS' || msg.type === 'PING') {
-            ws.send(JSON.stringify({
-              type: 'STATUS_RESPONSE',
-              payload: {
-                connected: true,
-                figmaConnected: this.figmaSockets.size > 0,
-                figmaCount: this.figmaSockets.size
-              }
-            }));
-          } else if (msg.type === 'REQUEST_VIEW_RENDER') {
-            this.handleViewRender(ws, msg);
-          } else if (msg.type === 'RENDER_NODES') {
-            // Validación en tiempo de ejecución: nada malformado ni desmesurado llega a Figma
-            const check = validateRenderPayload(msg.payload);
-            if (!check.ok) {
-              console.warn(`[✗] RENDER_NODES rechazado: ${check.error}`);
-              ws.send(JSON.stringify({ type: 'RENDER_ERROR', error: `Payload inválido: ${check.error}` }));
-              return;
-            }
-            this.lastRenderPayload = msg as WSMessage<WSRenderPayload>;
-            if (DEBUG_CAPTURE) this.saveDebugCapture(msg.payload);
-            console.log(`[->] Solicitud de RENDER recibida. Transmitiendo a ${this.figmaSockets.size} plugin(s) de Figma...`);
-            this.broadcastToFigma(msg as WSMessage<WSRenderPayload>);
-          } else if (msg.type === 'RENDER_SUCCESS') {
-            console.log(`[✓] Render completado con éxito en Figma! (ID: ${(msg as any).nodeId}, Nombre: ${(msg as any).name})`);
-            this.broadcastToClients(msg);
-          } else if (msg.type === 'RENDER_ERROR') {
-            console.error(`[✗] Error reportado por el Plugin de Figma:`, msg.error);
-            this.broadcastToClients(msg);
-          }
-        } catch (err: any) {
-          console.error(`[!] Error procesando mensaje WebSocket:`, err.message);
-        }
-      });
-
-      ws.on('close', () => {
-        if (pairingTimer) clearTimeout(pairingTimer);
-        if (state.isFigma) {
-          this.figmaSockets.delete(ws);
-          console.log(`[-] Plugin de Figma desconectado. Restantes: ${this.figmaSockets.size}`);
-        } else {
-          this.otherClients.delete(ws);
-        }
-      });
-
-      ws.on('error', (err) => {
-        console.error(`[!] Error en socket:`, err.message);
-      });
+      this.wss = null;
     });
+
+    this.wss.on('listening', () => {
+      this.log.info(`⚡ Figma WebSocket Hub en ws://${HOST}:${port}`);
+      this.log.info(`🔑 Código de vinculación para el plugin de Figma: ${this.pairing.code}`, { archivo: this.pairing.file });
+      if (DEBUG_CAPTURE) this.log.info('🐞 CTF_DEBUG_CAPTURE=1: se guardará el último render en scratch/captured-last-payload.json');
+      this.log.info('Esperando conexión del Plugin de Figma...');
+    });
+
+    this.wss.on('connection', (ws, req) => this.onConnection(ws, req));
+  }
+
+  private onConnection(ws: WebSocket, req: IncomingMessage): void {
+    const originClass: OriginClass = (req as any).__ctfOrigin || 'needs-pairing';
+    const state: ClientState = { originClass, authenticated: originClass !== 'needs-pairing', isFigma: false, pairingTimer: null };
+
+    // Clientes con origen "null" (plugin de Figma) deben vincularse a tiempo
+    if (!state.authenticated) {
+      this.send(ws, { type: 'AUTH_REQUIRED' });
+      state.pairingTimer = setTimeout(() => {
+        if (!state.authenticated) ws.close(4401, 'Vinculación requerida');
+      }, PAIRING_TIMEOUT_MS);
+    }
+
+    ws.on('message', (raw) => {
+      try {
+        const parsed = HubInboundSchema.safeParse(JSON.parse(raw.toString()));
+        if (!parsed.success) {
+          this.log.debug('Mensaje ignorado: tipo desconocido o forma inválida');
+          return;
+        }
+        const msg = parsed.data;
+        const isRegister = msg.type === 'REGISTER_CLIENT' || msg.type === 'REGISTER';
+        // Nada más que el registro se atiende hasta que el cliente esté autenticado
+        if (!state.authenticated && !isRegister) return;
+        (this.handlers[msg.type] as HandlerOf<typeof msg.type>)(ws, state, msg as any);
+      } catch (err: any) {
+        this.log.error('Error procesando mensaje WebSocket', { error: err.message });
+      }
+    });
+
+    ws.on('close', () => {
+      if (state.pairingTimer) clearTimeout(state.pairingTimer);
+      if (state.isFigma) {
+        this.figmaSockets.delete(ws);
+        this.log.info(`Plugin de Figma desconectado. Restantes: ${this.figmaSockets.size}`);
+      } else {
+        this.otherClients.delete(ws);
+      }
+    });
+
+    ws.on('error', (err) => this.log.error('Error en socket', { error: err.message }));
+  }
+
+  // ── Manejadores (uno por tipo de mensaje entrante; ver MESSAGE_CATALOG en contracts) ──────
+  private handlers: HandlerTable = {
+    REGISTER_CLIENT: (ws, state, msg) => this.onRegister(ws, state, msg),
+    REGISTER: (ws, state, msg) => this.onRegister(ws, state, msg),
+
+    GET_STATUS: (ws) => this.sendStatus(ws),
+    PING: (ws) => this.sendStatus(ws),
+
+    GET_VIEWS_CATALOG: (ws) => this.send(ws, { type: 'VIEWS_CATALOG', payload: { views: this.getCatalog() } }),
+
+    REQUEST_VIEW_RENDER: (ws, _state, msg) => this.handleViewRender(ws, msg),
+
+    RENDER_NODES: (ws, _state, msg) => {
+      // Validación en tiempo de ejecución: nada malformado ni desmesurado llega a Figma
+      const check = validateRenderPayload(msg.payload);
+      if (!check.ok) {
+        this.log.warn('RENDER_NODES rechazado', { error: check.error });
+        this.send(ws, { type: 'RENDER_ERROR', error: `Payload inválido: ${check.error}` });
+        return;
+      }
+      const renderMsg = msg as unknown as WSMessage<WSRenderPayload>;
+      this.lastRenderPayload = renderMsg;
+      if (DEBUG_CAPTURE) this.saveDebugCapture(msg.payload);
+      this.log.info(`Render recibido. Transmitiendo a ${this.figmaSockets.size} plugin(s) de Figma`, { nodos: check.nodeCount });
+      this.broadcastToFigma(renderMsg);
+    },
+
+    RENDER_SUCCESS: (_ws, _state, msg) => {
+      this.log.info('Render completado en Figma', { nodeId: msg.nodeId, name: msg.name, durationMs: msg.durationMs });
+      this.broadcastToClients({ type: 'RENDER_SUCCESS', nodeId: msg.nodeId, name: msg.name, durationMs: msg.durationMs });
+    },
+
+    RENDER_ERROR: (_ws, _state, msg) => {
+      this.log.error('Error reportado por el plugin de Figma', { error: msg.error });
+      this.broadcastToClients({ type: 'RENDER_ERROR', error: String(msg.error || 'Error desconocido') });
+    },
+  };
+
+  private sendStatus(ws: WebSocket): void {
+    this.send(ws, {
+      type: 'STATUS_RESPONSE',
+      payload: { connected: true, figmaConnected: this.figmaSockets.size > 0, figmaCount: this.figmaSockets.size },
+    });
+  }
+
+  private onRegister(ws: WebSocket, state: ClientState, msg: Extract<HubInboundMessage, { type: 'REGISTER_CLIENT' | 'REGISTER' }>): void {
+    if (!state.authenticated) {
+      if (this.pairingLimiter.isLocked()) {
+        this.send(ws, { type: 'AUTH_FAILED', reason: 'Demasiados intentos. Espera un minuto.' });
+        ws.close(4429, 'Demasiados intentos');
+        return;
+      }
+      if (!pairingCodeMatches(this.pairing.code, msg.pairingCode)) {
+        this.pairingLimiter.recordFailure();
+        this.log.warn('Código de vinculación incorrecto', { origen: state.originClass });
+        this.send(ws, { type: 'AUTH_FAILED', reason: 'Código de vinculación incorrecto' });
+        ws.close(4401, 'Código incorrecto');
+        return;
+      }
+      state.authenticated = true;
+      if (state.pairingTimer) clearTimeout(state.pairingTimer);
+      this.send(ws, { type: 'AUTH_OK' });
+    }
+
+    const isFigmaPlugin = msg.clientType === 'FIGMA_PLUGIN' || msg.role === 'plugin' ||
+      (typeof msg.client === 'string' && msg.client.toLowerCase().includes('figma'));
+    if (isFigmaPlugin) {
+      state.isFigma = true;
+      this.figmaSockets.add(ws);
+      this.log.info(`Plugin de Figma conectado. Total activos: ${this.figmaSockets.size}`);
+      // Enviar catálogo de vistas al plugin automáticamente
+      this.send(ws, { type: 'VIEWS_CATALOG', payload: { views: this.getCatalog() } });
+      if (this.lastRenderPayload) {
+        this.log.info('Reenviando el último diseño al plugin recién conectado');
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(this.lastRenderPayload));
+      }
+    } else {
+      this.otherClients.add(ws);
+      this.log.info('Cliente externo conectado', { cliente: msg.clientType || msg.client || 'CLI' });
+    }
   }
 
   /**
@@ -205,16 +262,16 @@ export class FigmaWsHub {
    * comando de shell (inyección de comandos) y en rutas de archivo (path traversal).
    * Ahora: solo ids del catálogo, rutas de URL simples y execFile SIN shell.
    */
-  private handleViewRender(ws: WebSocket, msg: any): void {
+  private handleViewRender(ws: WebSocket, msg: Extract<HubInboundMessage, { type: 'REQUEST_VIEW_RENDER' }>): void {
     const catalogIds = this.getCatalog().map((v: any) => String(v.id));
     const req = validateViewRenderRequest(msg.payload, catalogIds);
     if (typeof req === 'string') {
-      console.warn(`[✗] REQUEST_VIEW_RENDER rechazado: ${req}`);
-      ws.send(JSON.stringify({ type: 'RENDER_ERROR', error: req }));
+      this.log.warn('REQUEST_VIEW_RENDER rechazado', { motivo: req });
+      this.send(ws, { type: 'RENDER_ERROR', error: req });
       return;
     }
     const { viewId, route, name, pageName, useSeparatePage } = req;
-    console.log(`[->] Solicitud de renderizar vista: "${viewId}" (Página: ${useSeparatePage ? pageName : 'Actual'})...`);
+    this.log.info(`Renderizar vista "${viewId}"`, { pagina: useSeparatePage ? pageName : 'actual' });
 
     const viewsDir = path.resolve(process.cwd(), 'scratch/views');
     const targetFile = path.join(viewsDir, `${viewId}.json`);
@@ -232,17 +289,14 @@ export class FigmaWsHub {
       return;
     }
 
-    console.log(`[!] La vista "${viewId}" no está en caché local. Iniciando extracción automática...`);
-    ws.send(JSON.stringify({
-      type: 'EXTRACT_PROGRESS',
-      payload: { status: 'EXTRACTING', viewId, message: `Extrayendo vista ${viewId} del navegador...` }
-    }));
+    this.log.info(`La vista "${viewId}" no está en caché. Iniciando extracción automática`);
+    this.send(ws, { type: 'EXTRACT_PROGRESS', payload: { status: 'EXTRACTING', viewId, message: `Extrayendo vista ${viewId} del navegador...` } });
     const scriptPath = path.resolve(process.cwd(), 'scratch/extract-single-view.ts');
     let tsxCli: string;
     try {
       tsxCli = createRequire(import.meta.url).resolve('tsx/cli');
     } catch (_e) {
-      ws.send(JSON.stringify({ type: 'RENDER_ERROR', error: 'tsx no está instalado' }));
+      this.send(ws, { type: 'RENDER_ERROR', error: 'tsx no está instalado' });
       return;
     }
     execFile(
@@ -251,10 +305,10 @@ export class FigmaWsHub {
       { shell: false, timeout: 5 * 60_000 },
       (err) => {
         if (err) {
-          console.error(`Error extrayendo vista:`, err.message);
-          ws.send(JSON.stringify({ type: 'RENDER_ERROR', error: `Error al extraer vista ${viewId}: ${err.message}` }));
+          this.log.error('Error extrayendo vista', { viewId, error: err.message });
+          this.send(ws, { type: 'RENDER_ERROR', error: `Error al extraer vista ${viewId}: ${err.message}` });
         } else {
-          console.log(`[✓] Vista ${viewId} extraída exitosamente.`);
+          this.log.info(`Vista ${viewId} extraída`);
         }
       }
     );
@@ -270,31 +324,31 @@ export class FigmaWsHub {
 
   broadcastToFigma(message: WSMessage<WSRenderPayload>): boolean {
     if (this.figmaSockets.size === 0) {
-      console.warn(`[!] Advertencia: No hay ningún plugin de Figma conectado en este momento.`);
+      this.log.warn('No hay ningún plugin de Figma conectado en este momento');
       return false;
     }
-
     const payload = JSON.stringify(message);
     for (const socket of this.figmaSockets) {
-      if (socket.readyState === WebSocket.OPEN) {
-        socket.send(payload);
-      }
+      if (socket.readyState === WebSocket.OPEN) socket.send(payload);
     }
     return true;
   }
 
   /** Solo a clientes autenticados (únicos que llegan a otherClients) */
-  broadcastToClients(message: any): void {
+  broadcastToClients(message: HubOutboundMessage): void {
     const payload = JSON.stringify(message);
     for (const socket of this.otherClients) {
-      if (socket.readyState === WebSocket.OPEN) {
-        socket.send(payload);
-      }
+      if (socket.readyState === WebSocket.OPEN) socket.send(payload);
     }
   }
 
   getConnectedPluginsCount(): number {
     return this.figmaSockets.size;
+  }
+
+  /** ¿Escuchando? (false si el puerto estaba ocupado) */
+  isListening(): boolean {
+    return this.wss !== null;
   }
 }
 

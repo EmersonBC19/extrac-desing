@@ -1,4 +1,5 @@
 import { chromium } from 'playwright';
+import { consoleSink, createLogger } from '@code-to-figma/contracts';
 import { getBrowserExtractorScript } from './browser-script.js';
 import { createDesignSystemFrame } from './design-system-extractor.js';
 export class SiteCrawler {
@@ -22,7 +23,7 @@ export class SiteCrawler {
      * 4. Carga completa de fuentes tipográficas
      * 5. Finalización de transiciones y animaciones CSS
      */
-    async waitForPageReady(page, timeoutMs = 8000) {
+    async waitForPageReady(page, _timeoutMs = 8000) {
         // 1. Red en reposo (networkidle)
         try {
             await page.waitForLoadState('networkidle', { timeout: 3500 });
@@ -69,37 +70,38 @@ export class SiteCrawler {
         const contentSelector = options.contentSelector || 'body';
         const delay = options.delayMs || 1000;
         const maxScreens = options.maxScreens || 40;
+        const log = options.logger || createLogger('crawler', { sinks: [consoleSink()] });
         const context = await this.browser.newContext({ viewport });
         const page = await context.newPage();
         const results = [];
         try {
-            console.log(`\n🔍 Navegando a la URL base: ${options.baseUrl}...`);
+            log.info(`\n🔍 Navegando a la URL base: ${options.baseUrl}...`);
             await page.goto(options.baseUrl, { waitUntil: 'networkidle', timeout: 35000 }).catch(() => { });
             await page.waitForTimeout(delay);
             // Modo autenticación asistida
             if (options.auth) {
-                console.log('\n=============================================================');
-                console.log('🔐 [MODO LOGIN ASISTIDO]');
-                console.log('Se ha abierto una ventana de navegador.');
-                console.log('👉 Por favor, inicia sesión con tus credenciales de desarrollo.');
-                console.log('Esperando a que entres al dashboard principal (máximo 2 min)...');
-                console.log('=============================================================\n');
+                log.info('\n=============================================================');
+                log.info('🔐 [MODO LOGIN ASISTIDO]');
+                log.info('Se ha abierto una ventana de navegador.');
+                log.info('👉 Por favor, inicia sesión con tus credenciales de desarrollo.');
+                log.info('Esperando a que entres al dashboard principal (máximo 2 min)...');
+                log.info('=============================================================\n');
                 try {
                     await page.waitForURL((url) => {
                         const path = url.pathname.toLowerCase();
                         return !path.endsWith('/login') && path !== '/' && path !== '';
                     }, { timeout: 120000 });
-                    console.log(`✅ ¡Login detectado en ruta: ${page.url()}!`);
-                    console.log('Esperando a que carguen los datos y menús...');
+                    log.info(`✅ ¡Login detectado en ruta: ${page.url()}!`);
+                    log.info('Esperando a que carguen los datos y menús...');
                     await page.waitForTimeout(2500);
                 }
                 catch (_authErr) {
-                    console.warn('⚠️ No se detectó cambio de URL en 2 minutos. Continuando con la vista actual...');
+                    log.warn('⚠️ No se detectó cambio de URL en 2 minutos. Continuando con la vista actual...');
                 }
             }
             // 0. Transmitir el Artboard del Sistema de Diseño (Design Tokens & UI Kit)
             if (options.includeDesignSystem !== false) {
-                console.log(`\n🎨 Generando Artboard Maestro: "Design System, Tokens & UI Kit"...`);
+                log.info(`\n🎨 Generando Artboard Maestro: "Design System, Tokens & UI Kit"...`);
                 const dsNode = createDesignSystemFrame();
                 const dsResult = {
                     title: '🎨 Design System & UI Kit',
@@ -124,7 +126,7 @@ export class SiteCrawler {
                 }));
             }
             else {
-                console.log('🤖 Auto-detectando todas las secciones, submódulos y vistas del sistema...');
+                log.info('🤖 Auto-detectando todas las secciones, submódulos y vistas del sistema...');
                 const discoveredMap = new Map();
                 // 1. Método Angular Ivy Runtime (window.ng) para extraer los módulos activos del usuario
                 try {
@@ -161,7 +163,7 @@ export class SiteCrawler {
                         return null;
                     });
                     if (ngModules && ngModules.length > 0) {
-                        console.log(`✨ Detección Angular Runtime exitosa: ${ngModules.length} vistas identificadas.`);
+                        log.info(`✨ Detección Angular Runtime exitosa: ${ngModules.length} vistas identificadas.`);
                         for (const item of ngModules) {
                             discoveredMap.set(item.route, item);
                         }
@@ -262,8 +264,8 @@ export class SiteCrawler {
                 }
                 orderedTargets.push(...Array.from(discoveredMap.values()));
                 targets = orderedTargets.slice(0, maxScreens);
-                console.log(`\n📌 Rutas del sistema preparadas para extracción (${targets.length}):`);
-                targets.forEach((t, idx) => console.log(`   [${idx + 1}] [${t.group}] ${t.title} -> ${t.route}`));
+                log.info(`\n📌 Rutas del sistema preparadas para extracción (${targets.length}):`);
+                targets.forEach((t, idx) => log.info(`   [${idx + 1}] [${t.group}] ${t.title} -> ${t.route}`));
             }
             // 4. Proceso de navegación, extracción de pantallas, sub-pestañas y modales
             for (let i = 0; i < targets.length; i++) {
@@ -271,7 +273,7 @@ export class SiteCrawler {
                 const fullUrl = target.route.startsWith('http')
                     ? target.route
                     : `${baseObj.origin}${target.route.startsWith('/') ? target.route : '/' + target.route}`;
-                console.log(`\n[${i + 1}/${targets.length}] 📂 Extrayendo [${target.group}] -> "${target.title}" (${target.route})...`);
+                log.info(`\n[${i + 1}/${targets.length}] 📂 Extrayendo [${target.group}] -> "${target.title}" (${target.route})...`);
                 try {
                     if (page.url() !== fullUrl) {
                         // Intento 1: Navegación SPA por clic en enlace de sidebar
@@ -356,7 +358,7 @@ export class SiteCrawler {
                     }
                     if (uiNode) {
                         const count = countTreeNodes(uiNode);
-                        console.log(`   📊 Vista base extraída: "${screenTitle}" (${count} elementos, URL: ${page.url()})`);
+                        log.info(`   📊 Vista base extraída: "${screenTitle}" (${count} elementos, URL: ${page.url()})`);
                         const screenResult = {
                             title: screenTitle,
                             routeOrTab: target.route,
@@ -374,7 +376,7 @@ export class SiteCrawler {
                     if (options.exploreTabs !== false) {
                         const subTabs = await page.$$('[role="tab"], .mat-mdc-tab, .mat-tab-label, .nav-tabs button, .nav-tabs a, button[role="tab"]');
                         if (subTabs.length > 1) {
-                            console.log(`   🔎 Detectadas ${subTabs.length} pestañas interactivas en esta pantalla. Extrayendo vistas...`);
+                            log.info(`   🔎 Detectadas ${subTabs.length} pestañas interactivas en esta pantalla. Extrayendo vistas...`);
                             for (let t = 1; t < Math.min(subTabs.length, 5); t++) {
                                 try {
                                     const tabHandle = subTabs[t];
@@ -398,7 +400,7 @@ export class SiteCrawler {
                                     }, { scriptCode: getBrowserExtractorScript(), sel: contentSelector, screenName: tabScreenTitle });
                                     if (tabNode) {
                                         const count = countTreeNodes(tabNode);
-                                        console.log(`      📑 Pestaña extraída: "${tabScreenTitle}" (${count} elementos)`);
+                                        log.info(`      📑 Pestaña extraída: "${tabScreenTitle}" (${count} elementos)`);
                                         const tabResult = {
                                             title: tabScreenTitle,
                                             routeOrTab: `${target.route}#tab-${t}`,
@@ -458,7 +460,7 @@ export class SiteCrawler {
                             catch (_e) { }
                         }
                         if (triggersToClick.length > 0) {
-                            console.log(`   🗂️ Detectados ${triggersToClick.length} disparadores de diálogo/modal. Mapeando vistas modales con fondo...`);
+                            log.info(`   🗂️ Detectados ${triggersToClick.length} disparadores de diálogo/modal. Mapeando vistas modales con fondo...`);
                             for (let m = 0; m < Math.min(triggersToClick.length, 5); m++) {
                                 try {
                                     const trigger = triggersToClick[m];
@@ -474,7 +476,7 @@ export class SiteCrawler {
                                             const h = document.querySelector('.cdk-overlay-pane h1, .cdk-overlay-pane h2, .cdk-overlay-pane h3, [role="dialog"] h1, [role="dialog"] h2, .modal-title, .dialog-title, .title');
                                             return h?.textContent?.trim() || null;
                                         }) || trigger.label;
-                                        console.log(`      ✨ [Modal Capturado con Fondo] "${modalTitle}"`);
+                                        log.info(`      ✨ [Modal Capturado con Fondo] "${modalTitle}"`);
                                         const modalScreenTitle = `${target.group} / ${target.title} [Modal: ${modalTitle}]`;
                                         // Extrae el árbol completo con el fondo oscurecido y el diálogo encima
                                         const modalNode = await page.evaluate(async ({ scriptCode, sel, screenName }) => {
@@ -493,7 +495,7 @@ export class SiteCrawler {
                                         }, { scriptCode: getBrowserExtractorScript(), sel: contentSelector, screenName: modalScreenTitle });
                                         if (modalNode) {
                                             const count = countTreeNodes(modalNode);
-                                            console.log(`      🗂️ Modal extraído: "${modalScreenTitle}" (${count} elementos)`);
+                                            log.info(`      🗂️ Modal extraído: "${modalScreenTitle}" (${count} elementos)`);
                                             const modalResult = {
                                                 title: modalScreenTitle,
                                                 routeOrTab: `${target.route}#modal-${m + 1}`,
@@ -528,7 +530,7 @@ export class SiteCrawler {
                     }
                 }
                 catch (routeErr) {
-                    console.warn(`[!] Advertencia extrayendo ruta "${target.route}":`, routeErr.message);
+                    log.warn(`Advertencia extrayendo ruta "${target.route}"`, { error: routeErr.message });
                 }
             }
         }

@@ -1,0 +1,141 @@
+/**
+ * Mensajes del sistema (plan de mejoras, fase 4.1): una sola definición de qué mensajes existen,
+ * quién los envía y qué forma tienen. Se usa en el hub, el plugin y las pruebas.
+ *
+ * Tres canales:
+ *  - hub:       WebSocket ws://127.0.0.1:8080 (extensión, CLI/MCP y UI del plugin ↔ hub)
+ *  - plugin:    postMessage entre la UI del plugin (iframe) y su sandbox (code.ts)
+ *  - extension: chrome.runtime entre el content script y el service worker
+ *
+ * Cada mensaje se clasifica (CQRS ligero) como:
+ *  - command: pide un cambio (dibujar, borrar, vincular)
+ *  - query:   pide información sin cambiar nada
+ *  - event:   informa algo que ya pasó (respuestas y notificaciones)
+ * Los nombres que viajan por la red NO cambian (compatibilidad con clientes ya desplegados).
+ */
+import * as z from 'zod';
+import type { WSRenderPayload } from './types.js';
+
+export type MessageKind = 'command' | 'query' | 'event';
+export type MessageChannel = 'hub' | 'plugin' | 'extension';
+
+export interface MessageInfo {
+  channel: MessageChannel;
+  kind: MessageKind;
+  /** Quién lo envía → quién lo recibe */
+  route: string;
+  description: string;
+}
+
+/** Catálogo completo: documentación viva y base de las pruebas de cobertura de manejadores */
+export const MESSAGE_CATALOG = {
+  // ── Hub (WebSocket) ─────────────────────────────────────────────────────────────────────────
+  REGISTER_CLIENT:     { channel: 'hub', kind: 'command', route: 'cliente → hub', description: 'Presentarse (FIGMA_PLUGIN, CLI_OR_MCP…); el plugin incluye su código de vinculación' },
+  REGISTER:            { channel: 'hub', kind: 'command', route: 'cliente → hub', description: 'Alias antiguo de REGISTER_CLIENT' },
+  AUTH_REQUIRED:       { channel: 'hub', kind: 'event',   route: 'hub → cliente', description: 'El cliente (origen "null") debe vincularse con código' },
+  AUTH_OK:             { channel: 'hub', kind: 'event',   route: 'hub → cliente', description: 'Vinculación aceptada' },
+  AUTH_FAILED:         { channel: 'hub', kind: 'event',   route: 'hub → cliente', description: 'Código incorrecto o demasiados intentos' },
+  GET_STATUS:          { channel: 'hub', kind: 'query',   route: 'cliente → hub', description: '¿Hay un plugin de Figma conectado?' },
+  PING:                { channel: 'hub', kind: 'query',   route: 'cliente → hub', description: 'Alias de GET_STATUS' },
+  STATUS_RESPONSE:     { channel: 'hub', kind: 'event',   route: 'hub → cliente', description: 'Respuesta a GET_STATUS' },
+  GET_VIEWS_CATALOG:   { channel: 'hub', kind: 'query',   route: 'cliente → hub', description: 'Vistas del crawler disponibles' },
+  VIEWS_CATALOG:       { channel: 'hub', kind: 'event',   route: 'hub → cliente', description: 'Respuesta a GET_VIEWS_CATALOG' },
+  REQUEST_VIEW_RENDER: { channel: 'hub', kind: 'command', route: 'plugin → hub',  description: 'Dibujar una vista del catálogo (extrayéndola si hace falta)' },
+  EXTRACT_PROGRESS:    { channel: 'hub', kind: 'event',   route: 'hub → plugin',  description: 'Progreso de una extracción en curso' },
+  RENDER_NODES:        { channel: 'hub', kind: 'command', route: 'extensión/CLI → hub → plugin', description: 'Dibujar un árbol UINode en Figma' },
+  RENDER_SUCCESS:      { channel: 'hub', kind: 'event',   route: 'plugin → hub → CLI/MCP', description: 'Figma terminó de dibujar' },
+  RENDER_ERROR:        { channel: 'hub', kind: 'event',   route: 'hub/plugin → cliente', description: 'Falló un render o un payload fue rechazado' },
+
+  // ── Plugin (UI ↔ sandbox) ───────────────────────────────────────────────────────────────────
+  CLEAR_PAGE:            { channel: 'plugin', kind: 'command', route: 'UI → sandbox', description: 'Vaciar la página actual' },
+  DELETE_NODE:           { channel: 'plugin', kind: 'command', route: 'UI → sandbox', description: 'Borrar un nodo del lienzo' },
+  DELETE_MULTIPLE_NODES: { channel: 'plugin', kind: 'command', route: 'UI → sandbox', description: 'Borrar varios nodos del lienzo' },
+  CONVERT_TO_COMPONENT:  { channel: 'plugin', kind: 'command', route: 'UI → sandbox', description: 'Convertir un frame en componente' },
+  FOCUS_NODE:            { channel: 'plugin', kind: 'command', route: 'UI → sandbox', description: 'Seleccionar y enfocar un nodo' },
+  ZOOM_ALL:              { channel: 'plugin', kind: 'command', route: 'UI → sandbox', description: 'Ajustar el zoom a todo el contenido' },
+  SET_PAIRING_CODE:      { channel: 'plugin', kind: 'command', route: 'UI → sandbox', description: 'Guardar el código de vinculación en figma.clientStorage' },
+  GET_PAIRING_CODE:      { channel: 'plugin', kind: 'query',   route: 'UI → sandbox', description: 'Leer el código de vinculación guardado' },
+  PAIRING_CODE:          { channel: 'plugin', kind: 'event',   route: 'sandbox → UI', description: 'Respuesta a GET_PAIRING_CODE' },
+  GET_PAGE_INFO:         { channel: 'plugin', kind: 'query',   route: 'UI → sandbox', description: 'Nombre de la página actual' },
+  PAGE_INFO:             { channel: 'plugin', kind: 'event',   route: 'sandbox → UI', description: 'Página actual (respuesta o cambio de página)' },
+  LOG:                   { channel: 'plugin', kind: 'event',   route: 'sandbox → UI', description: 'Línea para el registro visible del plugin' },
+
+  // ── Extensión (content script ↔ service worker) ─────────────────────────────────────────────
+  TRANSMIT_TO_FIGMA:     { channel: 'extension', kind: 'command', route: 'content → service worker', description: 'Enviar una extracción al hub' },
+  CAPTURE_REGIONS:       { channel: 'extension', kind: 'query',   route: 'content → service worker', description: 'Recortes de una captura de la pestaña' },
+  FETCH_IMAGE_AS_BASE64: { channel: 'extension', kind: 'query',   route: 'content → service worker', description: 'Descargar una imagen con los permisos de la extensión' },
+  CHECK_FIGMA_STATUS:    { channel: 'extension', kind: 'query',   route: 'content → service worker', description: 'Estado del hub y del plugin' },
+} as const satisfies Record<string, MessageInfo>;
+
+export type MessageType = keyof typeof MESSAGE_CATALOG;
+
+/** Tipos de mensaje de un canal (para comprobar en pruebas que todos tienen manejador) */
+export function messageTypesOf(channel: MessageChannel, route?: RegExp): MessageType[] {
+  return (Object.keys(MESSAGE_CATALOG) as MessageType[])
+    .filter(t => MESSAGE_CATALOG[t].channel === channel && (!route || route.test(MESSAGE_CATALOG[t].route)));
+}
+
+// ── Mensajes que RECIBE el hub: entrada no confiable → esquema Zod ───────────────────────────
+// (el árbol de RENDER_NODES lo valida aparte validateRenderPayload, con límites de tamaño)
+
+const RegisterSchema = z.object({
+  type: z.enum(['REGISTER_CLIENT', 'REGISTER']),
+  clientType: z.string().max(64).optional(),
+  role: z.string().max(64).optional(),
+  client: z.string().max(200).optional(),
+  pairingCode: z.string().max(32).optional(),
+}).passthrough();
+
+export const HubInboundSchema = z.discriminatedUnion('type', [
+  RegisterSchema,
+  z.object({ type: z.literal('GET_STATUS') }).passthrough(),
+  z.object({ type: z.literal('PING') }).passthrough(),
+  z.object({ type: z.literal('GET_VIEWS_CATALOG') }).passthrough(),
+  z.object({ type: z.literal('REQUEST_VIEW_RENDER'), payload: z.object({}).passthrough().optional() }).passthrough(),
+  z.object({ type: z.literal('RENDER_NODES'), payload: z.unknown() }).passthrough(),
+  z.object({
+    type: z.literal('RENDER_SUCCESS'),
+    nodeId: z.string().max(200).optional(),
+    name: z.string().max(1000).optional(),
+    durationMs: z.number().finite().optional(),
+  }).passthrough(),
+  z.object({ type: z.literal('RENDER_ERROR'), error: z.string().max(5000).optional() }).passthrough(),
+]);
+
+export type HubInboundMessage = z.infer<typeof HubInboundSchema>;
+export type HubInboundType = HubInboundMessage['type'];
+
+/** Mensajes que ENVÍA el hub */
+export type HubOutboundMessage =
+  | { type: 'AUTH_REQUIRED' }
+  | { type: 'AUTH_OK' }
+  | { type: 'AUTH_FAILED'; reason: string }
+  | { type: 'STATUS_RESPONSE'; payload: { connected: boolean; figmaConnected: boolean; figmaCount: number } }
+  | { type: 'VIEWS_CATALOG'; payload: { views: unknown[] } }
+  | { type: 'EXTRACT_PROGRESS'; payload: { status: string; viewId: string; message: string } }
+  | { type: 'RENDER_NODES'; payload: WSRenderPayload }
+  | { type: 'RENDER_SUCCESS'; nodeId?: string; name?: string; durationMs?: number }
+  | { type: 'RENDER_ERROR'; error: string };
+
+// ── Plugin: UI → sandbox (code.ts) ───────────────────────────────────────────────────────────
+export type PluginUiMessage =
+  | { type: 'RENDER_NODES'; payload: unknown }
+  | { type: 'CLEAR_PAGE' }
+  | { type: 'DELETE_NODE'; nodeId: string }
+  | { type: 'DELETE_MULTIPLE_NODES'; nodeIds: string[] }
+  | { type: 'CONVERT_TO_COMPONENT'; nodeId: string }
+  | { type: 'FOCUS_NODE'; nodeId: string }
+  | { type: 'ZOOM_ALL' }
+  | { type: 'GET_PAGE_INFO' }
+  | { type: 'GET_PAIRING_CODE' }
+  | { type: 'SET_PAIRING_CODE'; code: string };
+
+export type PluginUiMessageType = PluginUiMessage['type'];
+
+/** Plugin: sandbox → UI */
+export type PluginSandboxMessage =
+  | { type: 'PAGE_INFO'; pageName: string }
+  | { type: 'PAIRING_CODE'; code: string }
+  | { type: 'LOG'; message: string; level?: 'info' | 'warn' | 'error' | 'success' }
+  | { type: 'RENDER_SUCCESS'; nodeId: string; name: string; [k: string]: unknown }
+  | { type: 'RENDER_ERROR'; error: string };

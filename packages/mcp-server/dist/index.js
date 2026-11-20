@@ -3,14 +3,17 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema, } from '@modelcontextprotocol/sdk/types.js';
 import { BrowserExtractor, SiteCrawler } from '@code-to-figma/core-extractor';
 import { FigmaWsHub } from './ws-hub.js';
-// Iniciar WebSocket Hub embebido si no está corriendo externamente
-const hub = new FigmaWsHub();
-try {
-    hub.start(8080);
-}
-catch (_e) {
-    // Si ya estaba iniciado el puerto, continúa
-}
+import { sendToFigma } from './figma-relay.js';
+import { consoleSink, createLogger, parseLogLevel } from '@code-to-figma/contracts';
+// Todo el registro va a stderr: stdout es el canal JSON-RPC del protocolo MCP
+// (antes el banner y los avisos del hub embebido salían por stdout y corrompían el protocolo)
+const log = createLogger('mcp', { sinks: [consoleSink('stderr')], level: parseLogLevel(process.env.CTF_LOG_LEVEL) });
+// Hub embebido. Si el puerto ya está ocupado (npm run start:hub corriendo), los renders se
+// reenvían a ese hub (ver figma-relay.ts).
+const HUB_PORT = parseInt(process.env.WS_PORT || '8080', 10);
+const HUB_URL = `ws://127.0.0.1:${HUB_PORT}`;
+const hub = new FigmaWsHub({ logger: log.child('hub') });
+hub.start(HUB_PORT);
 const extractor = new BrowserExtractor();
 const server = new Server({
     name: 'code-to-figma-mcp',
@@ -130,13 +133,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 htmlContent: fullHtml,
                 selector
             });
-            const sent = hub.broadcastToFigma({
+            const delivery = await sendToFigma(hub, {
                 type: 'RENDER_NODES',
                 payload: {
                     rootNode: uiNode,
                     clearPage: false
                 }
-            });
+            }, HUB_URL);
+            const sent = delivery.sent;
             return {
                 content: [
                     {
@@ -145,7 +149,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                             success: true,
                             componentName: uiNode.name,
                             nodeType: uiNode.type,
-                            connectedPlugins: hub.getConnectedPluginsCount(),
+                            connectedPlugins: delivery.plugins,
                             sentToFigma: sent,
                             message: sent
                                 ? `¡Componente "${uiNode.name}" renderizado y transmitido a Figma con éxito!`
@@ -162,13 +166,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 url,
                 selector
             });
-            const sent = hub.broadcastToFigma({
+            const delivery = await sendToFigma(hub, {
                 type: 'RENDER_NODES',
                 payload: {
                     rootNode: uiNode,
                     clearPage: false
                 }
-            });
+            }, HUB_URL);
+            const sent = delivery.sent;
             return {
                 content: [
                     {
@@ -212,15 +217,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             const gap = typeof args?.gap === 'number' ? args.gap : 160;
             const crawler = new SiteCrawler();
             const width = 1440;
-            let count = 0;
             const screens = await crawler.crawl({
                 baseUrl,
                 routes,
                 viewport: { width, height: 900 },
+                logger: log.child('crawler'),
                 onScreen: async (screen, index) => {
-                    count++;
                     const posX = index * (width + gap);
-                    hub.broadcastToFigma({
+                    await sendToFigma(hub, {
                         type: 'RENDER_NODES',
                         payload: {
                             rootNode: screen.rootNode,
@@ -228,7 +232,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                             targetCanvasPosition: pages ? undefined : { x: posX, y: 0 },
                             pageName: pages ? screen.title : undefined
                         }
-                    });
+                    }, HUB_URL);
                     await new Promise(r => setTimeout(r, 600));
                 }
             });
@@ -265,10 +269,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function run() {
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    console.error('Servidor MCP code-to-figma conectado vía STDIO');
+    log.info('Servidor MCP code-to-figma conectado vía STDIO');
 }
 run().catch((err) => {
-    console.error('Fallo iniciando servidor MCP:', err);
+    log.error('Fallo iniciando servidor MCP', { error: String(err?.stack || err) });
     process.exit(1);
 });
 //# sourceMappingURL=index.js.map

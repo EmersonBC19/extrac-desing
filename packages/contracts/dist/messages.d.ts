@@ -1,0 +1,338 @@
+/**
+ * Mensajes del sistema (plan de mejoras, fase 4.1): una sola definición de qué mensajes existen,
+ * quién los envía y qué forma tienen. Se usa en el hub, el plugin y las pruebas.
+ *
+ * Tres canales:
+ *  - hub:       WebSocket ws://127.0.0.1:8080 (extensión, CLI/MCP y UI del plugin ↔ hub)
+ *  - plugin:    postMessage entre la UI del plugin (iframe) y su sandbox (code.ts)
+ *  - extension: chrome.runtime entre el content script y el service worker
+ *
+ * Cada mensaje se clasifica (CQRS ligero) como:
+ *  - command: pide un cambio (dibujar, borrar, vincular)
+ *  - query:   pide información sin cambiar nada
+ *  - event:   informa algo que ya pasó (respuestas y notificaciones)
+ * Los nombres que viajan por la red NO cambian (compatibilidad con clientes ya desplegados).
+ */
+import * as z from 'zod';
+import type { WSRenderPayload } from './types.js';
+export type MessageKind = 'command' | 'query' | 'event';
+export type MessageChannel = 'hub' | 'plugin' | 'extension';
+export interface MessageInfo {
+    channel: MessageChannel;
+    kind: MessageKind;
+    /** Quién lo envía → quién lo recibe */
+    route: string;
+    description: string;
+}
+/** Catálogo completo: documentación viva y base de las pruebas de cobertura de manejadores */
+export declare const MESSAGE_CATALOG: {
+    readonly REGISTER_CLIENT: {
+        readonly channel: "hub";
+        readonly kind: "command";
+        readonly route: "cliente → hub";
+        readonly description: "Presentarse (FIGMA_PLUGIN, CLI_OR_MCP…); el plugin incluye su código de vinculación";
+    };
+    readonly REGISTER: {
+        readonly channel: "hub";
+        readonly kind: "command";
+        readonly route: "cliente → hub";
+        readonly description: "Alias antiguo de REGISTER_CLIENT";
+    };
+    readonly AUTH_REQUIRED: {
+        readonly channel: "hub";
+        readonly kind: "event";
+        readonly route: "hub → cliente";
+        readonly description: "El cliente (origen \"null\") debe vincularse con código";
+    };
+    readonly AUTH_OK: {
+        readonly channel: "hub";
+        readonly kind: "event";
+        readonly route: "hub → cliente";
+        readonly description: "Vinculación aceptada";
+    };
+    readonly AUTH_FAILED: {
+        readonly channel: "hub";
+        readonly kind: "event";
+        readonly route: "hub → cliente";
+        readonly description: "Código incorrecto o demasiados intentos";
+    };
+    readonly GET_STATUS: {
+        readonly channel: "hub";
+        readonly kind: "query";
+        readonly route: "cliente → hub";
+        readonly description: "¿Hay un plugin de Figma conectado?";
+    };
+    readonly PING: {
+        readonly channel: "hub";
+        readonly kind: "query";
+        readonly route: "cliente → hub";
+        readonly description: "Alias de GET_STATUS";
+    };
+    readonly STATUS_RESPONSE: {
+        readonly channel: "hub";
+        readonly kind: "event";
+        readonly route: "hub → cliente";
+        readonly description: "Respuesta a GET_STATUS";
+    };
+    readonly GET_VIEWS_CATALOG: {
+        readonly channel: "hub";
+        readonly kind: "query";
+        readonly route: "cliente → hub";
+        readonly description: "Vistas del crawler disponibles";
+    };
+    readonly VIEWS_CATALOG: {
+        readonly channel: "hub";
+        readonly kind: "event";
+        readonly route: "hub → cliente";
+        readonly description: "Respuesta a GET_VIEWS_CATALOG";
+    };
+    readonly REQUEST_VIEW_RENDER: {
+        readonly channel: "hub";
+        readonly kind: "command";
+        readonly route: "plugin → hub";
+        readonly description: "Dibujar una vista del catálogo (extrayéndola si hace falta)";
+    };
+    readonly EXTRACT_PROGRESS: {
+        readonly channel: "hub";
+        readonly kind: "event";
+        readonly route: "hub → plugin";
+        readonly description: "Progreso de una extracción en curso";
+    };
+    readonly RENDER_NODES: {
+        readonly channel: "hub";
+        readonly kind: "command";
+        readonly route: "extensión/CLI → hub → plugin";
+        readonly description: "Dibujar un árbol UINode en Figma";
+    };
+    readonly RENDER_SUCCESS: {
+        readonly channel: "hub";
+        readonly kind: "event";
+        readonly route: "plugin → hub → CLI/MCP";
+        readonly description: "Figma terminó de dibujar";
+    };
+    readonly RENDER_ERROR: {
+        readonly channel: "hub";
+        readonly kind: "event";
+        readonly route: "hub/plugin → cliente";
+        readonly description: "Falló un render o un payload fue rechazado";
+    };
+    readonly CLEAR_PAGE: {
+        readonly channel: "plugin";
+        readonly kind: "command";
+        readonly route: "UI → sandbox";
+        readonly description: "Vaciar la página actual";
+    };
+    readonly DELETE_NODE: {
+        readonly channel: "plugin";
+        readonly kind: "command";
+        readonly route: "UI → sandbox";
+        readonly description: "Borrar un nodo del lienzo";
+    };
+    readonly DELETE_MULTIPLE_NODES: {
+        readonly channel: "plugin";
+        readonly kind: "command";
+        readonly route: "UI → sandbox";
+        readonly description: "Borrar varios nodos del lienzo";
+    };
+    readonly CONVERT_TO_COMPONENT: {
+        readonly channel: "plugin";
+        readonly kind: "command";
+        readonly route: "UI → sandbox";
+        readonly description: "Convertir un frame en componente";
+    };
+    readonly FOCUS_NODE: {
+        readonly channel: "plugin";
+        readonly kind: "command";
+        readonly route: "UI → sandbox";
+        readonly description: "Seleccionar y enfocar un nodo";
+    };
+    readonly ZOOM_ALL: {
+        readonly channel: "plugin";
+        readonly kind: "command";
+        readonly route: "UI → sandbox";
+        readonly description: "Ajustar el zoom a todo el contenido";
+    };
+    readonly SET_PAIRING_CODE: {
+        readonly channel: "plugin";
+        readonly kind: "command";
+        readonly route: "UI → sandbox";
+        readonly description: "Guardar el código de vinculación en figma.clientStorage";
+    };
+    readonly GET_PAIRING_CODE: {
+        readonly channel: "plugin";
+        readonly kind: "query";
+        readonly route: "UI → sandbox";
+        readonly description: "Leer el código de vinculación guardado";
+    };
+    readonly PAIRING_CODE: {
+        readonly channel: "plugin";
+        readonly kind: "event";
+        readonly route: "sandbox → UI";
+        readonly description: "Respuesta a GET_PAIRING_CODE";
+    };
+    readonly GET_PAGE_INFO: {
+        readonly channel: "plugin";
+        readonly kind: "query";
+        readonly route: "UI → sandbox";
+        readonly description: "Nombre de la página actual";
+    };
+    readonly PAGE_INFO: {
+        readonly channel: "plugin";
+        readonly kind: "event";
+        readonly route: "sandbox → UI";
+        readonly description: "Página actual (respuesta o cambio de página)";
+    };
+    readonly LOG: {
+        readonly channel: "plugin";
+        readonly kind: "event";
+        readonly route: "sandbox → UI";
+        readonly description: "Línea para el registro visible del plugin";
+    };
+    readonly TRANSMIT_TO_FIGMA: {
+        readonly channel: "extension";
+        readonly kind: "command";
+        readonly route: "content → service worker";
+        readonly description: "Enviar una extracción al hub";
+    };
+    readonly CAPTURE_REGIONS: {
+        readonly channel: "extension";
+        readonly kind: "query";
+        readonly route: "content → service worker";
+        readonly description: "Recortes de una captura de la pestaña";
+    };
+    readonly FETCH_IMAGE_AS_BASE64: {
+        readonly channel: "extension";
+        readonly kind: "query";
+        readonly route: "content → service worker";
+        readonly description: "Descargar una imagen con los permisos de la extensión";
+    };
+    readonly CHECK_FIGMA_STATUS: {
+        readonly channel: "extension";
+        readonly kind: "query";
+        readonly route: "content → service worker";
+        readonly description: "Estado del hub y del plugin";
+    };
+};
+export type MessageType = keyof typeof MESSAGE_CATALOG;
+/** Tipos de mensaje de un canal (para comprobar en pruebas que todos tienen manejador) */
+export declare function messageTypesOf(channel: MessageChannel, route?: RegExp): MessageType[];
+export declare const HubInboundSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+    type: z.ZodEnum<{
+        REGISTER_CLIENT: "REGISTER_CLIENT";
+        REGISTER: "REGISTER";
+    }>;
+    clientType: z.ZodOptional<z.ZodString>;
+    role: z.ZodOptional<z.ZodString>;
+    client: z.ZodOptional<z.ZodString>;
+    pairingCode: z.ZodOptional<z.ZodString>;
+}, z.core.$loose>, z.ZodObject<{
+    type: z.ZodLiteral<"GET_STATUS">;
+}, z.core.$loose>, z.ZodObject<{
+    type: z.ZodLiteral<"PING">;
+}, z.core.$loose>, z.ZodObject<{
+    type: z.ZodLiteral<"GET_VIEWS_CATALOG">;
+}, z.core.$loose>, z.ZodObject<{
+    type: z.ZodLiteral<"REQUEST_VIEW_RENDER">;
+    payload: z.ZodOptional<z.ZodObject<{}, z.core.$loose>>;
+}, z.core.$loose>, z.ZodObject<{
+    type: z.ZodLiteral<"RENDER_NODES">;
+    payload: z.ZodUnknown;
+}, z.core.$loose>, z.ZodObject<{
+    type: z.ZodLiteral<"RENDER_SUCCESS">;
+    nodeId: z.ZodOptional<z.ZodString>;
+    name: z.ZodOptional<z.ZodString>;
+    durationMs: z.ZodOptional<z.ZodNumber>;
+}, z.core.$loose>, z.ZodObject<{
+    type: z.ZodLiteral<"RENDER_ERROR">;
+    error: z.ZodOptional<z.ZodString>;
+}, z.core.$loose>], "type">;
+export type HubInboundMessage = z.infer<typeof HubInboundSchema>;
+export type HubInboundType = HubInboundMessage['type'];
+/** Mensajes que ENVÍA el hub */
+export type HubOutboundMessage = {
+    type: 'AUTH_REQUIRED';
+} | {
+    type: 'AUTH_OK';
+} | {
+    type: 'AUTH_FAILED';
+    reason: string;
+} | {
+    type: 'STATUS_RESPONSE';
+    payload: {
+        connected: boolean;
+        figmaConnected: boolean;
+        figmaCount: number;
+    };
+} | {
+    type: 'VIEWS_CATALOG';
+    payload: {
+        views: unknown[];
+    };
+} | {
+    type: 'EXTRACT_PROGRESS';
+    payload: {
+        status: string;
+        viewId: string;
+        message: string;
+    };
+} | {
+    type: 'RENDER_NODES';
+    payload: WSRenderPayload;
+} | {
+    type: 'RENDER_SUCCESS';
+    nodeId?: string;
+    name?: string;
+    durationMs?: number;
+} | {
+    type: 'RENDER_ERROR';
+    error: string;
+};
+export type PluginUiMessage = {
+    type: 'RENDER_NODES';
+    payload: unknown;
+} | {
+    type: 'CLEAR_PAGE';
+} | {
+    type: 'DELETE_NODE';
+    nodeId: string;
+} | {
+    type: 'DELETE_MULTIPLE_NODES';
+    nodeIds: string[];
+} | {
+    type: 'CONVERT_TO_COMPONENT';
+    nodeId: string;
+} | {
+    type: 'FOCUS_NODE';
+    nodeId: string;
+} | {
+    type: 'ZOOM_ALL';
+} | {
+    type: 'GET_PAGE_INFO';
+} | {
+    type: 'GET_PAIRING_CODE';
+} | {
+    type: 'SET_PAIRING_CODE';
+    code: string;
+};
+export type PluginUiMessageType = PluginUiMessage['type'];
+/** Plugin: sandbox → UI */
+export type PluginSandboxMessage = {
+    type: 'PAGE_INFO';
+    pageName: string;
+} | {
+    type: 'PAIRING_CODE';
+    code: string;
+} | {
+    type: 'LOG';
+    message: string;
+    level?: 'info' | 'warn' | 'error' | 'success';
+} | {
+    type: 'RENDER_SUCCESS';
+    nodeId: string;
+    name: string;
+    [k: string]: unknown;
+} | {
+    type: 'RENDER_ERROR';
+    error: string;
+};
+//# sourceMappingURL=messages.d.ts.map

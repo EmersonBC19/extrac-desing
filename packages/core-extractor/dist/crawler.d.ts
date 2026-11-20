@@ -1,5 +1,5 @@
 import { type Page } from 'playwright';
-import type { UINode } from '@code-to-figma/contracts';
+import type { Logger, UINode } from '@code-to-figma/contracts';
 export interface CrawlScreenResult {
     title: string;
     routeOrTab: string;
@@ -24,6 +24,8 @@ export interface CrawlOptions {
     exploreModals?: boolean;
     includeDesignSystem?: boolean;
     onScreen?: (result: CrawlScreenResult, index: number, total: number) => Promise<void> | void;
+    /** Destino de los mensajes de progreso. El servidor MCP pasa uno que escribe en stderr (stdout es su protocolo) */
+    logger?: Logger;
 }
 export declare class SiteCrawler {
     private browser;
@@ -37,7 +39,7 @@ export declare class SiteCrawler {
      * 4. Carga completa de fuentes tipográficas
      * 5. Finalización de transiciones y animaciones CSS
      */
-    waitForPageReady(page: Page, timeoutMs?: number): Promise<void>;
+    waitForPageReady(page: Page, _timeoutMs?: number): Promise<void>;
     crawl(options: CrawlOptions): Promise<CrawlScreenResult[]>;
 }
 //# sourceMappingURL=crawler.d.ts.map

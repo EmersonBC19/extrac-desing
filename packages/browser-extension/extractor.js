@@ -2204,6 +2204,26 @@ function extractDesignTokens() {
    * Recorre el árbol UINode y resuelve imágenes CORS / background-image de forma asíncrona
    * Utiliza el background service worker de la extensión para esquivar bloqueos de CSP y CORS
    */
+  /**
+   * Normaliza un data URI de imagen a base64. Los iconos en CSS suelen venir codificados como
+   * URL (data:image/svg+xml,%3Csvg…); el contrato exige data:image/...;base64 en imageData.
+   * Devuelve null si no es una imagen.
+   */
+  function dataUriToBase64(uri) {
+    const m = /^data:([^,]*),([\s\S]*)$/.exec(uri);
+    if (!m) return null;
+    const meta = m[1];
+    const mime = (meta.split(';')[0] || '').toLowerCase();
+    if (!mime.startsWith('image/')) return null;
+    if (/;base64$/i.test(meta)) return uri;
+    let raw;
+    try { raw = decodeURIComponent(m[2]); } catch (_e) { raw = m[2]; }
+    const bytes = new TextEncoder().encode(raw);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+    return `data:${mime};base64,${btoa(bin)}`;
+  }
+
   async function resolvePendingImages(rootNode) {
     const pendingNodes = [];
     function collect(n) {
@@ -2226,7 +2246,7 @@ function extractDesignTokens() {
         }
 
         let base64 = null;
-        if (url.startsWith('data:')) base64 = url; // data URI ya embebido (SVG inline, etc.)
+        if (url.startsWith('data:')) base64 = dataUriToBase64(url); // data URI embebido (SVG inline, etc.)
 
         // 1. Intento vía background service worker (inmune a CSP y CORS de la página)
         if (!base64 && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {

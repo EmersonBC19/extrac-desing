@@ -99,7 +99,7 @@ Ya existen y funcionan; hay que formalizarlas en `tests/` con un runner (**Vites
 | Página sintética (`scratchpad/site`) | Fixture local: carrusel con transform, scroll-snap, fade, WebP/SVG, `image-set`, `::before` con imagen, video con póster, iframe, WebGL. |
 
 - **Fixtures congeladas**: guardar HTML+CSS estáticos de las páginas de referencia (no depender de que apple.com cambie).
-- **Traer al repo la página sintética** (`index.html`, `hero.html`, `shot.html`, generador de imágenes y servidor). Hoy vive en la carpeta temporal de la sesión y se pierde al limpiarla.
+- ✅ **Página sintética en el repo**: `tests/fixtures/synthetic/` (`index.html`, `hero.html`, `shot.html`, generador de imágenes y servidor), movida desde la carpeta temporal de la sesión.
 - **Pruebas unitarias** puras: `boardDetectComponents`, `boardCleanName`, `fitAutoLayoutToGeometry`, `fitWrapToGeometry`, `buildRichText`, `extractBgUrl`, `parseColor`, `parseGradient`.
 - **Snapshot del contrato**: forma del JSON exportado, para detectar cambios accidentales.
 - CI (GitHub Actions) ejecutando la suite en cada push.

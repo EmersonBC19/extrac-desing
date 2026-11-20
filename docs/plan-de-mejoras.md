@@ -154,7 +154,18 @@ Ya existen y funcionan; hay que formalizarlas en `tests/` con un runner (**Vites
 
 ---
 
-## Fase 3 — Un solo extractor  `[A1-B]` `[A2]`
+## Fase 3 — Un solo extractor  `[A1-B]` `[A2]` — ✅ hecha (2026-11-20)
+
+> **Resultado:**
+> - **Un solo extractor:** `packages/core-extractor/src/browser/` (TypeScript, 7 módulos: `dom-helpers`, `text`, `geometry`, `extract-node`, `images`, `tokens`, `entry`) → esbuild → `packages/browser-extension/extractor.js`. El crawler (`BrowserExtractor`, `SiteCrawler`) inyecta **ese mismo archivo**: ahora tiene todas las mejoras (layout por geometría, texto, imágenes, carruseles). `dom-to-node.ts` (copia vieja, 1365 líneas) eliminado.
+> - **Plugin empaquetado:** `packages/figma-plugin/src/` en 10 módulos (`code`, `render`, `fonts`, `paint`, `text-sizing`, `types`, `validation`, `board/{board,pure,context}`) → esbuild → `dist/code.js` (257 KB, sin minificar para errores legibles).
+> - **Zod dentro del plugin:** `validation.ts` usa `validateRenderPayload` de contracts (misma definición que el hub); la copia manual de reglas desapareció. contracts se empaqueta desde su fuente ESM con `import * as z`: el bundle pasó de 992 KB a 257 KB.
+> - **Pendiente de 1.3 cerrado:** el extractor valida lo que devuelven el service worker, el fetch de la página y la captura (`isImageDataUri`).
+> - Las pruebas unitarias importan los módulos fuente; se eliminaron `__codeToFigmaInternals` y los marcadores `@@BOARD_PURE`.
+> - **Archivos generados:** se versionan (la extensión y el plugin se cargan sin compilar); `npm run check:generated` y el CI fallan si no están al día. Build determinista (`absWorkingDir`).
+> - Pruebas: 166 (unit + integración, +4 del crawler) y 9/9 live.
+>
+> **Pendiente:** el extractor de navegador usa tipado flexible (`strict: false`, migrado de JavaScript) → se endurece en 4.3. Probar el plugin empaquetado en Figma real (Zod corre en el sandbox de Figma; verificado solo en el simulador).
 
 ### 3.1 Fuente única en TypeScript
 - Mover la lógica de `browser-extension/extractor.js` (la versión más avanzada) a `packages/core-extractor/src/` como módulos TS: `layout/`, `text/`, `images/`, `carousel/`, `pseudo/`, `tokens/`.

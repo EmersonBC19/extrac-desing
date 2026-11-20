@@ -76,6 +76,7 @@ describe('catálogo de mensajes', () => {
       CONVERT_TO_COMPONENT: { nodeId: 'x' },
       FOCUS_NODE: { nodeId: 'x' },
       SET_PAIRING_CODE: { code: 'ABC123' },
+      SET_SETTINGS: { settings: { placement: 'BELOW', fontMap: { Circular: 'Inter' } } },
       RENDER_NODES: { payload: null },
     };
     const types = [...messageTypesOf('plugin', /^UI → sandbox/), 'RENDER_NODES'];
@@ -85,6 +86,12 @@ describe('catálogo de mensajes', () => {
     // el código guardado se puede leer de vuelta
     await figma.ui.onmessage({ type: 'GET_PAIRING_CODE' });
     expect(figma.logs).toContainEqual({ type: 'PAIRING_CODE', code: 'ABC123' });
+    // los ajustes se guardan en clientStorage y vuelven igual
+    await figma.ui.onmessage({ type: 'GET_SETTINGS' });
+    expect(figma.logs).toContainEqual({
+      type: 'SETTINGS',
+      settings: { placement: 'BELOW', fontMap: { Circular: 'Inter' } },
+    });
     // un payload vacío responde RENDER_ERROR, no revienta
     expect(figma.logs.some((m: any) => m.type === 'RENDER_ERROR')).toBe(true);
 

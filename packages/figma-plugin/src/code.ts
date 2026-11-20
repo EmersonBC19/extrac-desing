@@ -41,6 +41,28 @@ const handlers: { [T in PluginUiMessageType]: Handler<T> } = {
     } catch (_e) {}
   },
 
+  // Ajustes del plugin: la UI es un iframe sin origen (sin localStorage fiable) → clientStorage
+  GET_SETTINGS: async () => {
+    let settings: Record<string, unknown> = {};
+    try {
+      const saved = await figma.clientStorage.getAsync('pluginSettings');
+      if (saved && typeof saved === 'object') settings = saved;
+    } catch (_e) {}
+    post({ type: 'SETTINGS', settings });
+  },
+
+  SET_SETTINGS: async msg => {
+    const settings = msg.settings && typeof msg.settings === 'object' ? msg.settings : {};
+    // Tope de tamaño: son unas pocas opciones y una tabla de equivalencias de fuentes
+    if (JSON.stringify(settings).length > 20_000) {
+      log.warn('Ajustes demasiado grandes: no se guardan');
+      return;
+    }
+    try {
+      await figma.clientStorage.setAsync('pluginSettings', settings);
+    } catch (_e) {}
+  },
+
   CLEAR_PAGE: () => {
     for (const child of figma.currentPage.children) child.remove();
   },

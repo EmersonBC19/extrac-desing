@@ -219,6 +219,7 @@ export class FigmaWsHub {
                 name: msg.name,
                 durationMs: msg.durationMs,
                 timings: msg.timings,
+                fontSubstitutions: msg.fontSubstitutions,
             });
         },
         RENDER_ERROR: (_ws, _state, msg) => {

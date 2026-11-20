@@ -181,3 +181,66 @@ describe('tablero design system', () => {
     expect(figma.currentPage.children).toHaveLength(1);
   });
 });
+
+describe('fuentes (fase 5.3)', () => {
+  const text = (id: string, fontFamily: string) => ({
+    id,
+    name: id,
+    type: 'TEXT',
+    layout: { mode: 'NONE', width: 200, height: 20 },
+    styles: { fills: [] },
+    textData: { characters: 'Texto ' + id, fontSize: 16, fontFamily, fontWeight: 400 },
+  });
+  const page = (fontMap?: Record<string, string>) => ({
+    rootNode: {
+      id: 'raiz',
+      name: 'Raíz',
+      type: 'FRAME',
+      layout: { mode: 'VERTICAL', width: 400, height: 200 },
+      styles: { fills: [] },
+      children: [
+        text('a', '"Circular", Helvetica, sans-serif'),
+        text('b', 'Proxima Nova, sans-serif'),
+        text('c', 'Inter, sans-serif'),
+      ],
+    },
+    ...(fontMap ? { fontMap } : {}),
+  });
+  const families = (figma: any) => {
+    const out: Record<string, string> = {};
+    (function w(n: any) {
+      if (n.type === 'TEXT') out[n.name] = n.fontName.family;
+      (n.children || []).forEach(w);
+    })(figma.currentPage);
+    return out;
+  };
+
+  it('usa la equivalencia más parecida que esté instalada e informa cada sustitución', async () => {
+    const figma = await runPlugin(page(), { families: ['Inter', 'Helvetica Neue', 'Montserrat'] });
+    expect(errorsOf(figma)).toEqual([]);
+    expect(families(figma)).toEqual({ a: 'Inter', b: 'Montserrat', c: 'Inter' });
+    const ok = figma.logs.find((m: any) => m.type === 'RENDER_SUCCESS');
+    expect(ok.fontSubstitutions).toEqual(
+      expect.arrayContaining([
+        { requested: 'Circular', used: 'Inter', texts: 1 },
+        { requested: 'Proxima Nova', used: 'Montserrat', texts: 1 },
+      ]),
+    );
+    expect(ok.fontSubstitutions).toHaveLength(2); // Inter → Inter no es sustitución
+    const warn = figma.logs.find((m: any) => m.type === 'LOG' && /sustituidas/.test(m.message));
+    expect(warn.message).toMatch(/Circular → Inter/);
+  });
+
+  it('las equivalencias de los ajustes mandan sobre las de por defecto', async () => {
+    const figma = await runPlugin(page({ Circular: 'Helvetica Neue' }), {
+      families: ['Inter', 'Helvetica Neue', 'Montserrat'],
+    });
+    expect(families(figma).a).toBe('Helvetica Neue');
+  });
+
+  it('sin sustituciones no hay aviso', async () => {
+    const figma = await runPlugin({ rootNode: page().rootNode.children[2] });
+    expect(figma.logs.find((m: any) => m.type === 'RENDER_SUCCESS').fontSubstitutions).toBeUndefined();
+    expect(figma.logs.some((m: any) => m.type === 'LOG' && /sustituidas/.test(m.message))).toBe(false);
+  });
+});

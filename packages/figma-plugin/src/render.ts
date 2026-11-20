@@ -43,7 +43,7 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
       } catch (_e) {}
 
       // 2. Cargar la fuente deseada preservando peso visual
-      const font = await loadFontSafely(nodeData.textData.fontFamily, nodeData.textData.fontWeight);
+      const font = await loadFontSafely(nodeData.textData.fontFamily, nodeData.textData.fontWeight, { track: true });
 
       // 3. Crear el nodo de texto (garantizado libre de excepciones)
       const textNode = figma.createText();

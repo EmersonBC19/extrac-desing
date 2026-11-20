@@ -185,6 +185,24 @@ export declare const MESSAGE_CATALOG: {
         readonly route: "sandbox → UI";
         readonly description: "Respuesta a GET_PAIRING_CODE";
     };
+    readonly GET_SETTINGS: {
+        readonly channel: "plugin";
+        readonly kind: "query";
+        readonly route: "UI → sandbox";
+        readonly description: "Leer los ajustes del plugin (figma.clientStorage: el iframe no tiene localStorage)";
+    };
+    readonly SET_SETTINGS: {
+        readonly channel: "plugin";
+        readonly kind: "command";
+        readonly route: "UI → sandbox";
+        readonly description: "Guardar los ajustes del plugin";
+    };
+    readonly SETTINGS: {
+        readonly channel: "plugin";
+        readonly kind: "event";
+        readonly route: "sandbox → UI";
+        readonly description: "Respuesta a GET_SETTINGS";
+    };
     readonly GET_PAGE_INFO: {
         readonly channel: "plugin";
         readonly kind: "query";
@@ -239,6 +257,13 @@ declare const RenderTimingsSchema: z.ZodObject<{
     totalMs: z.ZodOptional<z.ZodNumber>;
 }, z.core.$strip>;
 export type RenderTimings = z.infer<typeof RenderTimingsSchema>;
+/** Fuentes que Figma no tenía y con cuál se sustituyeron (fase 5.3) */
+declare const FontSubstitutionsSchema: z.ZodArray<z.ZodObject<{
+    requested: z.ZodString;
+    used: z.ZodString;
+    texts: z.ZodNumber;
+}, z.core.$strip>>;
+export type FontSubstitutions = z.infer<typeof FontSubstitutionsSchema>;
 export declare const HubInboundSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodEnum<{
         REGISTER_CLIENT: "REGISTER_CLIENT";
@@ -277,6 +302,11 @@ export declare const HubInboundSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         placeMs: z.ZodOptional<z.ZodNumber>;
         totalMs: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
+    fontSubstitutions: z.ZodOptional<z.ZodArray<z.ZodObject<{
+        requested: z.ZodString;
+        used: z.ZodString;
+        texts: z.ZodNumber;
+    }, z.core.$strip>>>;
 }, z.core.$loose>, z.ZodObject<{
     type: z.ZodLiteral<"RENDER_ERROR">;
     error: z.ZodOptional<z.ZodString>;
@@ -327,6 +357,7 @@ export type HubOutboundMessage = {
     name?: string;
     durationMs?: number;
     timings?: RenderTimings;
+    fontSubstitutions?: FontSubstitutions;
 } | {
     type: 'RENDER_ERROR';
     error: string;
@@ -357,6 +388,11 @@ export type PluginUiMessage = {
 } | {
     type: 'SET_PAIRING_CODE';
     code: string;
+} | {
+    type: 'GET_SETTINGS';
+} | {
+    type: 'SET_SETTINGS';
+    settings: Record<string, unknown>;
 };
 export type PluginUiMessageType = PluginUiMessage['type'];
 /** Plugin: sandbox → UI */
@@ -366,6 +402,9 @@ export type PluginSandboxMessage = {
 } | {
     type: 'PAIRING_CODE';
     code: string;
+} | {
+    type: 'SETTINGS';
+    settings: Record<string, unknown>;
 } | {
     type: 'LOG';
     message: string;

@@ -167,6 +167,19 @@ export const MESSAGE_CATALOG = {
     route: 'sandbox → UI',
     description: 'Respuesta a GET_PAIRING_CODE',
   },
+  GET_SETTINGS: {
+    channel: 'plugin',
+    kind: 'query',
+    route: 'UI → sandbox',
+    description: 'Leer los ajustes del plugin (figma.clientStorage: el iframe no tiene localStorage)',
+  },
+  SET_SETTINGS: {
+    channel: 'plugin',
+    kind: 'command',
+    route: 'UI → sandbox',
+    description: 'Guardar los ajustes del plugin',
+  },
+  SETTINGS: { channel: 'plugin', kind: 'event', route: 'sandbox → UI', description: 'Respuesta a GET_SETTINGS' },
   GET_PAGE_INFO: { channel: 'plugin', kind: 'query', route: 'UI → sandbox', description: 'Nombre de la página actual' },
   PAGE_INFO: {
     channel: 'plugin',
@@ -241,6 +254,12 @@ const RenderTimingsSchema = z
   .partial();
 export type RenderTimings = z.infer<typeof RenderTimingsSchema>;
 
+/** Fuentes que Figma no tenía y con cuál se sustituyeron (fase 5.3) */
+const FontSubstitutionsSchema = z
+  .array(z.object({ requested: z.string().max(200), used: z.string().max(200), texts: z.number().int().min(0) }))
+  .max(50);
+export type FontSubstitutions = z.infer<typeof FontSubstitutionsSchema>;
+
 export const HubInboundSchema = z.discriminatedUnion('type', [
   RegisterSchema,
   z.object({ type: z.literal('GET_STATUS') }).passthrough(),
@@ -262,6 +281,7 @@ export const HubInboundSchema = z.discriminatedUnion('type', [
       name: z.string().max(1000).optional(),
       durationMs: z.number().finite().optional(),
       timings: RenderTimingsSchema.optional(),
+      fontSubstitutions: FontSubstitutionsSchema.optional(),
     })
     .passthrough(),
   z.object({ type: z.literal('RENDER_ERROR'), error: z.string().max(5000).optional() }).passthrough(),
@@ -280,7 +300,14 @@ export type HubOutboundMessage =
   | { type: 'EXTRACT_PROGRESS'; payload: { status: string; viewId: string; message: string } }
   | { type: 'RENDER_NODES'; payload: WSRenderPayload }
   | { type: 'RENDER_PROGRESS'; payload: { transferId: string; received: number; total: number; bytes: number } }
-  | { type: 'RENDER_SUCCESS'; nodeId?: string; name?: string; durationMs?: number; timings?: RenderTimings }
+  | {
+      type: 'RENDER_SUCCESS';
+      nodeId?: string;
+      name?: string;
+      durationMs?: number;
+      timings?: RenderTimings;
+      fontSubstitutions?: FontSubstitutions;
+    }
   | { type: 'RENDER_ERROR'; error: string };
 
 // ── Plugin: UI → sandbox (code.ts) ───────────────────────────────────────────────────────────
@@ -294,7 +321,9 @@ export type PluginUiMessage =
   | { type: 'ZOOM_ALL' }
   | { type: 'GET_PAGE_INFO' }
   | { type: 'GET_PAIRING_CODE' }
-  | { type: 'SET_PAIRING_CODE'; code: string };
+  | { type: 'SET_PAIRING_CODE'; code: string }
+  | { type: 'GET_SETTINGS' }
+  | { type: 'SET_SETTINGS'; settings: Record<string, unknown> };
 
 export type PluginUiMessageType = PluginUiMessage['type'];
 
@@ -302,6 +331,7 @@ export type PluginUiMessageType = PluginUiMessage['type'];
 export type PluginSandboxMessage =
   | { type: 'PAGE_INFO'; pageName: string }
   | { type: 'PAIRING_CODE'; code: string }
+  | { type: 'SETTINGS'; settings: Record<string, unknown> }
   | { type: 'LOG'; message: string; level?: 'info' | 'warn' | 'error' | 'success' }
   | { type: 'RENDER_SUCCESS'; nodeId: string; name: string; [k: string]: unknown }
   | { type: 'RENDER_ERROR'; error: string };

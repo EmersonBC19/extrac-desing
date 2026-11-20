@@ -217,12 +217,15 @@ function createFigma(opts = {}) {
     on() {},
     ui: { postMessage: m => logs.push(m), onmessage: null },
     viewport: { center: { x: 0, y: 0 }, scrollAndZoomIntoView() {} },
+    // opts.families: familias "instaladas" (por defecto solo Inter)
     listAvailableFontsAsync: async () =>
-      ['Regular', 'Bold', 'Semi Bold', 'Medium', 'Light', 'Black', 'Extra Bold'].map(style => ({
-        fontName: { family: 'Inter', style },
-      })),
+      (opts.families || ['Inter']).flatMap(family =>
+        ['Regular', 'Bold', 'Semi Bold', 'Medium', 'Light', 'Black', 'Extra Bold'].map(style => ({
+          fontName: { family, style },
+        })),
+      ),
     loadFontAsync: async f => {
-      if (f.family !== 'Inter') throw new Error('no instalada ' + f.family);
+      if (!(opts.families || ['Inter']).includes(f.family)) throw new Error('no instalada ' + f.family);
       loaded.add(fk(f));
     },
     createText: () => {

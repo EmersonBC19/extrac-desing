@@ -883,6 +883,13 @@
             <div class="setting-desc">Verifica y precarga Inter, Roboto, Segoe UI y fuentes de sistema con fallback garantizado.</div>
           </div>
         </label>
+        <div class="setting-item" style="flex-direction:column;align-items:stretch;cursor:default">
+          <div>
+            <strong>Equivalencias de fuentes</strong>
+            <div class="setting-desc">Una por línea: <code>familia de la web = familia en Figma</code>. Se usan cuando la fuente original no está instalada; el registro avisa qué se sustituyó.</div>
+          </div>
+          <textarea id="txtFontMap" rows="3" spellcheck="false" placeholder="Circular = Inter&#10;Proxima Nova = Montserrat" onchange="savePluginSettings()" style="width:100%;box-sizing:border-box;margin-top:6px;font:10.5px/1.4 ui-monospace,Menlo,Consolas,monospace;background:var(--card-bg);color:inherit;border:1px solid var(--card-border);border-radius:6px;padding:6px 8px;resize:vertical"></textarea>
+        </div>
       </div>
     </div>
   </div>
@@ -1183,7 +1190,7 @@
           parent.postMessage({
             pluginMessage: {
               type: 'RENDER_NODES',
-              payload: payloadToSend
+              payload: withRenderSettings(payloadToSend)
             }
           }, '*');
         });
@@ -1289,6 +1296,10 @@
 
     // Un manejador por mensaje del sandbox (code.ts)
     const SANDBOX_HANDLERS = {
+      SETTINGS(msg) {
+        savedSettings = msg.settings && typeof msg.settings === 'object' ? msg.settings : {};
+        applyPluginSettingsToUI();
+      },
       PAIRING_CODE(msg) {
         pairingCode = msg.code || '';
         if (!socket) connect();
@@ -1342,7 +1353,8 @@
           nodeId: String(msg.nodeId || '').slice(0, 200),
           name: String(msg.name || '').slice(0, 1000),
           durationMs: stats.latencyMs,
-          timings: msg.timings
+          timings: msg.timings,
+          fontSubstitutions: msg.fontSubstitutions
         });
       },
       RENDER_ERROR(msg) {
@@ -1463,11 +1475,11 @@
         parent.postMessage({
           pluginMessage: {
             type: 'RENDER_NODES',
-            payload: {
+            payload: withRenderSettings({
               rootNode: found.rawPayload,
               placementMode: settings.placement || 'SIDE',
               placementGap: 120
-            }
+            })
           }
         }, '*');
       }
@@ -1602,7 +1614,7 @@
       parent.postMessage({
         pluginMessage: {
           type: 'RENDER_NODES',
-          payload
+          payload: withRenderSettings(payload)
         }
       }, '*');
 
@@ -1610,36 +1622,45 @@
     }
 
     // ── Ajustes del Plugin ──
+    // Se guardan en figma.clientStorage (mensajes GET_SETTINGS / SET_SETTINGS al sandbox):
+    // el iframe del plugin no tiene origen y su localStorage no es fiable (antes no persistían).
+    let savedSettings = {};
+
     function loadPluginSettings() {
-      let saved = null;
-      try {
-        saved = JSON.parse(localStorage.getItem('__codeToFigmaPluginSettings') || '{}');
-      } catch (_) {}
+      const saved = savedSettings || {};
       return {
-        structure: saved?.structure || 'FRAME',
-        placement: saved?.placement || 'SIDE',
-        autoPaintStyles: saved?.autoPaintStyles !== false,
-        prewarmFonts: saved?.prewarmFonts !== false
+        structure: saved.structure || 'FRAME',
+        placement: saved.placement || 'SIDE',
+        autoPaintStyles: saved.autoPaintStyles !== false,
+        prewarmFonts: saved.prewarmFonts !== false,
+        fontMap: saved.fontMap && typeof saved.fontMap === 'object' ? saved.fontMap : {}
       };
     }
 
+    /** "Circular = Inter" por línea → { Circular: 'Inter' } (también acepta → y :) */
+    function parseFontMap(text) {
+      const map = {};
+      for (const line of String(text || '').split('\n')) {
+        const m = line.match(/^\s*(.+?)\s*(?:=|→|->|:)\s*(.+?)\s*$/);
+        if (m && m[1] && m[2]) map[m[1].replace(/['"]/g, '')] = m[2].replace(/['"]/g, '');
+      }
+      return map;
+    }
+
+    function formatFontMap(map) {
+      return Object.entries(map || {}).map(([from, to]) => `${from} = ${to}`).join('\n');
+    }
+
     function savePluginSettings() {
-      const struct = document.querySelector('input[name="optStructure"]:checked')?.value || 'FRAME';
-      const place = document.querySelector('input[name="optPlacement"]:checked')?.value || 'SIDE';
-      const autoPaint = document.getElementById('chkAutoPaintStyles').checked;
-      const prewarm = document.getElementById('chkPrewarmFonts').checked;
-
-      const settings = {
-        structure: struct,
-        placement: place,
-        autoPaintStyles: autoPaint,
-        prewarmFonts: prewarm
+      savedSettings = {
+        structure: document.querySelector('input[name="optStructure"]:checked')?.value || 'FRAME',
+        placement: document.querySelector('input[name="optPlacement"]:checked')?.value || 'SIDE',
+        autoPaintStyles: document.getElementById('chkAutoPaintStyles').checked,
+        prewarmFonts: document.getElementById('chkPrewarmFonts').checked,
+        fontMap: parseFontMap(document.getElementById('txtFontMap').value)
       };
-
-      try {
-        localStorage.setItem('__codeToFigmaPluginSettings', JSON.stringify(settings));
-        log('Ajustes de render guardados.', 'info');
-      } catch (_) {}
+      parent.postMessage({ pluginMessage: { type: 'SET_SETTINGS', settings: savedSettings } }, '*');
+      log('Ajustes de render guardados.', 'info');
     }
 
     function applyPluginSettingsToUI() {
@@ -1652,6 +1673,14 @@
 
       document.getElementById('chkAutoPaintStyles').checked = s.autoPaintStyles;
       document.getElementById('chkPrewarmFonts').checked = s.prewarmFonts;
+      document.getElementById('txtFontMap').value = formatFontMap(s.fontMap);
+    }
+
+    /** Ajustes que viajan con cada render hacia el sandbox */
+    function withRenderSettings(payload) {
+      const s = loadPluginSettings();
+      if (Object.keys(s.fontMap).length) payload.fontMap = s.fontMap;
+      return payload;
     }
 
     // ── Vistas de la App (Catálogo Dinámico) ──
@@ -1830,11 +1859,11 @@
       parent.postMessage({
         pluginMessage: {
           type: 'RENDER_NODES',
-          payload: {
+          payload: withRenderSettings({
             rootNode: demoNode,
             placementMode: settings.placement || 'SIDE',
             placementGap: 120
-          }
+          })
         }
       }, '*');
     }
@@ -1903,6 +1932,7 @@
     loadReceivedItemsFromStorage();
     parent.postMessage({ pluginMessage: { type: 'GET_PAGE_INFO' } }, '*');
     // Cargar el código de vinculación guardado y luego conectar (respaldo por si no responde)
+    parent.postMessage({ pluginMessage: { type: 'GET_SETTINGS' } }, '*');
     parent.postMessage({ pluginMessage: { type: 'GET_PAIRING_CODE' } }, '*');
     setTimeout(() => { if (!socket) connect(); }, 800);
   </script>

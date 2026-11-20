@@ -6141,6 +6141,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     placeMs: number2().finite(),
     totalMs: number2().finite()
   }).partial();
+  var FontSubstitutionsSchema = array(object({ requested: string2().max(200), used: string2().max(200), texts: number2().int().min(0) })).max(50);
   var HubInboundSchema = discriminatedUnion("type", [
     RegisterSchema,
     object({ type: literal("GET_STATUS") }).passthrough(),
@@ -6160,7 +6161,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       nodeId: string2().max(200).optional(),
       name: string2().max(1e3).optional(),
       durationMs: number2().finite().optional(),
-      timings: RenderTimingsSchema.optional()
+      timings: RenderTimingsSchema.optional(),
+      fontSubstitutions: FontSubstitutionsSchema.optional()
     }).passthrough(),
     object({ type: literal("RENDER_ERROR"), error: string2().max(5e3).optional() }).passthrough()
   ]);
@@ -6215,6 +6217,11 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
   // packages/figma-plugin/src/fonts.ts
   var availableFontsCache = null;
   var fontLookupMap = /* @__PURE__ */ new Map();
+  function refreshFontCache() {
+    availableFontsCache = null;
+    fontLookupMap.clear();
+    fontResolutionCache.clear();
+  }
   async function initFontCache() {
     if (availableFontsCache && fontLookupMap.size > 0) return;
     try {
@@ -6255,22 +6262,97 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     if (num >= 300) return "Light";
     return "Regular";
   }
-  async function loadFontSafely(fontFamily, fontWeight) {
+  var GENERIC_FAMILIES = {
+    "system-ui": ["SF Pro Text", "SF Pro Display", "SF Pro", "Segoe UI", "Roboto", "Inter"],
+    "-apple-system": ["SF Pro Text", "SF Pro Display", "SF Pro", "Segoe UI", "Inter"],
+    blinkmacsystemfont: ["SF Pro Text", "SF Pro Display", "SF Pro", "Segoe UI", "Inter"],
+    "ui-sans-serif": ["SF Pro Text", "Segoe UI", "Roboto", "Inter"],
+    "sans-serif": ["Inter", "Helvetica Neue", "Arial", "Roboto"],
+    serif: ["Georgia", "Times New Roman", "Noto Serif", "Source Serif Pro"],
+    "ui-serif": ["New York", "Georgia", "Times New Roman"],
+    monospace: ["SF Mono", "Menlo", "Consolas", "Roboto Mono", "JetBrains Mono", "Courier New"],
+    "ui-monospace": ["SF Mono", "Menlo", "Consolas", "Roboto Mono", "Courier New"]
+  };
+  var DEFAULT_FONT_EQUIVALENTS = {
+    "sf pro": ["SF Pro Display", "SF Pro Text", "Inter"],
+    "sf pro display": ["SF Pro", "Inter"],
+    "sf pro text": ["SF Pro", "Inter"],
+    helvetica: ["Helvetica Neue", "Arial"],
+    "helvetica neue": ["Helvetica", "Arial"],
+    circular: ["Inter"],
+    "circular std": ["Inter"],
+    "proxima nova": ["Montserrat", "Inter"],
+    gotham: ["Montserrat", "Inter"],
+    avenir: ["Avenir Next", "Nunito Sans", "Inter"],
+    "avenir next": ["Avenir", "Nunito Sans", "Inter"],
+    "segoe ui": ["Inter", "Roboto"]
+  };
+  var cleanFamily = (f) => f.replace(/['"]/g, "").trim();
+  var isGenericFamily = (f) => Object.prototype.hasOwnProperty.call(GENERIC_FAMILIES, f.toLowerCase());
+  var userFontMap = {};
+  function setUserFontMap(map) {
+    userFontMap = {};
+    if (map && typeof map === "object") {
+      for (const [from, to] of Object.entries(map)) {
+        if (typeof to === "string" && to.trim()) userFontMap[cleanFamily(from).toLowerCase()] = cleanFamily(to);
+      }
+    }
+    fontResolutionCache.clear();
+  }
+  function fontCandidates(fontFamily, userMap = userFontMap) {
+    const stack = String(fontFamily || "Inter").split(",").map(cleanFamily).filter(Boolean);
+    const out = [];
+    const add = (f) => {
+      if (f && !out.some((x) => x.toLowerCase() === f.toLowerCase())) out.push(f);
+    };
+    for (const fam of stack) {
+      const key = fam.toLowerCase();
+      if (userMap[key]) add(userMap[key]);
+      if (isGenericFamily(fam)) GENERIC_FAMILIES[key].forEach(add);
+      else add(fam);
+      (DEFAULT_FONT_EQUIVALENTS[key] || []).forEach(add);
+    }
+    ["Inter", "Roboto", "Arial"].forEach(add);
+    return out;
+  }
+  var substitutions = /* @__PURE__ */ new Map();
+  function resetFontReport() {
+    substitutions.clear();
+  }
+  function getFontReport() {
+    return Array.from(substitutions.values()).sort((a, b) => b.texts - a.texts);
+  }
+  function recordUse(fontFamily, used) {
+    const stack = String(fontFamily || "").split(",").map(cleanFamily).filter(Boolean);
+    const requested = stack.find((f) => !isGenericFamily(f)) || stack[0];
+    if (!requested || requested.toLowerCase() === used.family.toLowerCase()) return;
+    const key = requested.toLowerCase() + "→" + used.family.toLowerCase();
+    const entry = substitutions.get(key) || { requested, used: used.family, texts: 0 };
+    entry.texts++;
+    substitutions.set(key, entry);
+  }
+  var fontResolutionCache = /* @__PURE__ */ new Map();
+  async function loadFontSafely(fontFamily, fontWeight, options = {}) {
+    const cacheKey = fontFamily + "|" + fontWeight;
+    let font = fontResolutionCache.get(cacheKey);
+    if (!font) {
+      font = await resolveFont(fontFamily, fontWeight);
+      fontResolutionCache.set(cacheKey, font);
+    }
+    if (options.track) recordUse(fontFamily, font);
+    return font;
+  }
+  async function resolveFont(fontFamily, fontWeight) {
     try {
       await figma.loadFontAsync({ family: "Inter", style: "Regular" });
     } catch (_e) {
     }
     await initFontCache();
-    const rawFamily = (fontFamily || "Inter").split(",")[0].replace(/['"]/g, "").trim() || "Inter";
     const targetStyle = resolveFontWeight(fontWeight);
-    const isApple = /^(sf pro|-apple-system|blinkmacsystemfont|apple)/i.test(rawFamily);
-    const candidates = isApple ? [rawFamily, "SF Pro Display", "SF Pro Text", "SF Pro", "Segoe UI", "Inter", "Helvetica Neue", "Arial", "Roboto"] : [rawFamily, "Inter", "Segoe UI", "Roboto", "Arial"];
+    const candidates = fontCandidates(fontFamily);
     const styleVariants = [targetStyle];
     if (targetStyle === "Semi Bold") styleVariants.push("Semibold", "Semi-Bold", "Demibold");
     else if (targetStyle === "Extra Bold") styleVariants.push("Extrabold", "Extra-Bold");
-    else if (targetStyle === "Bold") styleVariants.push("Bold");
-    else if (targetStyle === "Medium") styleVariants.push("Medium");
-    else if (targetStyle === "Regular") styleVariants.push("Regular");
     if (!styleVariants.includes("Regular")) styleVariants.push("Regular");
     if (fontLookupMap.size > 0) {
       for (const cand of candidates) {
@@ -6295,8 +6377,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         }
       }
     }
-    const interVariants = [targetStyle, "Regular"];
-    for (const st of interVariants) {
+    for (const st of [targetStyle, "Regular"]) {
       try {
         const f = { family: "Inter", style: st };
         await figma.loadFontAsync(f);
@@ -6994,7 +7075,7 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
           await figma.loadFontAsync({ family: "Inter", style: "Regular" });
         } catch (_e) {
         }
-        const font = await loadFontSafely(nodeData.textData.fontFamily, nodeData.textData.fontWeight);
+        const font = await loadFontSafely(nodeData.textData.fontFamily, nodeData.textData.fontWeight, { track: true });
         const textNode = figma.createText();
         try {
           textNode.fontName = font;
@@ -7435,6 +7516,21 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
   async function renderNodesCommand(rawPayload, post2, log2) {
     const payload = rawPayload;
     const t0 = Date.now();
+    refreshFontCache();
+    setUserFontMap(payload?.fontMap);
+    resetFontReport();
+    const reportFonts = () => {
+      const subs = getFontReport();
+      if (!subs.length) return void 0;
+      const top = subs.slice(0, 6).map((x) => `${x.requested} → ${x.used} (${x.texts})`);
+      const more = subs.length > 6 ? ` y ${subs.length - 6} más` : "";
+      post2({
+        type: "LOG",
+        level: "warn",
+        message: `Fuentes no disponibles en Figma, sustituidas: ${top.join(", ")}${more}. Si instalas la original y vuelves a enviar, se usará; también puedes definir una equivalencia en Ajustes.`
+      });
+      return subs.slice(0, 20);
+    };
     const rootNode = payload?.rootNode || (Array.isArray(payload?.nodes) ? payload.nodes[0] : null);
     if (!payload || !rootNode) {
       throw new Error("Payload vacío o inválido (se esperaba rootNode o nodes[0])");
@@ -7542,6 +7638,7 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
           nodeType: board.main.type,
           tokensCount: createdTokensCount,
           rawPayload: payload.rootNode,
+          fontSubstitutions: reportFonts(),
           durationMs: Date.now() - t0,
           timings: { fontsMs, buildMs: Date.now() - boardStart, totalMs: Date.now() - t0 }
         });
@@ -7630,6 +7727,7 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
         nodeType: rootFigmaNode.type,
         tokensCount: createdTokensCount,
         rawPayload: payload.rootNode,
+        fontSubstitutions: reportFonts(),
         durationMs: Date.now() - t0,
         timings: { fontsMs, buildMs, placeMs: Date.now() - renderStartTime - buildMs, totalMs: Date.now() - t0 }
       });
@@ -7664,6 +7762,27 @@ ${g.nodes.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     SET_PAIRING_CODE: async (msg) => {
       try {
         await figma.clientStorage.setAsync("hubPairingCode", String(msg.code || ""));
+      } catch (_e) {
+      }
+    },
+    // Ajustes del plugin: la UI es un iframe sin origen (sin localStorage fiable) → clientStorage
+    GET_SETTINGS: async () => {
+      let settings = {};
+      try {
+        const saved = await figma.clientStorage.getAsync("pluginSettings");
+        if (saved && typeof saved === "object") settings = saved;
+      } catch (_e) {
+      }
+      post({ type: "SETTINGS", settings });
+    },
+    SET_SETTINGS: async (msg) => {
+      const settings = msg.settings && typeof msg.settings === "object" ? msg.settings : {};
+      if (JSON.stringify(settings).length > 2e4) {
+        log.warn("Ajustes demasiado grandes: no se guardan");
+        return;
+      }
+      try {
+        await figma.clientStorage.setAsync("pluginSettings", settings);
       } catch (_e) {
       }
     },

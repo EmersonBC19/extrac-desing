@@ -189,6 +189,19 @@ exports.MESSAGE_CATALOG = {
         route: 'sandbox → UI',
         description: 'Respuesta a GET_PAIRING_CODE',
     },
+    GET_SETTINGS: {
+        channel: 'plugin',
+        kind: 'query',
+        route: 'UI → sandbox',
+        description: 'Leer los ajustes del plugin (figma.clientStorage: el iframe no tiene localStorage)',
+    },
+    SET_SETTINGS: {
+        channel: 'plugin',
+        kind: 'command',
+        route: 'UI → sandbox',
+        description: 'Guardar los ajustes del plugin',
+    },
+    SETTINGS: { channel: 'plugin', kind: 'event', route: 'sandbox → UI', description: 'Respuesta a GET_SETTINGS' },
     GET_PAGE_INFO: { channel: 'plugin', kind: 'query', route: 'UI → sandbox', description: 'Nombre de la página actual' },
     PAGE_INFO: {
         channel: 'plugin',
@@ -252,6 +265,10 @@ const RenderTimingsSchema = z
     totalMs: z.number().finite(),
 })
     .partial();
+/** Fuentes que Figma no tenía y con cuál se sustituyeron (fase 5.3) */
+const FontSubstitutionsSchema = z
+    .array(z.object({ requested: z.string().max(200), used: z.string().max(200), texts: z.number().int().min(0) }))
+    .max(50);
 exports.HubInboundSchema = z.discriminatedUnion('type', [
     RegisterSchema,
     z.object({ type: z.literal('GET_STATUS') }).passthrough(),
@@ -273,6 +290,7 @@ exports.HubInboundSchema = z.discriminatedUnion('type', [
         name: z.string().max(1000).optional(),
         durationMs: z.number().finite().optional(),
         timings: RenderTimingsSchema.optional(),
+        fontSubstitutions: FontSubstitutionsSchema.optional(),
     })
         .passthrough(),
     z.object({ type: z.literal('RENDER_ERROR'), error: z.string().max(5000).optional() }).passthrough(),

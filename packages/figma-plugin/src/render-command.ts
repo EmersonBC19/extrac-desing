@@ -1,5 +1,12 @@
 import type { Logger, PluginSandboxMessage } from '@code-to-figma/contracts';
-import { loadFontSafely, prewarmFonts } from './fonts';
+import {
+  getFontReport,
+  loadFontSafely,
+  prewarmFonts,
+  refreshFontCache,
+  resetFontReport,
+  setUserFontMap,
+} from './fonts';
 import { countNodes, buildFigmaNode } from './render';
 import { buildDesignBoard } from './board/board';
 import { setBoardCtx } from './board/context';
@@ -17,6 +24,24 @@ export async function renderNodesCommand(
   const payload: any = rawPayload;
   // Tiempos por etapa (fase 5.1): se informan a la UI y al CLI/MCP en RENDER_SUCCESS
   const t0 = Date.now();
+  // Fuentes (fase 5.3): equivalencias del usuario, lista fresca de fuentes y reporte desde cero
+  refreshFontCache();
+  setUserFontMap(payload?.fontMap);
+  resetFontReport();
+  const reportFonts = () => {
+    const subs = getFontReport();
+    if (!subs.length) return undefined;
+    const top = subs.slice(0, 6).map(x => `${x.requested} → ${x.used} (${x.texts})`);
+    const more = subs.length > 6 ? ` y ${subs.length - 6} más` : '';
+    post({
+      type: 'LOG',
+      level: 'warn',
+      message:
+        `Fuentes no disponibles en Figma, sustituidas: ${top.join(', ')}${more}. ` +
+        'Si instalas la original y vuelves a enviar, se usará; también puedes definir una equivalencia en Ajustes.',
+    });
+    return subs.slice(0, 20);
+  };
   const rootNode = payload?.rootNode || (Array.isArray(payload?.nodes) ? payload.nodes[0] : null);
   if (!payload || !rootNode) {
     throw new Error('Payload vacío o inválido (se esperaba rootNode o nodes[0])');
@@ -134,6 +159,7 @@ export async function renderNodesCommand(
         nodeType: board.main.type,
         tokensCount: createdTokensCount,
         rawPayload: payload.rootNode,
+        fontSubstitutions: reportFonts(),
         durationMs: Date.now() - t0,
         timings: { fontsMs, buildMs: Date.now() - boardStart, totalMs: Date.now() - t0 },
       });
@@ -240,6 +266,7 @@ export async function renderNodesCommand(
       nodeType: rootFigmaNode.type,
       tokensCount: createdTokensCount,
       rawPayload: payload.rootNode,
+      fontSubstitutions: reportFonts(),
       durationMs: Date.now() - t0,
       timings: { fontsMs, buildMs, placeMs: Date.now() - renderStartTime - buildMs, totalMs: Date.now() - t0 },
     });

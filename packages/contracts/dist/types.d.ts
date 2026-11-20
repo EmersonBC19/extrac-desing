@@ -36,11 +36,23 @@ export interface UILayout {
     itemSpacing: number;
     width: LayoutSizing;
     height: LayoutSizing;
+    measuredWidth?: number;
+    measuredHeight?: number;
     positioning?: PositioningMode;
     layoutWrap?: 'NO_WRAP' | 'WRAP';
     x?: number;
     y?: number;
 }
+export interface GradientStop {
+    position: number;
+    color: RGBAColor;
+}
+export interface GradientPaint {
+    type: 'GRADIENT_LINEAR' | 'GRADIENT_RADIAL';
+    angle?: number;
+    stops: GradientStop[];
+}
+export type CanvasFill = RGBAColor | GradientPaint;
 export interface BorderSides {
     top?: number;
     right?: number;
@@ -48,12 +60,14 @@ export interface BorderSides {
     left?: number;
 }
 export interface UIStyles {
-    fills: RGBAColor[];
+    fills: (RGBAColor | GradientPaint)[];
     strokes?: StrokeStyle[];
     borderSides?: BorderSides;
     cornerRadius?: number | [number, number, number, number];
     opacity?: number;
     boxShadow?: BoxShadow[];
+    backdropBlur?: number;
+    imageScaleMode?: 'FILL' | 'FIT' | 'CROP' | 'TILE';
 }
 export interface UITextData {
     characters: string;
@@ -63,6 +77,30 @@ export interface UITextData {
     lineHeight?: number;
     letterSpacing?: number;
     textAlign?: 'LEFT' | 'CENTER' | 'RIGHT' | 'JUSTIFIED';
+    textTransform?: 'UPPERCASE' | 'LOWERCASE' | 'CAPITALIZE' | 'NONE';
+    isMultiline?: boolean;
+    /** Los '\n' de characters son los saltos de línea reales del navegador: Figma no debe re-acomodar */
+    noWrap?: boolean;
+    lineCount?: number;
+    /** Tramos con estilo propio dentro del mismo texto (links, negritas, <sup>) */
+    segments?: UITextSegment[];
+}
+export interface UITextSegment {
+    start: number;
+    end: number;
+    fontFamily?: string;
+    fontWeight?: number | string;
+    fontSize?: number;
+    italic?: boolean;
+    color?: {
+        r: number;
+        g: number;
+        b: number;
+        a?: number;
+    };
+    underline?: boolean;
+    strike?: boolean;
+    baseline?: 'SUPER' | 'SUB';
 }
 export type UINodeType = 'FRAME' | 'TEXT' | 'SVG' | 'COMPONENT' | 'INSTANCE';
 export interface UINode {
@@ -85,6 +123,11 @@ export interface UINode {
     children?: UINode[];
 }
 export type WSClientType = 'FIGMA_PLUGIN' | 'CLI_OR_MCP' | 'WEB_EXTRACTOR';
+export interface DesignTokens {
+    colors?: Record<string, RGBAColor>;
+    radii?: Record<string, number>;
+    spacing?: Record<string, number>;
+}
 export interface WSRenderPayload {
     rootNode: UINode;
     clearPage?: boolean;
@@ -96,6 +139,7 @@ export interface WSRenderPayload {
     pageName?: string;
     groupName?: string;
     sectionTitle?: string;
+    tokens?: DesignTokens;
 }
 export interface WSMessage<T = unknown> {
     type: 'RENDER_NODES' | 'RENDER_SUCCESS' | 'RENDER_ERROR' | 'PING' | 'PONG' | 'REGISTER_CLIENT';

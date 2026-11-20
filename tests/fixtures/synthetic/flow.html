@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+  <!-- Flujo de texto (fase 5.5): texto alrededor de un float y alineación en celdas de tabla -->
+  <body
+    style="
+      margin: 0;
+      font:
+        16px/20px Arial,
+        sans-serif;
+    "
+  >
+    <div id="floated" style="width: 400px; padding: 10px">
+      <img
+        alt=""
+        style="float: left; width: 120px; height: 70px; background: #ccc; margin-right: 10px"
+        src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="
+      />
+      <p id="around" style="margin: 0">
+        Lorem ipsum dolor sit amet <b>consectetur</b> adipiscing elit sed do eiusmod tempor incididunt ut labore et
+        dolore magna aliqua ut enim ad minim veniam quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea
+        commodo consequat.
+      </p>
+    </div>
+    <p id="plain" style="width: 300px; margin: 10px">
+      Un párrafo normal sin floats que ocupa varias líneas y no se debe partir en grupos.
+    </p>
+    <table id="table" style="border-collapse: collapse; margin: 10px">
+      <tr>
+        <td id="mid" style="height: 80px; width: 150px; vertical-align: middle; border: 1px solid #000">Centrado</td>
+        <td
+          id="bot"
+          style="height: 80px; width: 150px; vertical-align: bottom; text-align: right; border: 1px solid #000"
+        >
+          Abajo
+        </td>
+        <td
+          id="top"
+          style="height: 80px; width: 150px; vertical-align: top; text-align: center; border: 1px solid #000"
+        >
+          Arriba
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

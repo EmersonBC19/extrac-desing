@@ -170,6 +170,10 @@ export function buildRichText(root: Element, rootStyle: CSSStyleDeclaration) {
   let lastWasSpace = true;
   let truncated = false;
   let lines = 1;
+  // Inicio medido de cada línea (índice en out y posición): con floats, las líneas que corren
+  // junto al float empiezan más a la derecha que el resto (fase 5.5)
+  const lineStarts: { at: number; left: number; top: number }[] = [];
+  let lineStartPending = true;
 
   const styleKeyCache = new Map<Element, CharStyle>();
   function styleFor(el: Element): CharStyle {
@@ -209,6 +213,7 @@ export function buildRichText(root: Element, rootStyle: CSSStyleDeclaration) {
 
   function newLine() {
     lines++;
+    lineStartPending = true;
     if (out.length && out[out.length - 1] === ' ') {
       out[out.length - 1] = '\n';
     } else pushChar('\n', charStyles[charStyles.length - 1] || null);
@@ -253,6 +258,10 @@ export function buildRichText(root: Element, rootStyle: CSSStyleDeclaration) {
             const c = r.top + r.height / 2;
             if (lineCenter !== null && c > lineCenter + rootLh * 0.5) newLine();
             lineCenter = c;
+            if (lineStartPending) {
+              lineStarts.push({ at: out.length, left: r.left - rootRect.left, top: r.top - rootRect.top });
+              lineStartPending = false;
+            }
           }
         } catch (_e) {
           measureOk = false;
@@ -304,9 +313,11 @@ export function buildRichText(root: Element, rootStyle: CSSStyleDeclaration) {
     chars.pop();
     styles.pop();
   }
+  let leadingRemoved = 0;
   while (chars.length && chars[0] === '\n') {
     chars.shift();
     styles.shift();
+    leadingRemoved++;
   }
   if (truncated && ellipsis && chars.length) {
     chars.push('…');
@@ -314,6 +325,35 @@ export function buildRichText(root: Element, rootStyle: CSSStyleDeclaration) {
   }
   text = chars.join('');
   lines = text.split('\n').length;
+
+  // Margen izquierdo y tope de cada línea final (null si alguna no se midió)
+  let lineLefts: number[] | null = null;
+  let lineTops: number[] | null = null;
+  if (measureOk && lineStarts.length) {
+    const finalIndex = new Map<number, number>();
+    keep.forEach((orig, k) => finalIndex.set(orig, k - leadingRemoved));
+    const lineOf: number[] = [];
+    let ln = 0;
+    for (let k = 0; k < text.length; k++) {
+      lineOf.push(ln);
+      if (text[k] === '\n') ln++;
+    }
+    const lefts: (number | undefined)[] = new Array(lines).fill(undefined);
+    const tops: (number | undefined)[] = new Array(lines).fill(undefined);
+    for (const st of lineStarts) {
+      const k = finalIndex.get(st.at);
+      if (k === undefined || k < 0 || k >= text.length) continue;
+      const line = lineOf[k];
+      if (lefts[line] === undefined) {
+        lefts[line] = Math.round(st.left);
+        tops[line] = Math.round(st.top);
+      }
+    }
+    if (lefts.every(v => v !== undefined)) {
+      lineLefts = lefts as number[];
+      lineTops = tops as number[];
+    }
+  }
 
   // Agrupar caracteres contiguos con el mismo estilo
   const segments: RichSegment[] = [];
@@ -347,5 +387,7 @@ export function buildRichText(root: Element, rootStyle: CSSStyleDeclaration) {
     segments: segments.length > 1 ? segments : null,
     lines,
     linesPreserved: measureOk && measured > 0,
+    lineLefts,
+    lineTops,
   };
 }

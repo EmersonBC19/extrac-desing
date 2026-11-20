@@ -208,6 +208,8 @@
     let lastWasSpace = true;
     let truncated = false;
     let lines = 1;
+    const lineStarts = [];
+    let lineStartPending = true;
     const styleKeyCache = /* @__PURE__ */ new Map();
     function styleFor(el) {
       if (styleKeyCache.has(el)) return styleKeyCache.get(el);
@@ -244,6 +246,7 @@
     }
     function newLine() {
       lines++;
+      lineStartPending = true;
       if (out.length && out[out.length - 1] === " ") {
         out[out.length - 1] = "\n";
       } else pushChar("\n", charStyles[charStyles.length - 1] || null);
@@ -284,6 +287,10 @@
               const c = r.top + r.height / 2;
               if (lineCenter !== null && c > lineCenter + rootLh * 0.5) newLine();
               lineCenter = c;
+              if (lineStartPending) {
+                lineStarts.push({ at: out.length, left: r.left - rootRect.left, top: r.top - rootRect.top });
+                lineStartPending = false;
+              }
             }
           } catch (_e) {
             measureOk = false;
@@ -332,9 +339,11 @@
       chars.pop();
       styles.pop();
     }
+    let leadingRemoved = 0;
     while (chars.length && chars[0] === "\n") {
       chars.shift();
       styles.shift();
+      leadingRemoved++;
     }
     if (truncated && ellipsis && chars.length) {
       chars.push("…");
@@ -342,6 +351,33 @@
     }
     text = chars.join("");
     lines = text.split("\n").length;
+    let lineLefts = null;
+    let lineTops = null;
+    if (measureOk && lineStarts.length) {
+      const finalIndex = /* @__PURE__ */ new Map();
+      keep.forEach((orig, k) => finalIndex.set(orig, k - leadingRemoved));
+      const lineOf = [];
+      let ln = 0;
+      for (let k = 0; k < text.length; k++) {
+        lineOf.push(ln);
+        if (text[k] === "\n") ln++;
+      }
+      const lefts = new Array(lines).fill(void 0);
+      const tops = new Array(lines).fill(void 0);
+      for (const st of lineStarts) {
+        const k = finalIndex.get(st.at);
+        if (k === void 0 || k < 0 || k >= text.length) continue;
+        const line = lineOf[k];
+        if (lefts[line] === void 0) {
+          lefts[line] = Math.round(st.left);
+          tops[line] = Math.round(st.top);
+        }
+      }
+      if (lefts.every((v) => v !== void 0)) {
+        lineLefts = lefts;
+        lineTops = tops;
+      }
+    }
     const segments = [];
     for (let i = 0; i < styles.length; i++) {
       const st = styles[i] || styles[i - 1];
@@ -371,7 +407,9 @@
       characters: text,
       segments: segments.length > 1 ? segments : null,
       lines,
-      linesPreserved: measureOk && measured > 0
+      linesPreserved: measureOk && measured > 0,
+      lineLefts,
+      lineTops
     };
   }
 
@@ -558,6 +596,96 @@
     }
     if (x === null || y === null) return null;
     return { x: Math.round(x), y: Math.round(y) };
+  }
+
+  // packages/core-extractor/src/browser/float-text.ts
+  var TOL = 3;
+  function lineGroups(lineLefts, lineTops) {
+    const groups = [];
+    lineLefts.forEach((left, i) => {
+      const g = groups[groups.length - 1];
+      if (g && Math.abs(g.left - left) <= TOL) g.to = i + 1;
+      else groups.push({ from: i, to: i + 1, left, top: lineTops[i] });
+    });
+    return groups;
+  }
+  function sliceSegments(segments, start, end) {
+    if (!segments) return void 0;
+    const out = segments.filter((s) => s.end > start && s.start < end).map((s) => ({ ...s, start: Math.max(s.start, start) - start, end: Math.min(s.end, end) - start }));
+    return out.length > 1 ? out : void 0;
+  }
+  function splitTextAroundFloats(textNode, rich, width) {
+    const { lineLefts, lineTops } = rich;
+    const td = textNode.textData;
+    if (!lineLefts || !lineTops || lineLefts.length < 2 || !td) return textNode;
+    if (td.textAlign !== "LEFT" && td.textAlign !== "JUSTIFIED") return textNode;
+    if (Math.max(...lineLefts) - Math.min(...lineLefts) <= TOL) return textNode;
+    const groups = lineGroups(lineLefts, lineTops);
+    if (groups.length < 2) return textNode;
+    const lines = td.characters.split("\n");
+    const offsets = [];
+    let acc = 0;
+    for (const l of lines) {
+      offsets.push(acc);
+      acc += l.length + 1;
+    }
+    const L = textNode.layout;
+    const children = groups.map((g, i) => {
+      const start = offsets[g.from];
+      const end = offsets[g.to - 1] + lines[g.to - 1].length;
+      const characters = td.characters.slice(start, end);
+      const count = g.to - g.from;
+      return {
+        ...textNode,
+        id: `${textNode.id}_l${i}`,
+        name: `${textNode.name} · ${i + 1}`,
+        layout: {
+          ...L,
+          width: Math.max(1, Math.round(width - g.left)),
+          height: "HUG",
+          measuredWidth: Math.max(1, Math.round(width - g.left)),
+          measuredHeight: void 0,
+          x: Math.max(0, g.left),
+          y: Math.max(0, g.top),
+          positioning: "AUTO"
+        },
+        textData: {
+          ...td,
+          characters,
+          isMultiline: count > 1,
+          lineCount: count,
+          segments: sliceSegments(td.segments, start, end)
+        }
+      };
+    });
+    return {
+      id: textNode.id,
+      name: textNode.name,
+      type: "FRAME",
+      layout: {
+        ...L,
+        mode: "NONE",
+        height: typeof L.measuredHeight === "number" ? L.measuredHeight : L.height
+      },
+      styles: { fills: [] },
+      metadata: { textAroundFloat: true },
+      children
+    };
+  }
+  function alignTableCell(node, style) {
+    const va = style.verticalAlign;
+    const vertical = va === "middle" ? "CENTER" : va === "bottom" ? "MAX" : "MIN";
+    const ta = style.textAlign || "";
+    const horizontal = /center/.test(ta) ? "CENTER" : /right|end/.test(ta) ? "MAX" : "MIN";
+    const L = node.layout;
+    if (L.mode === "NONE") L.mode = "VERTICAL";
+    if (L.mode === "VERTICAL") {
+      L.primaryAxisAlignItems = vertical;
+      L.counterAxisAlignItems = horizontal;
+    } else {
+      L.counterAxisAlignItems = vertical;
+      L.primaryAxisAlignItems = horizontal;
+    }
   }
 
   // packages/core-extractor/src/browser/extract-node.ts
@@ -1548,7 +1676,7 @@
         });
         if (inFlowChildren.length >= 2) {
           const rects = inFlowChildren.map((ch) => ch.getBoundingClientRect()).filter((r) => r.width > 0 || r.height > 0);
-          const TOL = 4;
+          const TOL2 = 4;
           const byTop = [...rects].sort((a, b) => a.top - b.top);
           const byLeft = [...rects].sort((a, b) => a.left - b.left);
           let isVerticalStack = rects.length >= 2;
@@ -1556,7 +1684,7 @@
           for (let i = 0; i < rects.length - 1; i++) {
             if (byTop[i + 1].top < byTop[i].top + 8) isVerticalStack = false;
             const a = byLeft[i], b = byLeft[i + 1];
-            const shareRow = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > TOL;
+            const shareRow = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > TOL2;
             if (b.left < a.left + 8 || !shareRow) isHorizontalStack = false;
           }
           if (isVerticalStack && !isHorizontalStack) {
@@ -1642,7 +1770,7 @@
         textWidth = measuredW2;
       }
       const cleanFontFamily = style.fontFamily ? style.fontFamily.split(",")[0].replace(/['"]/g, "").trim() : "Inter";
-      return {
+      const textLeaf = {
         id: currentId,
         name: semanticName,
         type: "TEXT",
@@ -1675,6 +1803,7 @@
           segments: rich.segments || void 0
         }
       };
+      return splitTextAroundFloats(textLeaf, rich, measuredW2);
     }
     const measuredW = Math.round(rect.width);
     const measuredH = Math.round(rect.height);
@@ -1949,6 +2078,7 @@
           }
         });
         if (leafAfter) node.children.push(leafAfter);
+        if (style.display === "table-cell") alignTableCell(node, style);
       } else {
         const decoBefore = extractPseudoElement(element, "::before", rect, currentLayout, counter);
         if (decoBefore) node.children.push(decoBefore);

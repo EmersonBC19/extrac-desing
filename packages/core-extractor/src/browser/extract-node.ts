@@ -15,6 +15,7 @@ import {
 } from './dom-helpers';
 import { isInlineTextRoot, buildRichText } from './text';
 import { fitAutoLayoutToGeometry, pseudoPosition } from './geometry';
+import { alignTableCell, splitTextAroundFloats } from './float-text';
 import type { ExtractCounter, RawLayout, RawNode, Rgba } from './types';
 
 // `element` es any: el extractor lee propiedades de muchos subtipos (img, video, input, select, slot…)
@@ -1438,7 +1439,7 @@ export function extractNodeTree(
 
     const cleanFontFamily = style.fontFamily ? style.fontFamily.split(',')[0].replace(/['"]/g, '').trim() : 'Inter';
 
-    return {
+    const textLeaf: RawNode = {
       id: currentId,
       name: semanticName,
       type: 'TEXT',
@@ -1471,6 +1472,8 @@ export function extractNodeTree(
         segments: rich.segments || undefined,
       },
     };
+    // Líneas con márgenes distintos (texto que rodea un float): un texto por grupo de líneas
+    return splitTextAroundFloats(textLeaf, rich, measuredW);
   }
 
   // ── 16. Dimensiones y Sizing (FILL vs HUG vs FIXED) ──
@@ -1820,6 +1823,8 @@ export function extractNodeTree(
         },
       });
       if (leafAfter) node.children.push(leafAfter);
+      // Celdas de tabla (fase 5.5): vertical-align y text-align ubican el texto dentro de la celda
+      if (style.display === 'table-cell') alignTableCell(node, style);
     } else {
       // Caja vacía con decoración en ::before/::after (brillos, formas de fondo, iconos):
       // antes solo se extraían los pseudo-elementos de elementos con hijos y se perdían

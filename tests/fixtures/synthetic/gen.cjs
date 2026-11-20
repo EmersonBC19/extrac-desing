@@ -1,0 +1,10 @@
+const { chromium } = require('playwright'); const fs = require('fs'); const dir = process.argv[2];
+(async () => { const b = await chromium.launch(); const p = await b.newPage();
+  const imgs = await p.evaluate(() => { const out = {}; const colors = ['#e74c3c','#3498db','#2ecc71','#9b59b6','#f1c40f'];
+    colors.forEach((c,i) => { const cv = document.createElement('canvas'); cv.width = 800; cv.height = 400; const g = cv.getContext('2d'); g.fillStyle = c; g.fillRect(0,0,800,400); g.fillStyle='#fff'; g.font='bold 120px sans-serif'; g.fillText('S'+(i+1), 300, 250);
+      out['slide'+(i+1)+'.webp'] = cv.toDataURL('image/webp', 0.9); out['slide'+(i+1)+'.png'] = cv.toDataURL('image/png'); });
+    const big = document.createElement('canvas'); big.width = 5000; big.height = 1200; const g = big.getContext('2d'); g.fillStyle='#16a085'; g.fillRect(0,0,5000,1200); out['huge.jpg'] = big.toDataURL('image/jpeg', 0.8);
+    return out; });
+  for (const [n, d] of Object.entries(imgs)) fs.writeFileSync(dir + '/img/' + n, Buffer.from(d.split(',')[1], 'base64'));
+  fs.writeFileSync(dir + '/img/icon.svg', '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#e67e22"/></svg>');
+  await b.close(); })();

@@ -144,7 +144,7 @@ async function runPlugin(payload, opts) {
   const figma = createFigma(opts);
   const ctx = { figma, __html__: '', console, setTimeout, clearTimeout, URL, Promise, Uint8Array, Date, Math, JSON, Map, Set, Symbol };
   vm.createContext(ctx);
-  vm.runInContext(fs.readFileSync('packages/figma-plugin/dist/code.js', 'utf8'), ctx);
+  vm.runInContext(fs.readFileSync(require('path').resolve(__dirname, '../../packages/figma-plugin/dist/code.js'), 'utf8'), ctx);
   await figma.ui.onmessage({ type: 'RENDER_NODES', payload });
   return figma;
 }

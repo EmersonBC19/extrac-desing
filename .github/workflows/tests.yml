@@ -1,0 +1,34 @@
+name: Pruebas
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pruebas:
+    name: Unitarias + integración
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # tests/integration/plugin-pairing compara con la versión del hub previa a la
+          # vinculación (git show aa0edfe~1): hace falta el historial completo
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Instalar Chromium para Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Compilar (contratos, plugin, hub)
+        run: npm run build
+
+      - name: Pruebas
+        run: npm test

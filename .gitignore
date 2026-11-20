@@ -14,4 +14,3 @@ scratch/captured-last-payload.json
 #    código fuente con versiones antiguas (NO ejecutar)
 scratch/*
 !scratch/_*.cjs
-!scratch/test-drag-inspector.ts

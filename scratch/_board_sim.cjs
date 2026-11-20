@@ -2,7 +2,7 @@
 // Uso: node scratch/_board_sim.cjs <url> "<selector JS>"
 const { chromium } = require('playwright');
 const fs = require('fs');
-const { runPlugin } = require('./_figma_mock.cjs');
+const { runPlugin } = require('../tests/helpers/figma-mock.cjs');
 
 (async () => {
   const [url, sel] = [process.argv[2], process.argv[3]];

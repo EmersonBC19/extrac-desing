@@ -22,7 +22,7 @@ async function inspect() {
     selector: 'app-root',
   });
 
-  console.log('\n--- Jerarquía de Componentes de cloud-pichincha-front ---');
+  console.log('\n--- Jerarquía de componentes ---');
   printTree(node);
   await extractor.close();
 }

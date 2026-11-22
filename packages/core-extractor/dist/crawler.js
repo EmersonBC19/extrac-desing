@@ -1,7 +1,6 @@
 import { chromium } from 'playwright';
 import { consoleSink, createLogger } from '@code-to-figma/contracts';
 import { getBrowserExtractorScript } from './browser-script.js';
-import { createDesignSystemFrame } from './design-system-extractor.js';
 export class SiteCrawler {
     browser = null;
     async init(headless = true) {
@@ -98,23 +97,6 @@ export class SiteCrawler {
                 }
                 catch (_authErr) {
                     log.warn('⚠️ No se detectó cambio de URL en 2 minutos. Continuando con la vista actual...');
-                }
-            }
-            // 0. Transmitir el Artboard del Sistema de Diseño (Design Tokens & UI Kit)
-            if (options.includeDesignSystem !== false) {
-                log.info(`\n🎨 Generando Artboard Maestro: "Design System, Tokens & UI Kit"...`);
-                const dsNode = createDesignSystemFrame();
-                const dsResult = {
-                    title: '🎨 Design System & UI Kit',
-                    routeOrTab: '/design-system',
-                    rootNode: dsNode,
-                    group: 'Design System',
-                    routeKey: '_DESIGN_SYSTEM_',
-                    variantType: 'DESIGN_SYSTEM',
-                };
-                results.push(dsResult);
-                if (options.onScreen) {
-                    await options.onScreen(dsResult, 0, 1);
                 }
             }
             const baseObj = new URL(options.baseUrl);

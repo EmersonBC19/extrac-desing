@@ -16,7 +16,7 @@ afterAll(async () => {
 
 describe('crawler (BrowserExtractor) con el extractor unificado', () => {
   it('inyecta el mismo archivo que carga la extensión', () => {
-    expect(getBrowserExtractorScript()).toBe(read('packages/browser-extension/extractor.js'));
+    expect(getBrowserExtractorScript().replace(/\r\n/g, '\n')).toBe(read('packages/browser-extension/extractor.js'));
   });
 
   it('produce el layout corregido (geometría medida), no el del extractor viejo', async () => {

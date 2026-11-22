@@ -21,7 +21,6 @@ function parseArgs() {
     max: 60,
     exploreTabs: true,
     exploreModals: true,
-    includeDesignSystem: true,
     contentSelector: 'body',
     clear: true,
   };
@@ -46,8 +45,6 @@ function parseArgs() {
       options.exploreTabs = false;
     } else if (arg === '--no-modals') {
       options.exploreModals = false;
-    } else if (arg === '--no-ds') {
-      options.includeDesignSystem = false;
     } else if (arg === '--no-clear' || arg === '--append') {
       options.clear = false;
     } else if (arg === '--clear') {
@@ -94,7 +91,6 @@ async function main() {
   log.info(`║  URL Base: ${options.url.padEnd(46)}║`);
   log.info(`║  Viewport: ${options.width}×${options.height}px${''.padEnd(36)}║`);
   log.info(`║  Modo: ${options.routes.length > 0 ? 'Rutas manuales' : 'Auto-detección profunda'}${''.padEnd(33)}║`);
-  log.info(`║  Design System: ${options.includeDesignSystem ? 'Sí' : 'No'}${''.padEnd(39)}║`);
   log.info(
     `║  Tabs: ${options.exploreTabs ? 'Sí' : 'No'} │ Modales: ${options.exploreModals ? 'Sí' : 'No'}${''.padEnd(29)}║`,
   );
@@ -175,12 +171,9 @@ async function main() {
   }
 
   const moduleQueues: Map<string, QueuedScreen[]> = new Map();
-  const NAV_ORIGIN_X = options.includeDesignSystem ? 1900 : 0;
 
   // ── 3. Fase de recolección: crawl + agrupación por módulo ──
   log.info('🔍 Fase 1: Recolectando todas las pantallas del sistema...\n');
-
-  let dsScreen: QueuedScreen | null = null as QueuedScreen | null;
 
   try {
     await crawler.crawl({
@@ -192,16 +185,8 @@ async function main() {
       maxScreens: options.max,
       exploreTabs: options.exploreTabs,
       exploreModals: options.exploreModals,
-      includeDesignSystem: options.includeDesignSystem,
       onScreen: async screen => {
         const mod = screen.group || 'General';
-        const isDS = screen.variantType === 'DESIGN_SYSTEM' || screen.routeKey === '_DESIGN_SYSTEM_';
-
-        if (isDS) {
-          dsScreen = { screen, module: 'Design System' };
-          return;
-        }
-
         if (!moduleQueues.has(mod)) {
           moduleQueues.set(mod, []);
         }
@@ -210,7 +195,7 @@ async function main() {
     });
 
     // ── 4. Resumen de lo recolectado ──
-    const totalScreens = Array.from(moduleQueues.values()).reduce((sum, q) => sum + q.length, 0) + (dsScreen ? 1 : 0);
+    const totalScreens = Array.from(moduleQueues.values()).reduce((sum, q) => sum + q.length, 0);
     const moduleNames = Array.from(moduleQueues.keys());
 
     log.info(`\n${'─'.repeat(60)}`);
@@ -234,22 +219,7 @@ async function main() {
     const MODULE_GAP_Y = 240;
     let isFirstTransmission = true;
 
-    // 5.1 Primero el Design System
-    if (dsScreen) {
-      log.info('🎨 Transmitiendo Design System & UI Kit...');
-      await sendAndWait(
-        {
-          rootNode: dsScreen.screen.rootNode,
-          clearPage: options.clear && isFirstTransmission,
-          targetCanvasPosition: { x: 0, y: 0 },
-          groupName: 'Design System',
-        },
-        10000,
-      );
-      isFirstTransmission = false;
-    }
-
-    // 5.2 Luego cada módulo en orden
+    // 5.1 Cada módulo en orden
     const moduleList = Array.from(moduleQueues.entries());
 
     for (let mi = 0; mi < moduleList.length; mi++) {
@@ -280,7 +250,7 @@ async function main() {
           return (order[a.screen.variantType || 'BASE'] || 0) - (order[b.screen.variantType || 'BASE'] || 0);
         });
 
-        let colX = options.pages ? 0 : NAV_ORIGIN_X;
+        let colX = 0;
 
         for (let si = 0; si < sorted.length; si++) {
           const { screen } = sorted[si];

@@ -17,7 +17,7 @@ async function inspect() {
         url: 'http://localhost:4210',
         selector: 'app-root',
     });
-    console.log('\n--- Jerarquía de Componentes de cloud-pichincha-front ---');
+    console.log('\n--- Jerarquía de componentes ---');
     printTree(node);
     await extractor.close();
 }

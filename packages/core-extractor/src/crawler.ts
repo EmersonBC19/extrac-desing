@@ -2,7 +2,6 @@ import { chromium, type Browser, type Page } from 'playwright';
 import { consoleSink, createLogger } from '@code-to-figma/contracts';
 import type { Logger, UINode } from '@code-to-figma/contracts';
 import { getBrowserExtractorScript } from './browser-script.js';
-import { createDesignSystemFrame } from './design-system-extractor.js';
 
 export interface CrawlScreenResult {
   title: string;
@@ -10,7 +9,7 @@ export interface CrawlScreenResult {
   rootNode: UINode;
   group?: string;
   routeKey?: string;
-  variantType?: 'BASE' | 'TAB' | 'MODAL' | 'DESIGN_SYSTEM';
+  variantType?: 'BASE' | 'TAB' | 'MODAL';
 }
 
 export interface CrawlOptions {
@@ -24,7 +23,6 @@ export interface CrawlOptions {
   auth?: boolean;
   exploreTabs?: boolean;
   exploreModals?: boolean;
-  includeDesignSystem?: boolean;
   onScreen?: (result: CrawlScreenResult, index: number, total: number) => Promise<void> | void;
   /** Destino de los mensajes de progreso. El servidor MCP pasa uno que escribe en stderr (stdout es su protocolo) */
   logger?: Logger;
@@ -154,24 +152,6 @@ export class SiteCrawler {
           await page.waitForTimeout(2500);
         } catch (_authErr) {
           log.warn('⚠️ No se detectó cambio de URL en 2 minutos. Continuando con la vista actual...');
-        }
-      }
-
-      // 0. Transmitir el Artboard del Sistema de Diseño (Design Tokens & UI Kit)
-      if (options.includeDesignSystem !== false) {
-        log.info(`\n🎨 Generando Artboard Maestro: "Design System, Tokens & UI Kit"...`);
-        const dsNode = createDesignSystemFrame();
-        const dsResult: CrawlScreenResult = {
-          title: '🎨 Design System & UI Kit',
-          routeOrTab: '/design-system',
-          rootNode: dsNode,
-          group: 'Design System',
-          routeKey: '_DESIGN_SYSTEM_',
-          variantType: 'DESIGN_SYSTEM',
-        };
-        results.push(dsResult);
-        if (options.onScreen) {
-          await options.onScreen(dsResult, 0, 1);
         }
       }
 

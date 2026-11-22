@@ -6,7 +6,7 @@ export interface CrawlScreenResult {
     rootNode: UINode;
     group?: string;
     routeKey?: string;
-    variantType?: 'BASE' | 'TAB' | 'MODAL' | 'DESIGN_SYSTEM';
+    variantType?: 'BASE' | 'TAB' | 'MODAL';
 }
 export interface CrawlOptions {
     baseUrl: string;
@@ -22,7 +22,6 @@ export interface CrawlOptions {
     auth?: boolean;
     exploreTabs?: boolean;
     exploreModals?: boolean;
-    includeDesignSystem?: boolean;
     onScreen?: (result: CrawlScreenResult, index: number, total: number) => Promise<void> | void;
     /** Destino de los mensajes de progreso. El servidor MCP pasa uno que escribe en stderr (stdout es su protocolo) */
     logger?: Logger;

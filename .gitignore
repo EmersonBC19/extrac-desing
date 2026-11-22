@@ -14,3 +14,11 @@ scratch/captured-last-payload.json
 #    código fuente con versiones antiguas (NO ejecutar)
 scratch/*
 !scratch/_*.cjs
+
+# Logs y binarios generados por el empaquetador Node SEA
+*.log
+packages/mcp-server/dist/code-to-figma-hub.exe
+packages/mcp-server/dist/code-to-figma-hub
+packages/mcp-server/dist/hub-bundle.cjs
+packages/mcp-server/dist/sea-config.json
+packages/mcp-server/dist/sea-prep.blob

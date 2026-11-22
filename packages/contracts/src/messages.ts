@@ -212,6 +212,30 @@ export const MESSAGE_CATALOG = {
     route: 'sandbox → UI',
     description: 'Línea para el registro visible del plugin',
   },
+  GET_AVAILABLE_FONTS: {
+    channel: 'plugin',
+    kind: 'query',
+    route: 'UI → sandbox',
+    description: 'Lista de fuentes disponibles en el entorno Figma del usuario',
+  },
+  AVAILABLE_FONTS: {
+    channel: 'plugin',
+    kind: 'event',
+    route: 'sandbox → UI',
+    description: 'Respuesta con fuentes disponibles en Figma',
+  },
+  REPLACE_FONTS: {
+    channel: 'plugin',
+    kind: 'command',
+    route: 'UI → sandbox',
+    description: 'Reemplazar familias tipográficas en selección o lienzo',
+  },
+  FONTS_REPLACED: {
+    channel: 'plugin',
+    kind: 'event',
+    route: 'sandbox → UI',
+    description: 'Confirmación de fuentes reemplazadas',
+  },
 
   // ── Extensión (content script ↔ service worker) ─────────────────────────────────────────────
   TRANSMIT_TO_FIGMA: {
@@ -344,7 +368,9 @@ export type PluginUiMessage =
   | { type: 'GET_SETTINGS' }
   | { type: 'GET_HISTORY' }
   | { type: 'SET_HISTORY'; items: unknown[] }
-  | { type: 'SET_SETTINGS'; settings: Record<string, unknown> };
+  | { type: 'SET_SETTINGS'; settings: Record<string, unknown> }
+  | { type: 'GET_AVAILABLE_FONTS' }
+  | { type: 'REPLACE_FONTS'; mapping: Record<string, string>; targetNodeId?: string };
 
 export type PluginUiMessageType = PluginUiMessage['type'];
 
@@ -356,5 +382,8 @@ export type PluginSandboxMessage =
   | { type: 'HISTORY'; items: unknown[] }
   | { type: 'DELETED'; nodeIds: string[]; missing: number }
   | { type: 'LOG'; message: string; level?: 'info' | 'warn' | 'error' | 'success' }
+  | { type: 'RENDER_PROGRESS'; rendered: number; total: number; percent: number; phase?: string }
+  | { type: 'AVAILABLE_FONTS'; fonts: Array<{ family: string; style: string }> }
+  | { type: 'FONTS_REPLACED'; count: number; details?: string }
   | { type: 'RENDER_SUCCESS'; nodeId: string; name: string; [k: string]: unknown }
   | { type: 'RENDER_ERROR'; error: string };

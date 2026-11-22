@@ -234,6 +234,30 @@ exports.MESSAGE_CATALOG = {
         route: 'sandbox → UI',
         description: 'Línea para el registro visible del plugin',
     },
+    GET_AVAILABLE_FONTS: {
+        channel: 'plugin',
+        kind: 'query',
+        route: 'UI → sandbox',
+        description: 'Lista de fuentes disponibles en el entorno Figma del usuario',
+    },
+    AVAILABLE_FONTS: {
+        channel: 'plugin',
+        kind: 'event',
+        route: 'sandbox → UI',
+        description: 'Respuesta con fuentes disponibles en Figma',
+    },
+    REPLACE_FONTS: {
+        channel: 'plugin',
+        kind: 'command',
+        route: 'UI → sandbox',
+        description: 'Reemplazar familias tipográficas en selección o lienzo',
+    },
+    FONTS_REPLACED: {
+        channel: 'plugin',
+        kind: 'event',
+        route: 'sandbox → UI',
+        description: 'Confirmación de fuentes reemplazadas',
+    },
     // ── Extensión (content script ↔ service worker) ─────────────────────────────────────────────
     TRANSMIT_TO_FIGMA: {
         channel: 'extension',

@@ -9,6 +9,9 @@ export declare class FigmaWsHub {
     private otherClients;
     private pairing;
     private pairingLimiter;
+    private pluginGeminiApiKey;
+    private pluginGeminiModel;
+    private pluginAiOptimization;
     private log;
     constructor(options?: FigmaWsHubOptions);
     private getCatalog;

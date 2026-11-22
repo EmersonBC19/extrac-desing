@@ -17,11 +17,13 @@ export interface BoxShadow {
   offset: { x: number; y: number };
   radius: number;
   spread: number;
+  inset?: boolean;
 }
 
 export interface StrokeStyle extends RGBAColor {
   width: number;
   align?: 'INSIDE' | 'OUTSIDE' | 'CENTER';
+  style?: 'SOLID' | 'DASHED' | 'DOTTED';
 }
 
 export type LayoutMode = 'NONE' | 'HORIZONTAL' | 'VERTICAL';
@@ -84,6 +86,7 @@ export interface UIStyles {
   fills: (RGBAColor | GradientPaint)[];
   strokes?: StrokeStyle[];
   borderSides?: BorderSides;
+  accentBorder?: { side: 'TOP' | 'RIGHT' | 'BOTTOM' | 'LEFT'; color: RGBAColor; width: number; style?: 'SOLID' | 'DASHED' | 'DOTTED' };
   cornerRadius?: number | [number, number, number, number];
   opacity?: number;
   boxShadow?: BoxShadow[];

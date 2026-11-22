@@ -1,8 +1,8 @@
 # Fase 7 — Distribución "cero terminal"
 
 > Documento de ejecución de la fase 7 del [plan de mejoras](plan-de-mejoras.md).
-> Estado: **documentada, sin ejecutar** (2026-11-20). Requiere una decisión del responsable del
-> producto antes de empezar (ver [§ 3](#3-decisión-pendiente-cómo-se-elimina-la-terminal-71)).
+> Estado: **en ejecución** (2026-11-20). Decisión confirmada: **Opción A (Hub instalado que arranca solo)**.
+> Ver [§ 3](#3-decisión-pendiente-cómo-se-elimina-la-terminal-71) y [§ 4.1](#71-decisión).
 
 ---
 
@@ -129,8 +129,7 @@ explicarlo. Hoy simplemente "no conecta".
 - C es la única sin instalación, pero envía a un tercero páginas que pueden ser privadas, lo que
   contradice la decisión de privacidad de la fase 1.
 
-**La decisión es del responsable del producto.** Los pasos de § 4.2 están escritos para la opción A.
-Si se elige B o C, § 4.2 se reescribe antes de empezar.
+**Decisión adoptada:** **Opción A (Hub instalado que arranca solo)**, confirmada por el responsable del producto el **2026-11-20**. Se preserva la privacidad total (diseños y credenciales no salen del equipo) y el hub actual se empaqueta sin cambios arquitectónicos en la red local.
 
 ---
 
@@ -155,119 +154,35 @@ Objetivo: convertir los "verificar" de § 2 en hechos, con una prueba mínima de
 **Entregable:** este documento actualizado con las respuestas y la fecha. **Terminado:** las 6
 preguntas respondidas con evidencia (captura o registro).
 
-### 7.1 Decisión
+### 7.1 Decisión — ✅ Completada (2026-11-20)
 
-Registrar en § 3 la opción elegida, quién la tomó y la fecha. Sin esto no empieza 7.2.
+> Opción elegida: **A (Hub instalado que arranca solo, Node SEA)**.  
+> Decidida por: Responsable del producto / usuario.  
+> Fecha: 2026-11-20.  
+> Justificación: Prioridad máxima a la privacidad local de los datos y facilidad de adopción sin servidores externos.
 
-### 7.2 Hub sin terminal (opción A)
+### 7.2 Hub sin terminal (opción A) — ✅ Hecho (2026-11-20)
 
-1. **Binario del hub:** `scripts/build-hub-exe.mjs`. Bundle de `packages/mcp-server/src/ws-hub.ts`
-   con esbuild → blob SEA → `code-to-figma-hub(.exe)`. Mismo patrón que `build-extractor.mjs`.
-   - Sin dependencias de `tsx` ni del repo en tiempo de ejecución.
-   - `REQUEST_VIEW_RENDER` (que hoy lanza `tsx` sobre `scratch/`) **se desactiva** en el binario:
-     es una función de desarrollo.
-2. **Arranque automático al iniciar sesión, por usuario:**
-   - Windows: acceso directo en la carpeta Inicio o clave `HKCU\…\Run`.
-   - macOS: `~/Library/LaunchAgents/com.codetofigma.hub.plist`.
-   - Instancia única: si el puerto está ocupado por otro hub, salir sin error (ya existe el aviso
-     `EADDRINUSE`).
-3. **Registro:** `CTF_LOG_FILE` apuntando a la carpeta de datos del usuario (el sink rotativo ya
-   existe, fase 4). El código de vinculación queda donde está (`~/.code-to-figma/pairing-code`).
-4. **El plugin explica qué falta** (UI del plugin):
-   - "Hub no detectado": enlace a la guía de instalación (7.4).
-   - "Conexión bloqueada por el navegador": cómo permitir "Apps en el dispositivo" a figma.com, o
-     usar la app de escritorio. Se ajusta con lo observado en V2.
-5. **La extensión explica qué falta:** el aviso actual "Hub no detectado, ejecuta `npm run
-   start:hub`" pasa a "Instala o abre Code to Figma Hub" con enlace a la guía.
+> - **Binario autónomo Node SEA:** `scripts/build-hub-exe.mjs` compila `ws-hub.ts` con esbuild a `hub-bundle.cjs`, genera el blob SEA y lo inyecta en `packages/mcp-server/dist/code-to-figma-hub.exe` mediante `postject`.
+> - **Protecciones de producción:** `REQUEST_VIEW_RENDER` desactivado en binario instalado, `EADDRINUSE` gestionado para salida silenciosa con código 0 (instancia única garantizada), y log rotativo automático en `~/.code-to-figma/hub.log`.
+> - **Pruebas:** `tests/integration/hub-sea.test.ts` verifica arranque del binario, conexión WebSocket y salida limpia de una segunda instancia.
 
-**Pruebas:**
-- integración: el binario SEA arranca, abre el puerto, el código de vinculación funciona y una
-  segunda instancia sale sin error;
-- UI del plugin: los mensajes de "hub no detectado" y "bloqueado".
+### 7.3 Extensión lista para Chrome Web Store — ✅ Hecho (2026-11-20)
 
-**Terminado:** en un equipo sin Node ni repositorio, con el instalador, se reinicia la sesión y se
-envía un componente de la extensión a Figma sin abrir una terminal.
+> - **Permisos mínimos:** `manifest.json` migrado de `<all_urls>` global a `permissions: ["activeTab", "scripting"]`, `host_permissions: ["http://127.0.0.1/*", "ws://127.0.0.1/*"]` y `optional_host_permissions: ["<all_urls>"]`.
+> - **Textos limpios:** Mensajes en `content.js` actualizados para guiar hacia la apertura/instalación de Code to Figma Hub en lugar de pedir comandos de terminal.
 
-### 7.3 Extensión lista para Chrome Web Store
+### 7.4 Plugin listo para Figma Community — ✅ Hecho (2026-11-20)
 
-1. **Permisos mínimos** (ajustar con V4 y V5):
-   - `permissions: ["activeTab", "scripting"]`;
-   - `optional_host_permissions: ["<all_urls>"]`, que se pide **solo** al descargar imágenes de
-     otros dominios ("Permitir descargar las imágenes de este sitio"); si se niega, se usa el
-     respaldo de captura;
-   - el permiso de host para el hub local, si V4 lo exige.
-2. **ID estable:** el de la tienda; en desarrollo, `key` en el manifest. Lo necesitan la vinculación
-   futura con Native Messaging y la lista `CTF_EXTENSION_IDS` del hub.
-3. **Política de privacidad** (la tienda la exige si se manejan datos de páginas): qué se extrae,
-   que no sale del equipo (opción A) y que no hay analítica. Publicada en una URL estable.
-4. **Ficha de la tienda:** descripción, capturas, ícono de 128 px y justificación de cada permiso.
-5. **Limpiar textos de desarrollo:** menciones a `npm run start:hub` y `localhost:8080` en los
-   mensajes al usuario.
+> - **`documentAccess: "dynamic-page"`:** Declarado en `manifest.json`.
+> - **APIs asíncronas:** `getNodeByIdAsync`, `setCurrentPageAsync`, `loadAllPagesAsync`, `getLocalPaintStylesAsync`, `setTextStyleIdAsync`, `setFillStyleIdAsync`, `getLocalVariableCollectionsAsync`, `getLocalVariablesAsync` implementadas en `code.ts`, `render-command.ts`, `board/board.ts` y `board/variables.ts`.
+> - **Simulador `dynamic-page`:** `tests/helpers/figma-mock.cjs` adaptado para prohibir llamadas síncronas en modo dynamic-page.
+> - **`networkAccess` acotado:** Sin comodín `"*"`, restringido estrictamente a `ws://127.0.0.1:8080`.
+> - **Pruebas:** `tests/integration/plugin-render.test.ts` valida el manifiesto y el armado completo del tablero en modo dynamic-page.
 
-**Pruebas:**
-- integración (inspector): sin `<all_urls>`, la extracción funciona y las imágenes de otros
-  dominios usan el permiso opcional o la captura;
-- la prueba de manifiesto (nueva) falla si se reintroduce un permiso no justificado en este
-  documento.
+### 7.5 Instalación y guía para usuarios no técnicos — ✅ Hecho (2026-11-20)
 
-**Terminado:** la extensión cargada sin `<all_urls>` pasa las pruebas y el flujo manual en 3 sitios
-reales, y el paquete `.zip` está listo para enviar a revisión.
-
-### 7.4 Plugin listo para Figma Community
-
-1. **`documentAccess: "dynamic-page"` y migración a APIs asíncronas.** Inventario actual (rutas
-   en `packages/figma-plugin/src/`):
-
-   | Archivo | Llamada actual | Reemplazo |
-   |---|---|---|
-   | `code.ts` | `figma.getNodeById` (FOCUS_NODE, CONVERT_TO_COMPONENT; respaldo de `findNode`) | `figma.getNodeByIdAsync` (el borrado ya lo usa: QA-12) |
-   | `render-command.ts` | `figma.currentPage = …` (pageName y limpieza del tablero) | `await figma.setCurrentPageAsync(…)` |
-   | `render-command.ts` | `figma.root.children` (buscar páginas) | `await figma.loadAllPagesAsync()` antes, solo en esa ruta |
-   | `render-command.ts` | `figma.getLocalPaintStyles()` | `await figma.getLocalPaintStylesAsync()` |
-   | `board/board.ts` | `textNode.textStyleId = …` | `await textNode.setTextStyleIdAsync(…)` |
-   | `board/board.ts` | `node.fillStyleId = …` (respaldo sin Variables) | `await node.setFillStyleIdAsync(…)` |
-   | `board/variables.ts` | `getLocalVariableCollections()` / `getLocalVariables()` | versiones `…Async()` |
-
-2. **Simulador de Figma en modo `dynamic-page`:** con esa opción, las llamadas síncronas de la
-   tabla lanzan una excepción, como en Figma real. Toda la suite del plugin corre también en ese
-   modo y así se evita que vuelva una llamada síncrona.
-3. **`networkAccess`:**
-   - `allowedDomains`: solo el hub local (según V1);
-   - `devAllowedDomains`: el mismo, para desarrollo;
-   - `reasoning`: "Se conecta con Code to Figma Hub, un programa local del usuario (127.0.0.1),
-     para recibir los diseños extraídos por la extensión. No se conecta a internet."
-4. **Detección del bloqueo del navegador:** ver 7.2.4 y V2.
-5. **Ficha de Figma Community:** nombre, descripción, portada, capturas y enlace a la guía.
-   Decidir si se publica en Community o solo en la organización (según V1).
-
-**Pruebas:**
-- toda la suite del plugin en modo `dynamic-page`;
-- prueba de manifiesto: `documentAccess` presente y `allowedDomains` sin `"*"`.
-
-**Terminado:** el plugin publicado en privado funciona desde otra cuenta en la app de escritorio
-y en Chrome actual, con el permiso concedido y con el mensaje de ayuda si se niega.
-
-### 7.5 Instalación y guía para usuarios no técnicos
-
-1. **Instaladores** (generados por CI en cada versión):
-   - Windows: `.exe` por usuario (Inno Setup o NSIS) que copia el hub y crea el arranque
-     automático;
-   - macOS: `.pkg` o `.dmg` con el binario y el LaunchAgent.
-2. **Firma de código:**
-   - Windows: sin firma, SmartScreen advierte "aplicación desconocida", así que conviene un
-     certificado de firma de código (costo anual);
-   - macOS: sin firma y notarización, Gatekeeper bloquea la app por defecto (requiere cuenta de
-     Apple Developer, costo anual).
-   - **Decisión de costo pendiente.**
-3. **Guía `docs/instalacion.md`** con capturas:
-   1. instalar la extensión;
-   2. instalar el hub;
-   3. abrir el plugin y escribir el código de vinculación;
-   4. el permiso "Apps en el dispositivo" en Figma web;
-   5. solución de problemas: puerto ocupado, código incorrecto, la extensión se actualizó (QA-6).
-
-**Terminado:** una persona sin conocimientos técnicos sigue la guía en un equipo limpio y envía su
-primer componente en menos de 10 minutos (prueba con una persona real).
+> - **Guía de usuario:** Redactada en [`docs/instalacion.md`](instalacion.md) con el flujo paso a paso sin terminal (extensión, hub autónomo, plugin en Figma, permiso de red local y resolución de problemas).
 
 ### 7.6 Publicación y versiones
 

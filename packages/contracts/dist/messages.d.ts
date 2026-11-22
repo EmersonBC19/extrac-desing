@@ -245,6 +245,30 @@ export declare const MESSAGE_CATALOG: {
         readonly route: "sandbox → UI";
         readonly description: "Línea para el registro visible del plugin";
     };
+    readonly GET_AVAILABLE_FONTS: {
+        readonly channel: "plugin";
+        readonly kind: "query";
+        readonly route: "UI → sandbox";
+        readonly description: "Lista de fuentes disponibles en el entorno Figma del usuario";
+    };
+    readonly AVAILABLE_FONTS: {
+        readonly channel: "plugin";
+        readonly kind: "event";
+        readonly route: "sandbox → UI";
+        readonly description: "Respuesta con fuentes disponibles en Figma";
+    };
+    readonly REPLACE_FONTS: {
+        readonly channel: "plugin";
+        readonly kind: "command";
+        readonly route: "UI → sandbox";
+        readonly description: "Reemplazar familias tipográficas en selección o lienzo";
+    };
+    readonly FONTS_REPLACED: {
+        readonly channel: "plugin";
+        readonly kind: "event";
+        readonly route: "sandbox → UI";
+        readonly description: "Confirmación de fuentes reemplazadas";
+    };
     readonly TRANSMIT_TO_FIGMA: {
         readonly channel: "extension";
         readonly kind: "command";
@@ -422,6 +446,12 @@ export type PluginUiMessage = {
 } | {
     type: 'SET_SETTINGS';
     settings: Record<string, unknown>;
+} | {
+    type: 'GET_AVAILABLE_FONTS';
+} | {
+    type: 'REPLACE_FONTS';
+    mapping: Record<string, string>;
+    targetNodeId?: string;
 };
 export type PluginUiMessageType = PluginUiMessage['type'];
 /** Plugin: sandbox → UI */
@@ -445,6 +475,22 @@ export type PluginSandboxMessage = {
     type: 'LOG';
     message: string;
     level?: 'info' | 'warn' | 'error' | 'success';
+} | {
+    type: 'RENDER_PROGRESS';
+    rendered: number;
+    total: number;
+    percent: number;
+    phase?: string;
+} | {
+    type: 'AVAILABLE_FONTS';
+    fonts: Array<{
+        family: string;
+        style: string;
+    }>;
+} | {
+    type: 'FONTS_REPLACED';
+    count: number;
+    details?: string;
 } | {
     type: 'RENDER_SUCCESS';
     nodeId: string;

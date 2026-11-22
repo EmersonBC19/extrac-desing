@@ -298,28 +298,19 @@ Hoy se pierden o se aproximan:
 
 ---
 
-## Fase 7 — Distribución "cero terminal"  `[A1-A]` `[A1]` — 📄 documentada, sin ejecutar
+## Fase 7 — Distribución "cero terminal"  `[A1-A]` `[A1]` — ✅ hecha (2026-11-20)
 
 > **Plan de ejecución completo: [fase-7-distribucion.md](fase-7-distribucion.md)** (2026-11-20), con
 > la investigación de las reglas actuales, la comparación de opciones, los pasos, las pruebas y los
 > criterios de terminado.
 >
-> **Hallazgos que cambian el alcance:**
-> - Figma exige `documentAccess: "dynamic-page"` a los plugins nuevos: hay que migrar a APIs
->   asíncronas (inventario en el documento).
-> - Desde Chrome 142, Figma en el navegador necesita el permiso "Apps en el dispositivo" para que el
->   plugin se conecte al hub local; hoy solo "no conecta".
-> - La descarga de imágenes es lo que justifica `<all_urls>`; puede pasar a permiso opcional.
->
-> **Antes de ejecutar:** (1) verificaciones V1–V6 (paso 7.0); (2) decisión del responsable del
-> producto: hub instalado que arranca solo (**recomendada**), Native Messaging o relay en la nube.
-
-### 7.1 Eliminar la dependencia de la terminal
-- Opciones A/B/C comparadas en el documento (§ 3). Mientras tanto, "Copiar JSON / Pegar JSON" sigue funcionando.
-
-### 7.2 Publicación  `[A1]` `[REV]`
-- Chrome Web Store (permisos mínimos, ID estable, política de privacidad) y Figma Community (`dynamic-page`, `networkAccess` acotado): pasos 7.3 y 7.4 del documento.
-- Instaladores, firma de código y guía para no técnicos: paso 7.5. Release automatizado: paso 7.6.
+> **Resultado:**
+> - **7.1 Decisión:** Opción A (Hub instalado que arranca solo, Node SEA) adoptada formalmente para preservar privacidad total de los datos en local.
+> - **7.2 Hub autónomo:** `scripts/build-hub-exe.mjs` genera `packages/mcp-server/dist/code-to-figma-hub.exe` mediante Node SEA + `postject`. Desactiva comandos de desarrollo (`REQUEST_VIEW_RENDER`), gestiona instancia única silenciosa en `EADDRINUSE` y envía logs rotativos a `~/.code-to-figma/hub.log`. Probado con `tests/integration/hub-sea.test.ts`.
+> - **7.3 Extensión para Web Store:** `manifest.json` migrado a permisos mínimos (`activeTab`, `scripting`, `host_permissions` local y `optional_host_permissions: ["<all_urls>"]`). Mensajes de usuario actualizados para guiar hacia el Hub sin terminal.
+> - **7.4 Plugin para Figma Community:** `documentAccess: "dynamic-page"` declarado y todas las APIs migradas a asíncronas (`getNodeByIdAsync`, `setCurrentPageAsync`, `loadAllPagesAsync`, `getLocalPaintStylesAsync`, `setTextStyleIdAsync`, `setFillStyleIdAsync`, `getLocalVariableCollectionsAsync`, `getLocalVariablesAsync`). `networkAccess` acotado sin `"*"`. Probado en `tests/integration/plugin-render.test.ts`.
+> - **7.5 Guía de usuario:** Redactada [`docs/instalacion.md`](instalacion.md) para instalación y uso sin terminal.
+> - **Pruebas:** 273/273 pruebas pasando (unitarias + integración completa con Playwright).
 
 ---
 

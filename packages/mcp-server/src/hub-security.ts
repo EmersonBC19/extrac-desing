@@ -66,7 +66,9 @@ export function pairingCodeMatches(expected: string, provided: unknown): boolean
  * Código persistente en ~/.code-to-figma/pairing-code: la vinculación se hace UNA vez
  * (el plugin lo guarda) y sobrevive a reinicios del hub.
  */
-export function loadOrCreatePairingCode(dir = path.join(os.homedir(), '.code-to-figma')): {
+export function loadOrCreatePairingCode(
+  dir = process.env.CTF_PAIRING_DIR || path.join(os.homedir(), '.code-to-figma'),
+): {
   code: string;
   file: string;
 } {
@@ -76,8 +78,13 @@ export function loadOrCreatePairingCode(dir = path.join(os.homedir(), '.code-to-
     if (normalizePairingCode(existing).length === 8) return { code: existing, file };
   } catch (_e) {}
   const code = generatePairingCode();
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(file, code + '\n', { mode: 0o600 });
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(file, code + '\n', { mode: 0o600 });
+  } catch (_err) {
+    // Si el entorno no permite escribir en el directorio de usuario (permisos restrictivos o sandbox),
+    // se devuelve el código generado para la sesión en memoria sin abortar el proceso.
+  }
   return { code, file };
 }
 

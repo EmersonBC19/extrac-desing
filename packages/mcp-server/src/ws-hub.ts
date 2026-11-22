@@ -16,6 +16,7 @@ import {
 } from '@code-to-figma/contracts';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import { execFile } from 'child_process';
 import { createRequire } from 'module';
 import { rotatingFileSink } from './log-file.js';
@@ -29,6 +30,7 @@ import {
   validateViewRenderRequest,
   type OriginClass,
 } from './hub-security.js';
+import { optimizePayloadWithGemini } from './ai-optimizer.js';
 
 const PORT = parseInt(process.env.WS_PORT || '8080', 10);
 /** Solo escuchar en la propia máquina (antes: todas las interfaces de red) */
@@ -63,7 +65,17 @@ type HandlerTable = { [K in HubInboundType]: HandlerOf<K> };
 
 function defaultLogger(): Logger {
   const sinks: LogSink[] = [consoleSink()];
-  if (process.env.CTF_LOG_FILE) sinks.push(rotatingFileSink(process.env.CTF_LOG_FILE));
+  const defaultLogFile =
+    process.env.CTF_STANDALONE === '1'
+      ? path.join(process.env.HOME || process.env.USERPROFILE || '.', '.code-to-figma', 'hub.log')
+      : undefined;
+  const logFile = process.env.CTF_LOG_FILE || defaultLogFile;
+  if (logFile) {
+    try {
+      fs.mkdirSync(path.dirname(logFile), { recursive: true });
+      sinks.push(rotatingFileSink(logFile));
+    } catch (_e) {}
+  }
   return createLogger('hub', { sinks, level: parseLogLevel(process.env.CTF_LOG_LEVEL) });
 }
 
@@ -78,6 +90,9 @@ export class FigmaWsHub {
   private otherClients: Set<WebSocket> = new Set();
   private pairing = loadOrCreatePairingCode();
   private pairingLimiter = new PairingRateLimiter();
+  private pluginGeminiApiKey: string | null = null;
+  private pluginGeminiModel = 'gemini-2.5-flash';
+  private pluginAiOptimization = false;
   private log: Logger;
 
   constructor(options: FigmaWsHubOptions = {}) {
@@ -130,6 +145,9 @@ export class FigmaWsHub {
     this.wss.on('error', (err: NodeJS.ErrnoException) => {
       if (err.code === 'EADDRINUSE') {
         this.log.warn(`El puerto ${port} ya está en uso (¿otro hub corriendo?). Este hub no escuchará.`);
+        if (process.env.CTF_STANDALONE === '1') {
+          process.exit(0); // Instancia única: en modo instalado sale en silencio sin error
+        }
       } else {
         this.log.error('Error del servidor WebSocket', { error: err.message });
       }
@@ -210,7 +228,7 @@ export class FigmaWsHub {
 
     REQUEST_VIEW_RENDER: (ws, _state, msg) => this.handleViewRender(ws, msg),
 
-    RENDER_NODES: (ws, _state, msg) => {
+    RENDER_NODES: async (ws, _state, msg) => {
       // Validación en tiempo de ejecución: nada malformado ni desmesurado llega a Figma
       const check = validateRenderPayload(msg.payload);
       if (!check.ok) {
@@ -218,8 +236,50 @@ export class FigmaWsHub {
         this.send(ws, { type: 'RENDER_ERROR', error: `Payload inválido: ${check.error}` });
         return;
       }
-      const renderMsg = msg as unknown as WSMessage<WSRenderPayload>;
-      if (DEBUG_CAPTURE) this.saveDebugCapture(msg.payload);
+      let finalPayload: any = msg.payload;
+
+      // Optimización semántica opcional con Gemini Flash si hay API Key disponible
+      const geminiKey =
+        (msg.payload as any)?.geminiApiKey || this.pluginGeminiApiKey || process.env.GEMINI_API_KEY;
+      const shouldOptimize =
+        (msg.payload as any)?.optimizeWithAi === true ||
+        ((msg.payload as any)?.optimizeWithAi !== false && this.pluginAiOptimization === true && Boolean(geminiKey));
+
+      const geminiModel =
+        (msg.payload as any)?.geminiModel ||
+        this.pluginGeminiModel ||
+        process.env.GEMINI_MODEL ||
+        'gemini-2.5-flash';
+
+      if (geminiKey && shouldOptimize) {
+        this.log.info(`Iniciando optimización con Gemini Flash (${geminiModel})...`);
+        try {
+          const optRes = await optimizePayloadWithGemini(finalPayload, geminiKey, { model: geminiModel });
+          // Lo que devuelve el modelo es entrada externa: pasa por la misma validación que el original
+          // (estructura, tamaños, SVG sin scripts). Si no la supera, se dibuja el árbol original.
+          const optCheck = optRes.optimized ? validateRenderPayload(optRes.payload) : null;
+          if (optRes.optimized && optCheck && !optCheck.ok) {
+            this.log.warn('Árbol de Gemini descartado: no supera la validación', { error: optCheck.error });
+          } else if (optRes.optimized) {
+            finalPayload = optRes.payload;
+            this.log.info('Árbol optimizado con IA (Gemini Flash)', { ms: optRes.durationMs });
+          } else if (optRes.reason) {
+            this.log.warn('AI Optimizer omitido / fallback', { reason: optRes.reason });
+          }
+        } catch (_optErr: any) {
+          this.log.warn('Fallo en AI Optimizer, usando payload original', { error: _optErr?.message });
+        }
+      } else {
+        this.log.info(`Render normal (${!geminiKey ? 'sin GEMINI_API_KEY' : 'optimización de IA desactivada'})`);
+      }
+
+      // La clave y las opciones de IA son para el hub: nunca se reenvían a Figma ni se guardan en disco
+      if (finalPayload && typeof finalPayload === 'object') {
+        const { geminiApiKey: _k, geminiModel: _m, optimizeWithAi: _o, ...rest } = finalPayload;
+        finalPayload = rest;
+      }
+      const renderMsg = { ...msg, payload: finalPayload } as unknown as WSMessage<WSRenderPayload>;
+      if (DEBUG_CAPTURE) this.saveDebugCapture(finalPayload);
       this.log.info(`Render recibido. Transmitiendo a ${this.figmaSockets.size} plugin(s) de Figma`, {
         nodos: check.nodeCount,
       });
@@ -268,6 +328,30 @@ export class FigmaWsHub {
         durationMs: msg.durationMs,
         ...(msg.timings ? { etapas: msg.timings } : {}),
       });
+      // Diagnóstico de textos del plugin: en el log y en un archivo local para depurar lo que solo
+      // ocurre en Figma real (~/.code-to-figma/last-render-report.json, se sobrescribe en cada render)
+      const textReport = (msg as any).textReport;
+      if (textReport && typeof textReport === 'object') {
+        this.log.info('Diagnóstico de textos', {
+          creados: textReport.created,
+          esperados: textReport.expected,
+          sinPintar: Array.isArray(textReport.samples)
+            ? textReport.samples.filter((s: any) => s && s.painted === 'NO').length
+            : undefined,
+        });
+        try {
+          const dir = process.env.CTF_PAIRING_DIR || path.join(os.homedir(), '.code-to-figma');
+          fs.mkdirSync(dir, { recursive: true });
+          fs.writeFileSync(
+            path.join(dir, 'last-render-report.json'),
+            JSON.stringify(
+              { time: new Date().toISOString(), name: msg.name, fontSubstitutions: msg.fontSubstitutions, textReport },
+              null,
+              2,
+            ),
+          );
+        } catch (_e) {}
+      }
       this.broadcastToClients({
         type: 'RENDER_SUCCESS',
         nodeId: msg.nodeId,
@@ -321,7 +405,25 @@ export class FigmaWsHub {
     if (isFigmaPlugin) {
       state.isFigma = true;
       this.figmaSockets.add(ws);
-      this.log.info(`Plugin de Figma conectado. Total activos: ${this.figmaSockets.size}`);
+      if (typeof (msg as any).geminiApiKey === 'string') {
+        const k = (msg as any).geminiApiKey.trim();
+        this.pluginGeminiApiKey = k.length > 0 ? k : null;
+      } else if ((msg as any).geminiApiKey === null || (msg as any).geminiApiKey === '') {
+        this.pluginGeminiApiKey = null;
+      }
+      if (typeof (msg as any).geminiModel === 'string') {
+        const m = (msg as any).geminiModel.trim();
+        if (m) this.pluginGeminiModel = m;
+      }
+      if (typeof (msg as any).aiOptimization === 'boolean') {
+        this.pluginAiOptimization = (msg as any).aiOptimization;
+      } else {
+        this.pluginAiOptimization = false;
+      }
+      this.log.info(`Plugin de Figma conectado. Total activos: ${this.figmaSockets.size}`, {
+        hasGeminiKey: Boolean(this.pluginGeminiApiKey),
+        aiOptimization: this.pluginAiOptimization,
+      });
       // Enviar catálogo de vistas al plugin automáticamente
       this.send(ws, { type: 'VIEWS_CATALOG', payload: { views: this.getCatalog() } });
       // QA-11: no se reenvía el último render. Antes, abrir el plugin (o reconectar) volvía a
@@ -338,6 +440,11 @@ export class FigmaWsHub {
    * Ahora: solo ids del catálogo, rutas de URL simples y execFile SIN shell.
    */
   private handleViewRender(ws: WebSocket, msg: Extract<HubInboundMessage, { type: 'REQUEST_VIEW_RENDER' }>): void {
+    if (process.env.CTF_STANDALONE === '1') {
+      this.log.warn('REQUEST_VIEW_RENDER rechazado: no disponible en modo hub instalado');
+      this.send(ws, { type: 'RENDER_ERROR', error: 'Función de desarrollo no disponible en el hub instalado' });
+      return;
+    }
     const catalogIds = this.getCatalog().map((v: any) => String(v.id));
     const req = validateViewRenderRequest(msg.payload, catalogIds);
     if (typeof req === 'string') {
@@ -441,9 +548,15 @@ export class FigmaWsHub {
   }
 }
 
-// Si se ejecuta directamente desde terminal:
+// Si se ejecuta directamente desde terminal o como binario instalado:
 const isDirectRun =
-  import.meta.url.endsWith(process.argv[1]?.replace(/\\/g, '/')) || process.argv[1]?.includes('ws-hub');
+  process.env.CTF_STANDALONE === '1' ||
+  (typeof require !== 'undefined' && typeof module !== 'undefined' && require.main === module) ||
+  (typeof import.meta !== 'undefined' &&
+    typeof import.meta.url === 'string' &&
+    import.meta.url.endsWith(process.argv[1]?.replace(/\\/g, '/'))) ||
+  process.argv[1]?.includes('ws-hub') ||
+  process.argv[1]?.includes('code-to-figma-hub');
 if (isDirectRun) {
   const hub = new FigmaWsHub();
   hub.start();

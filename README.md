@@ -24,6 +24,7 @@ Hay **un solo extractor**, compartido por la extensión y el crawler, y el plugi
 - **No edites los archivos generados**: llevan la cabecera "ARCHIVO GENERADO" y se sobrescriben.
 - Se versionan para que la extensión y el plugin se carguen sin compilar. El CI falla si no están al día (`npm run check:generated`).
 - `npm run build` compila todo en orden. `npm test` ejecuta la suite (ver [`tests/README.md`](./tests/README.md)).
+- Para usuarios no técnicos o distribución sin terminal, consulta la [**Guía de Instalación ("Cero Terminal")**](./docs/instalacion.md).
 
 ---
 
@@ -130,7 +131,7 @@ Para registrar el servidor MCP en tus clientes MCP (como Antigravity IDE, Claude
     "code-to-figma": {
       "command": "node",
       "args": [
-        "c:/Users/wposs/OneDrive/Escritorio/fimga/packages/mcp-server/dist/index.js"
+        "c:/Users/dakka/Documents/GitHub/extrac-desing/packages/mcp-server/dist/index.js"
       ]
     }
   }

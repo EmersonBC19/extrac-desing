@@ -21,29 +21,53 @@ import {
   variablesAvailable,
   type NumericUse,
 } from './variables';
-import { base64ToBytes } from '../paint';
+import { base64ToBytes, cssFillToPaint } from '../paint';
 
 /** Crea una instancia del maestro y le aplica el contenido propio (textos, imágenes, tamaño) */
 export async function buildBoardInstance(nodeData: any, master: ComponentNode): Promise<InstanceNode> {
   const inst = master.createInstance();
   inst.name = nodeData.name || master.name;
+  inst.visible = true;
 
   // Textos: emparejados en orden DFS (misma firma ⇒ misma estructura)
   const dataTexts = boardCollect(nodeData, (x: any) => x.type === 'TEXT');
   const figTexts = inst.findAll(n => n.type === 'TEXT') as TextNode[];
-  if (dataTexts.length === figTexts.length) {
-    for (let i = 0; i < figTexts.length; i++) {
-      const want = dataTexts[i].textData?.characters ?? '';
-      const tn = figTexts[i];
-      if (tn.characters === want) continue;
+  const maxTexts = Math.min(dataTexts.length, figTexts.length);
+  for (let i = 0; i < maxTexts; i++) {
+    const d = dataTexts[i];
+    const want = d.textData?.characters ?? '';
+    const tn = figTexts[i];
+    try {
+      const curFont: FontName =
+        tn.fontName !== figma.mixed ? (tn.fontName as FontName) : { family: 'Inter', style: 'Regular' };
       try {
-        const fonts = tn.characters.length
-          ? tn.getRangeAllFontNames(0, tn.characters.length)
-          : [tn.fontName as FontName];
-        for (const f of fonts) await figma.loadFontAsync(f);
-        tn.characters = want || ' ';
-      } catch (_e) {}
-    }
+        await figma.loadFontAsync(curFont);
+      } catch (_cfErr) {
+        try {
+          await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
+        } catch (_e) {}
+      }
+      try {
+        const font = await loadFontSafely(
+          d.textData?.fontStack || d.textData?.fontFamily || curFont.family,
+          d.textData?.fontWeight || 400,
+          { track: true },
+        );
+        await figma.loadFontAsync(font);
+        tn.fontName = font;
+      } catch (_fErr) {}
+      tn.characters = want || ' ';
+      if (typeof d.textData?.fontSize === 'number' && d.textData.fontSize > 0) {
+        try {
+          tn.fontSize = d.textData.fontSize;
+        } catch (_e) {}
+      }
+      if (d.styles?.fills && d.styles.fills.length > 0) {
+        try {
+          tn.fills = d.styles.fills.map((f: any) => cssFillToPaint(f, tn.width || 100, tn.height || 20));
+        } catch (_e) {}
+      }
+    } catch (_e) {}
   }
 
   // Imágenes: emparejadas en orden DFS
@@ -51,15 +75,14 @@ export async function buildBoardInstance(nodeData: any, master: ComponentNode): 
   const figImgs = inst.findAll(
     n => 'fills' in n && Array.isArray((n as any).fills) && ((n as any).fills as Paint[]).some(p => p.type === 'IMAGE'),
   ) as (SceneNode & MinimalFillsMixin)[];
-  if (dataImgs.length === figImgs.length) {
-    for (let i = 0; i < figImgs.length; i++) {
-      try {
-        const image = figma.createImage(base64ToBytes(dataImgs[i].imageData));
-        figImgs[i].fills = (figImgs[i].fills as Paint[]).map(p =>
-          p.type === 'IMAGE' ? { ...(p as ImagePaint), imageHash: image.hash } : p,
-        );
-      } catch (_e) {}
-    }
+  const maxImgs = Math.min(dataImgs.length, figImgs.length);
+  for (let i = 0; i < maxImgs; i++) {
+    try {
+      const image = figma.createImage(base64ToBytes(dataImgs[i].imageData));
+      figImgs[i].fills = (figImgs[i].fills as Paint[]).map(p =>
+        p.type === 'IMAGE' ? { ...(p as ImagePaint), imageHash: image.hash } : p,
+      );
+    } catch (_e) {}
   }
 
   const w =
@@ -68,8 +91,47 @@ export async function buildBoardInstance(nodeData: any, master: ComponentNode): 
     nodeData.layout?.measuredHeight ??
     (typeof nodeData.layout?.height === 'number' ? nodeData.layout.height : inst.height);
   try {
+    if (inst.layoutMode !== 'NONE') {
+      inst.layoutSizingHorizontal = 'FIXED';
+      inst.layoutSizingVertical = 'FIXED';
+    }
     if (w > 0 && h > 0) inst.resize(w, h);
   } catch (_e) {}
+
+  // Estilos visuales de la instancia si difieren del maestro
+  if (nodeData.styles?.fills && nodeData.styles.fills.length > 0) {
+    try {
+      inst.fills = nodeData.styles.fills.map((f: any) => cssFillToPaint(f, w || 100, h || 100));
+    } catch (_e) {}
+  }
+  if (nodeData.styles?.strokes && nodeData.styles.strokes.length > 0) {
+    try {
+      const stroke = nodeData.styles.strokes[0];
+      inst.strokes = [
+        {
+          type: 'SOLID',
+          color: { r: stroke.r, g: stroke.g, b: stroke.b },
+          opacity: stroke.a !== undefined ? stroke.a : 1,
+        },
+      ];
+      inst.strokeWeight = Math.max(1, stroke.width || 1);
+    } catch (_e) {}
+  }
+  if (typeof nodeData.styles?.cornerRadius === 'number') {
+    try {
+      inst.cornerRadius = Math.max(0, nodeData.styles.cornerRadius);
+    } catch (_e) {}
+  }
+
+  // Posicionamiento absoluto si aplica
+  if (nodeData.layout?.positioning === 'ABSOLUTE') {
+    try {
+      inst.layoutPositioning = 'ABSOLUTE';
+    } catch (_e) {}
+  }
+  if (typeof nodeData.layout?.x === 'number') inst.x = nodeData.layout.x;
+  if (typeof nodeData.layout?.y === 'number') inst.y = nodeData.layout.y;
+
   return inst;
 }
 
@@ -279,7 +341,11 @@ export async function boardBuildStyles(scope: SceneNode[], stylesSec: SectionNod
       st.lineHeight = g.lh;
       for (const tn of g.nodes) {
         try {
-          tn.textStyleId = st.id;
+          if (typeof (tn as any).setTextStyleIdAsync === 'function') {
+            await (tn as any).setTextStyleIdAsync(st.id);
+          } else {
+            tn.textStyleId = st.id;
+          }
         } catch (_e) {}
       }
       const sample = figma.createText();
@@ -287,7 +353,11 @@ export async function boardBuildStyles(scope: SceneNode[], stylesSec: SectionNod
       sample.characters = `${Math.round(g.size)} · ${g.font.family} ${g.font.style} — Aa Bb 123`;
       sample.fontSize = Math.min(g.size, 72);
       try {
-        sample.textStyleId = st.id;
+        if (typeof (sample as any).setTextStyleIdAsync === 'function') {
+          await (sample as any).setTextStyleIdAsync(st.id);
+        } else {
+          sample.textStyleId = st.id;
+        }
       } catch (_e) {}
       sample.fontSize = Math.min(g.size, 72);
       stylesSec.appendChild(sample);
@@ -325,7 +395,7 @@ export async function boardBuildStyles(scope: SceneNode[], stylesSec: SectionNod
   let vars: { collection: VariableCollection; modeId: string } | null = null;
   if (useVariables) {
     try {
-      vars = newCollection(prefix);
+      vars = await newCollection(prefix);
     } catch (varErr: any) {
       figma.ui.postMessage({
         type: 'LOG',
@@ -348,24 +418,28 @@ export async function boardBuildStyles(scope: SceneNode[], stylesSec: SectionNod
       const hex = boardColorKey({ ...g.color, a: g.alpha });
       const base: SolidPaint = { type: 'SOLID', color: g.color, opacity: g.alpha };
       let paint: SolidPaint = base;
-      let bindNode: (n: SceneNode & MinimalFillsMixin) => void;
+      let bindNode: (n: SceneNode & MinimalFillsMixin) => Promise<void>;
       if (vars) {
         const variable = colorVariable(vars.collection, vars.modeId, `Color/${hex.replace('#', '')}`, g.color);
         paint = boundSolidPaint(base, variable);
-        bindNode = n => {
+        bindNode = async n => {
           (n as any).fills = [paint];
         };
       } else {
         const st = figma.createPaintStyle();
         st.name = `${prefix}/Color/${hex}`;
         st.paints = [base];
-        bindNode = n => {
-          (n as any).fillStyleId = st.id;
+        bindNode = async n => {
+          if (typeof (n as any).setFillStyleIdAsync === 'function') {
+            await (n as any).setFillStyleIdAsync(st.id);
+          } else {
+            (n as any).fillStyleId = st.id;
+          }
         };
       }
       for (const n of g.items) {
         try {
-          bindNode(n);
+          await bindNode(n);
         } catch (_e) {}
       }
       const sw = figma.createRectangle();
@@ -487,6 +561,12 @@ function sectionToComponent(original: SceneNode, copy: SceneNode, title: string)
     const o = original as FrameNode;
     inst.x = o.x;
     inst.y = o.y;
+    // La copia de 02 lleva el fondo heredado (QA-2) para verse bien sola; en la vista completa la
+    // instancia queda con el fondo del original (casi siempre transparente). Si no, el fondo opaco
+    // tapaba lo que en la web se ve detrás: la cuadrícula de la página, líneas de circuito del título.
+    try {
+      inst.fills = JSON.parse(JSON.stringify(o.fills));
+    } catch (_e) {}
     try {
       inst.resize(o.width, o.height); // primero el tamaño: resize deja el sizing en FIXED
     } catch (_e) {}
@@ -576,6 +656,8 @@ export async function buildDesignBoard(
         message: `Componente "${g.name}" omitido: ${compErr?.message || compErr}`,
       });
     }
+    // Ceder el bucle de eventos para mantener Figma fluido y reactivo
+    await new Promise(resolve => setTimeout(resolve, 0));
   }
 
   // 1b. Variantes (fase 6.1): "Tile", "Tile 2", "Tile 3" con la misma forma → un Component Set
@@ -666,25 +748,24 @@ export async function buildDesignBoard(
   for (let i = 0; i < picked.length; i++) {
     let clone: SceneNode | null = null;
     try {
-      // Título primero; la copia se mete en la Section en cuanto se crea (nunca queda suelta)
+      // Sin rótulo de texto propio: Figma ya dibuja el nombre de cada frame/componente justo encima
+      // y los dos se pisaban ("❖ Sección / …" sobre "06 · Header / Navbar — …", igual que QA-9 en 03).
+      // El número y el título van en el nombre. La copia entra en la Section en cuanto se crea.
       const heading = boardHeadingOf(picked[i]);
-      const title = `${String(i + 1).padStart(2, '0')} · ${picked[i].name}` + (heading ? ` — ${heading}` : '');
-      const lbl = await boardLabel(title, 20, 600, { r: 0.1, g: 0.1, b: 0.12 });
-      subSec.appendChild(lbl);
-      lbl.x = 100;
-      lbl.y = sy;
+      const num = String(i + 1).padStart(2, '0');
       clone = picked[i].clone();
       subSec.appendChild(clone);
       clone.x = 100;
-      clone.y = sy + 44;
+      clone.y = sy;
+      clone.name = `${num} · ${picked[i].name}` + (heading ? ` — ${heading}` : '');
       // Sección como componente + instancia en la vista completa: editar la sección en 02 actualiza
       // la página completa (fase 6.3). Si no se puede (API antigua, ya es instancia…), queda la copia.
-      const asComponent = sectionToComponent(picked[i], clone, heading || picked[i].name);
+      const asComponent = sectionToComponent(picked[i], clone, `${num} · ${heading || picked[i].name}`);
       if (asComponent) {
         clone = asComponent;
         sectionComponents.push(asComponent);
       }
-      sy += 44 + clone.height + 140;
+      sy += clone.height + 140;
       subOk++;
     } catch (subErr: any) {
       if (clone && clone.parent !== subSec) {

@@ -6523,6 +6523,46 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     availableFontsCache = null;
     fontLookupMap.clear();
     fontResolutionCache.clear();
+    renderProbeCache.clear();
+  }
+  var fkey = (f) => f.family + "|" + f.style;
+  var renderProbeCache = /* @__PURE__ */ new Map();
+  var unrenderableFonts = /* @__PURE__ */ new Set();
+  var isBundledFallback = (f) => f.family === "Inter";
+  function fontRenders(font) {
+    if (isBundledFallback(font)) return true;
+    const key = fkey(font);
+    const cached2 = renderProbeCache.get(key);
+    if (cached2 !== void 0) return cached2;
+    let ok = true;
+    let probe = null;
+    try {
+      probe = figma.createText();
+      probe.fontName = font;
+      probe.fontSize = 24;
+      probe.characters = "Hxg";
+      probe.textAutoResize = "WIDTH_AND_HEIGHT";
+      ok = probe.width >= 1 && probe.height >= 18;
+    } catch (_e) {
+      ok = false;
+    } finally {
+      try {
+        probe?.remove();
+      } catch (_e) {
+      }
+    }
+    if (!ok) markFontUnrenderable(font);
+    else renderProbeCache.set(key, true);
+    return ok;
+  }
+  function markFontUnrenderable(font) {
+    const key = fkey(font);
+    renderProbeCache.set(key, false);
+    unrenderableFonts.add(`${font.family} ${font.style}`);
+    for (const [k, v] of fontResolutionCache) if (fkey(v) === key) fontResolutionCache.delete(k);
+  }
+  function getUnrenderableFonts() {
+    return Array.from(unrenderableFonts);
   }
   async function initFontCache() {
     if (availableFontsCache && fontLookupMap.size > 0) return;
@@ -6620,9 +6660,13 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
   var substitutions = /* @__PURE__ */ new Map();
   function resetFontReport() {
     substitutions.clear();
+    unrenderableFonts.clear();
   }
   function getFontReport() {
     return Array.from(substitutions.values()).sort((a, b) => b.texts - a.texts);
+  }
+  function trackFontUse(fontFamily, used) {
+    recordUse(fontFamily, used);
   }
   function recordUse(fontFamily, used) {
     const stack = String(fontFamily || "").split(",").map(cleanFamily).filter(Boolean);
@@ -6656,26 +6700,25 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     if (targetStyle === "Semi Bold") styleVariants.push("Semibold", "Semi-Bold", "Demibold");
     else if (targetStyle === "Extra Bold") styleVariants.push("Extrabold", "Extra-Bold");
     if (!styleVariants.includes("Regular")) styleVariants.push("Regular");
+    const usable = async (f) => {
+      if (renderProbeCache.get(fkey(f)) === false) return false;
+      try {
+        await figma.loadFontAsync(f);
+      } catch (_e) {
+        return false;
+      }
+      return fontRenders(f);
+    };
     if (fontLookupMap.size > 0) {
       for (const cand of candidates) {
         const availableStyles = fontLookupMap.get(cand.toLowerCase());
         if (availableStyles && availableStyles.length > 0) {
           for (const wantStyle of styleVariants) {
             const match = availableStyles.find((s) => s.style.toLowerCase() === wantStyle.toLowerCase());
-            if (match) {
-              try {
-                await figma.loadFontAsync(match);
-                return match;
-              } catch (_e) {
-              }
-            }
+            if (match && await usable(match)) return match;
           }
           const regularMatch = availableStyles.find((s) => s.style.toLowerCase() === "regular") || availableStyles[0];
-          try {
-            await figma.loadFontAsync(regularMatch);
-            return regularMatch;
-          } catch (_e) {
-          }
+          if (await usable(regularMatch)) return regularMatch;
         }
       }
     }
@@ -6898,7 +6941,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     "LINEAR_BURN"
   ]);
   var dropShadow = (s, withSpread) => ({
-    type: "DROP_SHADOW",
+    type: s.inset ? "INNER_SHADOW" : "DROP_SHADOW",
     color: { r: s.color.r, g: s.color.g, b: s.color.b, a: s.color.a !== void 0 ? s.color.a : 1 },
     offset: { x: s.offset.x, y: s.offset.y },
     radius: Math.max(0, s.radius),
@@ -6994,6 +7037,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     if (s.includes("/")) return s.replace(/\s+/g, " ");
     if (!/[-_]/.test(s)) return s.replace(/\s+/g, " ") || "Componente";
     s = s.split(/\s+/)[0] || s;
+    const vite = s.match(/^_([A-Za-z][\w-]*?)_[a-z0-9]{5}(?:_\d+)?$/);
+    if (vite) s = vite[1];
     const isHash = (p) => /^[A-Za-z0-9]{4,8}$/.test(p) && (/\d/.test(p) || /[A-Z].*[A-Z]/.test(p.slice(1)) || /^[a-z][A-Z]/.test(p));
     const parts = s.split(/__|--/).map((p) => p.replace(/^_+|_+$/g, "")).filter((p) => p && !isHash(p)).filter((p) => !/-module$/i.test(p));
     let core = parts.length ? parts[parts.length - 1] : s;
@@ -7008,6 +7053,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     const eligible = (n) => {
       if (n === root || n.type === "TEXT" || n.type === "SVG") return false;
       if (!n.children || n.children.length === 0) return false;
+      if (n.layout?.positioning === "ABSOLUTE") return false;
+      if ((n.children || []).some((c) => c.layout?.positioning === "ABSOLUTE")) return false;
+      if (/explorer|stage|scene|viewer|canvas/i.test(n.name || "")) return false;
       const styled = (n.styles?.fills || []).length > 0 || (n.styles?.strokes || []).length > 0;
       if (boardCountNodes(n) < 3 && !styled) return false;
       const area = (n.layout?.measuredWidth || 0) * (n.layout?.measuredHeight || 0);
@@ -7082,6 +7130,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     const byKey = /* @__PURE__ */ new Map();
     for (const g of groups) {
       const base = g.name.replace(/\s+\d+$/, "");
+      if (/^(card|container|box|item|stage|explorer|row|col)\b/i.test(base)) continue;
       const key = base + "§" + boardShapeSignature(g.occurrences[0]);
       if (!byKey.has(key)) byKey.set(key, []);
       byKey.get(key).push(g);
@@ -7149,10 +7198,11 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
   function safeVarName(name) {
     return name.replace(/\./g, ",").replace(/[${}]/g, "").trim() || "Variable";
   }
-  function newCollection(base) {
+  async function newCollection(base) {
     let existing = [];
     try {
-      existing = (figma.variables.getLocalVariableCollections?.() || []).map((c) => c.name);
+      const cols = typeof figma.variables.getLocalVariableCollectionsAsync === "function" ? await figma.variables.getLocalVariableCollectionsAsync() : figma.variables.getLocalVariableCollections?.() || [];
+      existing = cols.map((c) => c.name);
     } catch (_e) {
     }
     let name = base;
@@ -7207,11 +7257,13 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     const keep = (map) => [...map.entries()].filter(([, uses]) => uses.length >= minUses).sort((a, b) => a[0] - b[0]);
     return { spacing: keep(spacing2), radius: keep(radius) };
   }
-  function cssTokensToVariables(colors) {
+  async function cssTokensToVariables(colors) {
     const V = figma.variables;
-    const collection = (V.getLocalVariableCollections?.() || []).find((c) => c.name === "Tokens CSS") || V.createVariableCollection("Tokens CSS");
+    const collections = typeof V.getLocalVariableCollectionsAsync === "function" ? await V.getLocalVariableCollectionsAsync() : V.getLocalVariableCollections?.() || [];
+    const collection = collections.find((c) => c.name === "Tokens CSS") || V.createVariableCollection("Tokens CSS");
     const modeId = collection.modes[0].modeId;
-    const existing = (V.getLocalVariables?.("COLOR") || []).filter((v) => v.variableCollectionId === collection.id);
+    const allVars = typeof V.getLocalVariablesAsync === "function" ? await V.getLocalVariablesAsync("COLOR") : V.getLocalVariables?.("COLOR") || [];
+    const existing = allVars.filter((v) => v.variableCollectionId === collection.id);
     let count = 0;
     for (const [token, c] of Object.entries(colors)) {
       try {
@@ -7229,42 +7281,108 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
   async function buildBoardInstance(nodeData, master) {
     const inst = master.createInstance();
     inst.name = nodeData.name || master.name;
+    inst.visible = true;
     const dataTexts = boardCollect(nodeData, (x) => x.type === "TEXT");
     const figTexts = inst.findAll((n) => n.type === "TEXT");
-    if (dataTexts.length === figTexts.length) {
-      for (let i = 0; i < figTexts.length; i++) {
-        const want = dataTexts[i].textData?.characters ?? "";
-        const tn = figTexts[i];
-        if (tn.characters === want) continue;
+    const maxTexts = Math.min(dataTexts.length, figTexts.length);
+    for (let i = 0; i < maxTexts; i++) {
+      const d = dataTexts[i];
+      const want = d.textData?.characters ?? "";
+      const tn = figTexts[i];
+      try {
+        const curFont = tn.fontName !== figma.mixed ? tn.fontName : { family: "Inter", style: "Regular" };
         try {
-          const fonts = tn.characters.length ? tn.getRangeAllFontNames(0, tn.characters.length) : [tn.fontName];
-          for (const f of fonts) await figma.loadFontAsync(f);
-          tn.characters = want || " ";
-        } catch (_e) {
+          await figma.loadFontAsync(curFont);
+        } catch (_cfErr) {
+          try {
+            await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+          } catch (_e) {
+          }
         }
+        try {
+          const font = await loadFontSafely(
+            d.textData?.fontStack || d.textData?.fontFamily || curFont.family,
+            d.textData?.fontWeight || 400,
+            { track: true }
+          );
+          await figma.loadFontAsync(font);
+          tn.fontName = font;
+        } catch (_fErr) {
+        }
+        tn.characters = want || " ";
+        if (typeof d.textData?.fontSize === "number" && d.textData.fontSize > 0) {
+          try {
+            tn.fontSize = d.textData.fontSize;
+          } catch (_e) {
+          }
+        }
+        if (d.styles?.fills && d.styles.fills.length > 0) {
+          try {
+            tn.fills = d.styles.fills.map((f) => cssFillToPaint(f, tn.width || 100, tn.height || 20));
+          } catch (_e) {
+          }
+        }
+      } catch (_e) {
       }
     }
     const dataImgs = boardCollect(nodeData, (x) => !!x.imageData);
     const figImgs = inst.findAll(
       (n) => "fills" in n && Array.isArray(n.fills) && n.fills.some((p) => p.type === "IMAGE")
     );
-    if (dataImgs.length === figImgs.length) {
-      for (let i = 0; i < figImgs.length; i++) {
-        try {
-          const image = figma.createImage(base64ToBytes(dataImgs[i].imageData));
-          figImgs[i].fills = figImgs[i].fills.map(
-            (p) => p.type === "IMAGE" ? { ...p, imageHash: image.hash } : p
-          );
-        } catch (_e) {
-        }
+    const maxImgs = Math.min(dataImgs.length, figImgs.length);
+    for (let i = 0; i < maxImgs; i++) {
+      try {
+        const image = figma.createImage(base64ToBytes(dataImgs[i].imageData));
+        figImgs[i].fills = figImgs[i].fills.map(
+          (p) => p.type === "IMAGE" ? { ...p, imageHash: image.hash } : p
+        );
+      } catch (_e) {
       }
     }
     const w = nodeData.layout?.measuredWidth ?? (typeof nodeData.layout?.width === "number" ? nodeData.layout.width : inst.width);
     const h = nodeData.layout?.measuredHeight ?? (typeof nodeData.layout?.height === "number" ? nodeData.layout.height : inst.height);
     try {
+      if (inst.layoutMode !== "NONE") {
+        inst.layoutSizingHorizontal = "FIXED";
+        inst.layoutSizingVertical = "FIXED";
+      }
       if (w > 0 && h > 0) inst.resize(w, h);
     } catch (_e) {
     }
+    if (nodeData.styles?.fills && nodeData.styles.fills.length > 0) {
+      try {
+        inst.fills = nodeData.styles.fills.map((f) => cssFillToPaint(f, w || 100, h || 100));
+      } catch (_e) {
+      }
+    }
+    if (nodeData.styles?.strokes && nodeData.styles.strokes.length > 0) {
+      try {
+        const stroke = nodeData.styles.strokes[0];
+        inst.strokes = [
+          {
+            type: "SOLID",
+            color: { r: stroke.r, g: stroke.g, b: stroke.b },
+            opacity: stroke.a !== void 0 ? stroke.a : 1
+          }
+        ];
+        inst.strokeWeight = Math.max(1, stroke.width || 1);
+      } catch (_e) {
+      }
+    }
+    if (typeof nodeData.styles?.cornerRadius === "number") {
+      try {
+        inst.cornerRadius = Math.max(0, nodeData.styles.cornerRadius);
+      } catch (_e) {
+      }
+    }
+    if (nodeData.layout?.positioning === "ABSOLUTE") {
+      try {
+        inst.layoutPositioning = "ABSOLUTE";
+      } catch (_e) {
+      }
+    }
+    if (typeof nodeData.layout?.x === "number") inst.x = nodeData.layout.x;
+    if (typeof nodeData.layout?.y === "number") inst.y = nodeData.layout.y;
     return inst;
   }
   function boardPickSections(root) {
@@ -7417,7 +7535,11 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         st.lineHeight = g.lh;
         for (const tn of g.nodes) {
           try {
-            tn.textStyleId = st.id;
+            if (typeof tn.setTextStyleIdAsync === "function") {
+              await tn.setTextStyleIdAsync(st.id);
+            } else {
+              tn.textStyleId = st.id;
+            }
           } catch (_e) {
           }
         }
@@ -7426,7 +7548,11 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         sample.characters = `${Math.round(g.size)} · ${g.font.family} ${g.font.style} — Aa Bb 123`;
         sample.fontSize = Math.min(g.size, 72);
         try {
-          sample.textStyleId = st.id;
+          if (typeof sample.setTextStyleIdAsync === "function") {
+            await sample.setTextStyleIdAsync(st.id);
+          } else {
+            sample.textStyleId = st.id;
+          }
         } catch (_e) {
         }
         sample.fontSize = Math.min(g.size, 72);
@@ -7462,7 +7588,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     let vars = null;
     if (useVariables) {
       try {
-        vars = newCollection(prefix);
+        vars = await newCollection(prefix);
       } catch (varErr) {
         figma.ui.postMessage({
           type: "LOG",
@@ -7488,20 +7614,24 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         if (vars) {
           const variable = colorVariable(vars.collection, vars.modeId, `Color/${hex.replace("#", "")}`, g.color);
           paint = boundSolidPaint(base, variable);
-          bindNode = (n) => {
+          bindNode = async (n) => {
             n.fills = [paint];
           };
         } else {
           const st = figma.createPaintStyle();
           st.name = `${prefix}/Color/${hex}`;
           st.paints = [base];
-          bindNode = (n) => {
-            n.fillStyleId = st.id;
+          bindNode = async (n) => {
+            if (typeof n.setFillStyleIdAsync === "function") {
+              await n.setFillStyleIdAsync(st.id);
+            } else {
+              n.fillStyleId = st.id;
+            }
           };
         }
         for (const n of g.items) {
           try {
-            bindNode(n);
+            await bindNode(n);
           } catch (_e) {
           }
         }
@@ -7609,6 +7739,10 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
       inst.x = o.x;
       inst.y = o.y;
       try {
+        inst.fills = JSON.parse(JSON.stringify(o.fills));
+      } catch (_e) {
+      }
+      try {
         inst.resize(o.width, o.height);
       } catch (_e) {
       }
@@ -7688,6 +7822,7 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
           message: `Componente "${g.name}" omitido: ${compErr?.message || compErr}`
         });
       }
+      await new Promise((resolve) => setTimeout(resolve, 0));
     }
     const items = [];
     const inSet = /* @__PURE__ */ new Set();
@@ -7767,21 +7902,18 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
       let clone2 = null;
       try {
         const heading = boardHeadingOf(picked[i]);
-        const title = `${String(i + 1).padStart(2, "0")} · ${picked[i].name}` + (heading ? ` — ${heading}` : "");
-        const lbl = await boardLabel(title, 20, 600, { r: 0.1, g: 0.1, b: 0.12 });
-        subSec.appendChild(lbl);
-        lbl.x = 100;
-        lbl.y = sy;
+        const num = String(i + 1).padStart(2, "0");
         clone2 = picked[i].clone();
         subSec.appendChild(clone2);
         clone2.x = 100;
-        clone2.y = sy + 44;
-        const asComponent = sectionToComponent(picked[i], clone2, heading || picked[i].name);
+        clone2.y = sy;
+        clone2.name = `${num} · ${picked[i].name}` + (heading ? ` — ${heading}` : "");
+        const asComponent = sectionToComponent(picked[i], clone2, `${num} · ${heading || picked[i].name}`);
         if (asComponent) {
           clone2 = asComponent;
           sectionComponents.push(asComponent);
         }
-        sy += 44 + clone2.height + 140;
+        sy += clone2.height + 140;
         subOk++;
       } catch (subErr) {
         if (clone2 && clone2.parent !== subSec) {
@@ -7892,6 +8024,26 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
   }
 
   // packages/figma-plugin/src/render.ts
+  var _renderedNodeCount = 0;
+  var _totalBatchNodes = 0;
+  function setRenderBatchContext(total) {
+    _renderedNodeCount = 0;
+    _totalBatchNodes = total;
+  }
+  async function yieldToFigma(_force = false) {
+    _renderedNodeCount++;
+    if (_totalBatchNodes > 0 && typeof figma !== "undefined" && figma.ui && _renderedNodeCount % 10 === 0) {
+      try {
+        figma.ui.postMessage({
+          type: "RENDER_PROGRESS",
+          rendered: _renderedNodeCount,
+          total: _totalBatchNodes,
+          percent: Math.min(100, Math.round(_renderedNodeCount / _totalBatchNodes * 100))
+        });
+      } catch (_e) {
+      }
+    }
+  }
   function countNodes(node2) {
     let count = 1;
     if (node2.children) {
@@ -7920,11 +8072,8 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
           await figma.loadFontAsync({ family: "Inter", style: "Regular" });
         } catch (_e) {
         }
-        const font = await loadFontSafely(
-          nodeData.textData.fontStack || nodeData.textData.fontFamily,
-          nodeData.textData.fontWeight,
-          { track: true }
-        );
+        const fontStack = nodeData.textData.fontStack || nodeData.textData.fontFamily;
+        let font = await loadFontSafely(fontStack, nodeData.textData.fontWeight);
         const textNode = figma.createText();
         try {
           textNode.fontName = font;
@@ -7939,6 +8088,19 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
           textNode.fontSize = Math.max(1, nodeData.textData.fontSize || 14);
         } catch (_e) {
         }
+        for (let attempt = 0; attempt < 3; attempt++) {
+          if (!(textNode.characters || "").trim() || textNode.width >= 1) break;
+          const current2 = textNode.fontName;
+          if (!current2 || current2 === figma.mixed || current2.family === "Inter") break;
+          markFontUnrenderable(current2);
+          font = await loadFontSafely(fontStack, nodeData.textData.fontWeight);
+          try {
+            textNode.fontName = font;
+          } catch (_e) {
+            break;
+          }
+        }
+        trackFontUse(fontStack, textNode.fontName !== figma.mixed ? textNode.fontName : font);
         if (nodeData.textData.lineHeight && nodeData.textData.lineHeight > 0) {
           try {
             textNode.lineHeight = { value: nodeData.textData.lineHeight, unit: "PIXELS" };
@@ -7991,20 +8153,50 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
         }
         createdNode = textNode;
       } else if (nodeData.type === "SVG" && nodeData.svgContent) {
+        let svgNode;
         try {
-          const svgNode = figma.createNodeFromSvg(nodeData.svgContent);
-          const targetW = typeof nodeData.layout?.width === "number" ? nodeData.layout.width : 24;
-          const targetH = typeof nodeData.layout?.height === "number" ? nodeData.layout.height : 24;
-          if (targetW > 0 && targetH > 0) {
-            svgNode.resize(targetW, targetH);
+          svgNode = figma.createNodeFromSvg(nodeData.svgContent);
+        } catch (_err) {
+          try {
+            const fallbackHex = "#94a3b8";
+            const sanitized = nodeData.svgContent.replace(/fill="url\(#[^"]+\)"/gi, `fill="${fallbackHex}"`).replace(/stroke="url\(#[^"]+\)"/gi, `stroke="${fallbackHex}"`).replace(/filter="url\(#[^"]+\)"/gi, "").replace(/<filter[\s\S]*?<\/filter>/gi, "");
+            svgNode = figma.createNodeFromSvg(sanitized);
+          } catch (sanErr) {
+            log.warn("No se pudo crear SVG, se usa un frame de reemplazo", { error: errText(sanErr) });
+            const fallback = figma.createFrame();
+            fallback.resize(24, 24);
+            svgNode = fallback;
           }
-          createdNode = svgNode;
-        } catch (err) {
-          log.warn("No se pudo crear SVG, se usa un frame de reemplazo", { error: errText(err) });
-          const fallback = figma.createFrame();
-          fallback.resize(24, 24);
-          createdNode = fallback;
         }
+        const targetW = typeof nodeData.layout?.width === "number" ? nodeData.layout.width : 24;
+        const targetH = typeof nodeData.layout?.height === "number" ? nodeData.layout.height : 24;
+        if (targetW > 0 && targetH > 0) {
+          svgNode.resize(targetW, targetH);
+        }
+        if (nodeData.styles?.cornerRadius !== void 0) {
+          if (typeof nodeData.styles.cornerRadius === "number" && nodeData.styles.cornerRadius > 0) {
+            svgNode.cornerRadius = nodeData.styles.cornerRadius;
+          } else if (Array.isArray(nodeData.styles.cornerRadius) && nodeData.styles.cornerRadius.length === 4) {
+            const [tl, tr, br, bl] = nodeData.styles.cornerRadius;
+            svgNode.topLeftRadius = Math.max(0, tl);
+            svgNode.topRightRadius = Math.max(0, tr);
+            svgNode.bottomRightRadius = Math.max(0, br);
+            svgNode.bottomLeftRadius = Math.max(0, bl);
+          }
+          svgNode.clipsContent = true;
+        }
+        if (nodeData.styles?.fills && nodeData.styles.fills.length > 0) {
+          const toPaint = (f) => cssFillToPaint(f, targetW, targetH);
+          svgNode.fills = nodeData.styles.fills.map(toPaint);
+        }
+        const svgEffects = effectsFromStyles(nodeData.styles, "FRAME");
+        if (svgEffects.length > 0) {
+          try {
+            svgNode.effects = svgEffects;
+          } catch (_effErr) {
+          }
+        }
+        createdNode = svgNode;
       } else {
         const frame = nodeData.type === "COMPONENT" ? figma.createComponent() : figma.createFrame();
         createdNode = frame;
@@ -8065,9 +8257,11 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
             const imagePaint = {
               type: "IMAGE",
               scaleMode: nodeData.styles?.imageScaleMode || "FILL",
-              imageHash: image.hash
+              imageHash: image.hash,
+              scalingFactor: nodeData.styles?.imageScaleMode === "TILE" ? 1 : void 0
             };
             frame.fills = [...baseFills.map(toPaint), imagePaint, ...overlayFills.map(toPaint)];
+            await yieldToFigma(true);
           } catch (_imgErr) {
             log.warn("Error decodificando imagen base64", { error: errText(_imgErr) });
             figma.ui.postMessage({
@@ -8079,6 +8273,8 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
           }
         } else if (nodeData.styles?.fills) {
           frame.fills = nodeData.styles.fills.map(toPaint);
+        } else {
+          frame.fills = [];
         }
         if (nodeData.styles?.strokes && nodeData.styles.strokes.length > 0) {
           const stroke = nodeData.styles.strokes[0];
@@ -8102,6 +8298,27 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
             }
           } else {
             frame.strokeWeight = Math.max(1, stroke.width || 1);
+          }
+          if (stroke.style === "DASHED") {
+            try {
+              const dash = Math.max(4, stroke.width * 3);
+              const gap = Math.max(3, stroke.width * 2);
+              frame.dashPattern = [dash, gap];
+              frame.strokeDashes = [dash, gap];
+              frame.strokeCap = "ROUND";
+              frame.strokeJoin = "ROUND";
+            } catch (_e) {
+            }
+          } else if (stroke.style === "DOTTED") {
+            try {
+              const dot = Math.max(1, stroke.width);
+              const gap = Math.max(3, stroke.width * 2.5);
+              frame.dashPattern = [dot, gap];
+              frame.strokeDashes = [dot, gap];
+              frame.strokeCap = "ROUND";
+              frame.strokeJoin = "ROUND";
+            } catch (_e) {
+            }
           }
         }
         if (nodeData.styles?.cornerRadius !== void 0) {
@@ -8132,32 +8349,136 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
           } catch (_e) {
           }
         }
-        const hasRoundCorners = typeof frame.cornerRadius === "number" ? frame.cornerRadius > 0 : false;
-        const hasFills = Array.isArray(frame.fills) && frame.fills.length > 0;
-        frame.clipsContent = !!(nodeData.clipsContent || hasRoundCorners && hasFills);
+        frame.clipsContent = !!nodeData.clipsContent;
+        if (nodeData.styles?.accentBorder) {
+          const ab = nodeData.styles.accentBorder;
+          try {
+            const abW = ab.width || 3;
+            const abColor = toPaint(ab.color);
+            const fW = Math.max(1, initW);
+            const fH = Math.max(1, initH);
+            if (ab.style === "DOTTED" || ab.style === "DASHED") {
+              const line = figma.createLine();
+              line.name = `Accent / ${ab.side}`;
+              line.strokes = [abColor];
+              line.strokeWeight = abW;
+              const dash = ab.style === "DASHED" ? Math.max(4, abW * 3) : Math.max(1, abW);
+              const gap = ab.style === "DASHED" ? Math.max(3, abW * 2) : Math.max(3, abW * 2.5);
+              try {
+                line.dashPattern = [dash, gap];
+                line.strokeCap = "ROUND";
+              } catch (_e) {
+              }
+              frame.appendChild(line);
+              if (frame.layoutMode !== "NONE" && "layoutPositioning" in line) {
+                try {
+                  line.layoutPositioning = "ABSOLUTE";
+                } catch (_e) {
+                }
+              }
+              if (ab.side === "LEFT" || ab.side === "RIGHT") {
+                line.rotation = -90;
+                line.resize(fH, 0);
+                line.x = ab.side === "LEFT" ? Math.round(abW / 2) : fW - Math.round(abW / 2);
+                line.y = fH;
+              } else {
+                line.resize(fW, 0);
+                line.x = 0;
+                line.y = ab.side === "TOP" ? Math.round(abW / 2) : fH - Math.round(abW / 2);
+              }
+            } else {
+              const accentRect = figma.createRectangle();
+              accentRect.name = `Accent / ${ab.side}`;
+              accentRect.fills = [abColor];
+              accentRect.strokes = [];
+              accentRect.strokeWeight = 0;
+              const rawCr = nodeData.styles?.cornerRadius;
+              const cr = typeof rawCr === "number" ? [rawCr, rawCr, rawCr, rawCr] : rawCr;
+              if (Array.isArray(cr) && cr.length === 4) {
+                const [tl, tr, br, bl] = cr;
+                if (ab.side === "LEFT") {
+                  accentRect.topLeftRadius = Math.max(0, tl);
+                  accentRect.bottomLeftRadius = Math.max(0, bl);
+                  accentRect.topRightRadius = 0;
+                  accentRect.bottomRightRadius = 0;
+                } else if (ab.side === "RIGHT") {
+                  accentRect.topRightRadius = Math.max(0, tr);
+                  accentRect.bottomRightRadius = Math.max(0, br);
+                  accentRect.topLeftRadius = 0;
+                  accentRect.bottomLeftRadius = 0;
+                } else if (ab.side === "TOP") {
+                  accentRect.topLeftRadius = Math.max(0, tl);
+                  accentRect.topRightRadius = Math.max(0, tr);
+                  accentRect.bottomLeftRadius = 0;
+                  accentRect.bottomRightRadius = 0;
+                } else if (ab.side === "BOTTOM") {
+                  accentRect.bottomLeftRadius = Math.max(0, bl);
+                  accentRect.bottomRightRadius = Math.max(0, br);
+                  accentRect.topLeftRadius = 0;
+                  accentRect.topRightRadius = 0;
+                }
+              }
+              frame.appendChild(accentRect);
+              if (frame.layoutMode !== "NONE" && "layoutPositioning" in accentRect) {
+                try {
+                  accentRect.layoutPositioning = "ABSOLUTE";
+                } catch (_e) {
+                }
+              }
+              if (ab.side === "LEFT") {
+                accentRect.x = 0;
+                accentRect.y = 0;
+                accentRect.resize(abW, fH);
+                accentRect.constraints = { horizontal: "MIN", vertical: "STRETCH" };
+              } else if (ab.side === "RIGHT") {
+                accentRect.x = fW - abW;
+                accentRect.y = 0;
+                accentRect.resize(abW, fH);
+                accentRect.constraints = { horizontal: "MAX", vertical: "STRETCH" };
+              } else if (ab.side === "TOP") {
+                accentRect.x = 0;
+                accentRect.y = 0;
+                accentRect.resize(fW, abW);
+                accentRect.constraints = { horizontal: "STRETCH", vertical: "MIN" };
+              } else if (ab.side === "BOTTOM") {
+                accentRect.x = 0;
+                accentRect.y = fH - abW;
+                accentRect.resize(fW, abW);
+                accentRect.constraints = { horizontal: "STRETCH", vertical: "MAX" };
+              }
+            }
+          } catch (_e) {
+          }
+        }
         if (nodeData.children && nodeData.children.length > 0) {
           for (const childData of nodeData.children) {
-            const childNode = await buildFigmaNode(childData);
-            if (childNode)
-              try {
+            try {
+              const childNode = await buildFigmaNode(childData);
+              if (childNode) {
                 frame.appendChild(childNode);
                 if (frame.layoutMode !== "NONE") {
                   const layoutChild = childNode;
                   if (childData.layout?.positioning === "ABSOLUTE") {
                     try {
-                      const targetW = typeof childData.layout.width === "number" && childData.layout.width > 0 ? childData.layout.width : childData.layout.measuredWidth || layoutChild.width || 100;
-                      const targetH = typeof childData.layout.height === "number" && childData.layout.height > 0 ? childData.layout.height : childData.layout.measuredHeight || layoutChild.height || 100;
+                      if ("layoutPositioning" in layoutChild) {
+                        try {
+                          layoutChild.layoutPositioning = "ABSOLUTE";
+                        } catch (_posErr) {
+                          log.warn("No se pudo fijar layoutPositioning ABSOLUTE", { error: errText(_posErr) });
+                        }
+                      }
+                      if (typeof childData.layout.x === "number") childNode.x = childData.layout.x;
+                      if (typeof childData.layout.y === "number") childNode.y = childData.layout.y;
+                      const specW = typeof childData.layout.width === "number" && childData.layout.width > 0 ? childData.layout.width : childData.layout.measuredWidth || layoutChild.width || 100;
+                      const specH = typeof childData.layout.height === "number" && childData.layout.height > 0 ? childData.layout.height : childData.layout.measuredHeight || layoutChild.height || 100;
+                      const targetW = specW;
+                      const targetH = specH;
                       if (targetW > 0 && targetH > 0 && typeof layoutChild.resize === "function") {
                         try {
                           layoutChild.resize(targetW, targetH);
                         } catch (_resErr) {
                         }
                       }
-                      if ("layoutPositioning" in layoutChild) {
-                        layoutChild.layoutPositioning = "ABSOLUTE";
-                      }
-                      if (typeof childData.layout.x === "number") childNode.x = childData.layout.x;
-                      if (typeof childData.layout.y === "number") childNode.y = childData.layout.y;
                     } catch (absErr) {
                       log.warn("Error configurando layoutPositioning ABSOLUTE", { error: errText(absErr) });
                     }
@@ -8240,11 +8561,16 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
                 } else {
                   if (typeof childData.layout?.x === "number") childNode.x = childData.layout.x;
                   if (typeof childData.layout?.y === "number") childNode.y = childData.layout.y;
-                  if (childNode.type === "FRAME" || childNode.type === "COMPONENT") {
-                    const targetW = (typeof childData.layout?.width === "number" ? childData.layout.width : childData.layout?.measuredWidth) || childNode.width;
-                    const targetH = (typeof childData.layout?.height === "number" ? childData.layout.height : childData.layout?.measuredHeight) || childNode.height;
+                  if (childNode.type === "FRAME" || childNode.type === "COMPONENT" || childNode.type === "INSTANCE") {
+                    const dataW = (typeof childData.layout?.width === "number" ? childData.layout.width : childData.layout?.measuredWidth) || childNode.width;
+                    const dataH = (typeof childData.layout?.height === "number" ? childData.layout.height : childData.layout?.measuredHeight) || childNode.height;
+                    const targetW = dataW;
+                    const targetH = dataH;
                     if (targetW > 0 && targetH > 0 && (targetW !== childNode.width || targetH !== childNode.height)) {
-                      childNode.resize(targetW, targetH);
+                      try {
+                        childNode.resize(targetW, targetH);
+                      } catch (_e) {
+                      }
                     }
                   } else if (childNode.type === "TEXT" && childData.textData?.noWrap) {
                     applyNoWrapSizing(childNode, childData, false);
@@ -8260,13 +8586,14 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
                     }
                   }
                 }
-              } catch (childErr) {
-                figma.ui.postMessage({
-                  type: "LOG",
-                  level: "warn",
-                  message: `Ajuste de capa "${childData.name}" incompleto: ${childErr?.message || childErr}`
-                });
               }
+            } catch (childErr) {
+              figma.ui.postMessage({
+                type: "LOG",
+                level: "warn",
+                message: `Ajuste de capa "${childData.name}" incompleto: ${childErr?.message || childErr}`
+              });
+            }
           }
         }
         const hasSelfFixedW = typeof nodeData.layout?.width === "number" && nodeData.layout.width > 0;
@@ -8348,6 +8675,55 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
   }
 
   // packages/figma-plugin/src/render-command.ts
+  function textReport(root, payloadRoot) {
+    let expected = 0;
+    (function walk(n) {
+      if (!n) return;
+      if (n.type === "TEXT" && n.textData) expected++;
+      for (const c of n.children || []) walk(c);
+    })(payloadRoot);
+    const created = root.type === "TEXT" ? [root] : typeof root.findAll === "function" ? root.findAll((n) => n.type === "TEXT") : [];
+    const rb = root.absoluteBoundingBox || { x: root.x || 0, y: root.y || 0 };
+    const r = (v) => typeof v === "number" ? Math.round(v) : v;
+    const samples = created.slice(0, 12).map((t) => {
+      const bb = t.absoluteBoundingBox;
+      const rend = t.absoluteRenderBounds;
+      const clippedBy = [];
+      for (let p = t.parent; p && p.type !== "PAGE"; p = p.parent) {
+        if (p.clipsContent) clippedBy.push(`${p.name} ${r(p.width)}x${r(p.height)}`);
+        if (p === root) break;
+      }
+      const fn = t.fontName;
+      return {
+        text: String(t.characters || "").slice(0, 40),
+        font: fn && fn.family ? `${fn.family} ${fn.style}` : "mixed",
+        fontSize: r(t.fontSize),
+        size: `${r(t.width)}x${r(t.height)}`,
+        at: bb ? `${r(bb.x - rb.x)},${r(bb.y - rb.y)}` : `${r(t.x)},${r(t.y)}`,
+        painted: rend === void 0 ? "n/d" : rend ? `${r(rend.width)}x${r(rend.height)}` : "NO",
+        visible: t.visible,
+        opacity: t.opacity,
+        fills: JSON.stringify(t.fills).slice(0, 140),
+        autoResize: t.textAutoResize,
+        clippedBy
+      };
+    });
+    return { expected, created: created.length, unrenderableFonts: getUnrenderableFonts(), samples };
+  }
+  function safeTextReport(root, payloadRoot, post2) {
+    try {
+      const rep = textReport(root, payloadRoot);
+      const notPainted = rep.samples.filter((s) => s.painted === "NO").length;
+      post2({
+        type: "LOG",
+        level: rep.created < rep.expected || notPainted ? "warn" : "info",
+        message: `Textos: ${rep.created}/${rep.expected} creados` + (notPainted ? `, ${notPainted} sin pintar en el lienzo` : "") + (rep.samples[0] ? ` · ej. "${rep.samples[0].text}" ${rep.samples[0].font} ${rep.samples[0].size}` : "")
+      });
+      return rep;
+    } catch (e) {
+      return { error: String(e?.message || e) };
+    }
+  }
   async function renderNodesCommand(rawPayload, post2, log2) {
     const payload = rawPayload;
     const t0 = Date.now();
@@ -8355,6 +8731,14 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     setUserFontMap(payload?.fontMap);
     resetFontReport();
     const reportFonts = () => {
+      const broken = getUnrenderableFonts();
+      if (broken.length) {
+        post2({
+          type: "LOG",
+          level: "warn",
+          message: `Figma tiene instaladas pero no puede dibujar: ${broken.slice(0, 6).join(", ")}${broken.length > 6 ? ` y ${broken.length - 6} más` : ""}. Se usó la siguiente fuente de la pila. Reinstala esa fuente (o reinicia Figma y su agente de fuentes) para recuperarla.`
+        });
+      }
       const subs = getFontReport();
       if (!subs.length) return void 0;
       const top = subs.slice(0, 6).map((x) => `${x.requested} → ${x.used} (${x.texts})`);
@@ -8375,6 +8759,9 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     if (invalid) throw new Error(`Payload inválido: ${invalid}`);
     let targetPage = figma.currentPage;
     if (payload.pageName) {
+      if (typeof figma.loadAllPagesAsync === "function") {
+        await figma.loadAllPagesAsync();
+      }
       const found = figma.root.children.find((p) => p.name === payload.pageName);
       if (found) {
         targetPage = found;
@@ -8383,7 +8770,11 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
         newPage.name = payload.pageName;
         targetPage = newPage;
       }
-      figma.currentPage = targetPage;
+      if (typeof figma.setCurrentPageAsync === "function") {
+        await figma.setCurrentPageAsync(targetPage);
+      } else {
+        figma.currentPage = targetPage;
+      }
     }
     if (payload.createAsComponent) {
       payload.rootNode.type = "COMPONENT";
@@ -8391,15 +8782,16 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     let createdTokensCount = 0;
     if (payload.tokens?.colors && variablesAvailable()) {
       try {
-        createdTokensCount = cssTokensToVariables(payload.tokens.colors);
+        createdTokensCount = await cssTokensToVariables(payload.tokens.colors);
       } catch (_varErr) {
       }
     }
     if (payload.tokens?.colors && !createdTokensCount && typeof figma.createPaintStyle === "function") {
+      const localStyles = typeof figma.getLocalPaintStylesAsync === "function" ? await figma.getLocalPaintStylesAsync() : figma.getLocalPaintStyles();
       for (const [tokenName, rgba] of Object.entries(payload.tokens.colors)) {
         try {
           const cleanName = "Token / " + tokenName.replace(/^--/, "");
-          const existing = figma.getLocalPaintStyles().find((s) => s.name === cleanName);
+          const existing = localStyles.find((s) => s.name === cleanName);
           const style = existing || figma.createPaintStyle();
           style.name = cleanName;
           style.paints = [
@@ -8420,6 +8812,8 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     }
     await prewarmFonts(payload.rootNode);
     const fontsMs = Date.now() - t0;
+    const totalNodes = countNodes(payload.rootNode);
+    setRenderBatchContext(totalNodes);
     if (payload.board) {
       const boardStart = Date.now();
       const pageBefore = figma.currentPage;
@@ -8483,6 +8877,7 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
           tokensCount: createdTokensCount,
           rawPayload: payload.rootNode,
           fontSubstitutions: reportFonts(),
+          textReport: safeTextReport(board.main, payload.rootNode, post2),
           durationMs: boardTotal,
           timings: { fontsMs, buildMs: boardTotal - (boardStart - t0), totalMs: boardTotal }
         });
@@ -8576,6 +8971,7 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
         tokensCount: createdTokensCount,
         rawPayload: payload.rootNode,
         fontSubstitutions: reportFonts(),
+        textReport: safeTextReport(rootFigmaNode, payload.rootNode, post2),
         durationMs: totalMs,
         timings: { fontsMs, buildMs, placeMs: totalMs - (renderStartTime - t0) - buildMs, totalMs }
       });
@@ -8719,10 +9115,10 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     GET_PAGE_INFO: () => {
       post({ type: "PAGE_INFO", pageName: figma.currentPage.name });
     },
-    FOCUS_NODE: (msg) => {
+    FOCUS_NODE: async (msg) => {
       if (!msg.nodeId) return;
       try {
-        const node2 = figma.getNodeById(msg.nodeId);
+        const node2 = await findNode(msg.nodeId);
         if (node2) {
           figma.currentPage.selection = [node2];
           figma.viewport.scrollAndZoomIntoView([node2]);
@@ -8730,10 +9126,10 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
       } catch (_e) {
       }
     },
-    CONVERT_TO_COMPONENT: (msg) => {
+    CONVERT_TO_COMPONENT: async (msg) => {
       if (!msg.nodeId) return;
       try {
-        const node2 = figma.getNodeById(msg.nodeId);
+        const node2 = await findNode(msg.nodeId);
         if (node2 && node2.type === "FRAME") {
           const comp = figma.createComponent();
           comp.name = node2.name;
@@ -8777,6 +9173,63 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
         log.error("Fallo en RENDER_NODES", { error: err?.message || String(err) });
         post({ type: "RENDER_ERROR", error: err?.message || String(err) });
       }
+    },
+    GET_AVAILABLE_FONTS: async () => {
+      try {
+        if (typeof figma.listAvailableFontsAsync === "function") {
+          const fonts = await figma.listAvailableFontsAsync();
+          const familiesSet = /* @__PURE__ */ new Set();
+          for (const f of fonts) familiesSet.add(f.fontName.family);
+          const uniqueFamilies = Array.from(familiesSet).sort();
+          post({
+            type: "AVAILABLE_FONTS",
+            fonts: uniqueFamilies.map((fam) => ({ family: fam, style: "Regular" }))
+          });
+        }
+      } catch (err) {
+        log.warn("No se pudo listar fuentes disponibles", { error: String(err?.message || err) });
+      }
+    },
+    REPLACE_FONTS: async (msg) => {
+      const mapping = msg.mapping || {};
+      const targetNode = msg.targetNodeId ? await findNode(msg.targetNodeId) : null;
+      const scope = targetNode && !targetNode.removed ? targetNode : figma.currentPage;
+      const textNodes = scope.findAllWithCriteria ? scope.findAllWithCriteria({ types: ["TEXT"] }) : scope.findAll ? scope.findAll((n) => n.type === "TEXT") : [];
+      let replacedCount = 0;
+      for (const tNode of textNodes) {
+        try {
+          const curFont = tNode.fontName;
+          if (curFont === figma.mixed) continue;
+          const curFam = curFont.family;
+          const curStyle = curFont.style;
+          const targetFam = mapping[curFam] || mapping[`${curFam}:::${curStyle}`];
+          if (targetFam && targetFam !== curFam) {
+            try {
+              await figma.loadFontAsync({ family: targetFam, style: curStyle });
+              tNode.fontName = { family: targetFam, style: curStyle };
+              replacedCount++;
+            } catch (_e1) {
+              try {
+                await figma.loadFontAsync({ family: targetFam, style: "Regular" });
+                tNode.fontName = { family: targetFam, style: "Regular" };
+                replacedCount++;
+              } catch (_e2) {
+              }
+            }
+          }
+        } catch (_tErr) {
+        }
+      }
+      post({
+        type: "FONTS_REPLACED",
+        count: replacedCount,
+        details: `${replacedCount} capa(s) de texto actualizadas con las nuevas tipografías.`
+      });
+      post({
+        type: "LOG",
+        level: "success",
+        message: `Tipografía reemplazada en ${replacedCount} capa(s) de texto.`
+      });
     }
   };
   async function findNode(id) {

@@ -9,11 +9,65 @@ export let availableFontsCache: Font[] | null = null;
 
 export const fontLookupMap: Map<string, FontName[]> = new Map();
 
-/** Olvidar la lista de fuentes: una fuente instalada después se usa en el siguiente render */
+/** Olvidar la lista de fuentes: una fuente instalada (o reparada) después se usa en el siguiente render */
 export function refreshFontCache(): void {
   availableFontsCache = null;
   fontLookupMap.clear();
   fontResolutionCache.clear();
+  renderProbeCache.clear();
+}
+
+// ── Fuentes que Figma lista y "carga" pero no puede dibujar ────────────────────────────────
+// Visto en Figma real con SF Pro instalada en Windows: listAvailableFontsAsync la ofrece y
+// loadFontAsync no falla, pero el texto se queda en 0×15 px (el tamaño de un texto vacío) y no se
+// pinta: desaparecían todos los textos de apple.com. Por eso cada fuente elegida se prueba una vez
+// con un texto temporal antes de usarla.
+const fkey = (f: FontName) => f.family + '|' + f.style;
+const renderProbeCache = new Map<string, boolean>();
+const unrenderableFonts = new Set<string>();
+/** Inter viene con Figma: siempre dibuja y es el respaldo final, no se prueba */
+const isBundledFallback = (f: FontName) => f.family === 'Inter';
+
+/** ¿Figma maqueta texto con esta fuente (ya cargada)? */
+export function fontRenders(font: FontName): boolean {
+  if (isBundledFallback(font)) return true;
+  const key = fkey(font);
+  const cached = renderProbeCache.get(key);
+  if (cached !== undefined) return cached;
+  let ok = true;
+  let probe: TextNode | null = null;
+  try {
+    probe = figma.createText();
+    probe.fontName = font;
+    probe.fontSize = 24;
+    probe.characters = 'Hxg';
+    probe.textAutoResize = 'WIDTH_AND_HEIGHT';
+    // Una fuente que funciona da algo de ancho y un alto cercano al cuerpo (24 px);
+    // la rota deja el tamaño de un texto vacío (0 × ~15)
+    ok = probe.width >= 1 && probe.height >= 18;
+  } catch (_e) {
+    ok = false;
+  } finally {
+    try {
+      probe?.remove();
+    } catch (_e) {}
+  }
+  if (!ok) markFontUnrenderable(font);
+  else renderProbeCache.set(key, true);
+  return ok;
+}
+
+/** Descarta una fuente para el resto del render (y olvida las resoluciones que la elegían) */
+export function markFontUnrenderable(font: FontName): void {
+  const key = fkey(font);
+  renderProbeCache.set(key, false);
+  unrenderableFonts.add(`${font.family} ${font.style}`);
+  for (const [k, v] of fontResolutionCache) if (fkey(v) === key) fontResolutionCache.delete(k);
+}
+
+/** Fuentes instaladas que Figma no pudo dibujar en este render ("Familia Estilo") */
+export function getUnrenderableFonts(): string[] {
+  return Array.from(unrenderableFonts);
 }
 
 export async function initFontCache(): Promise<void> {
@@ -142,9 +196,15 @@ export interface FontSubstitution {
 const substitutions = new Map<string, FontSubstitution>();
 export function resetFontReport(): void {
   substitutions.clear();
+  unrenderableFonts.clear();
 }
 export function getFontReport(): FontSubstitution[] {
   return Array.from(substitutions.values()).sort((a, b) => b.texts - a.texts);
+}
+
+/** Contar en el reporte la fuente con la que quedó finalmente un texto */
+export function trackFontUse(fontFamily: string | undefined, used: FontName): void {
+  recordUse(fontFamily, used);
 }
 
 function recordUse(fontFamily: string | undefined, used: FontName) {
@@ -199,7 +259,18 @@ async function resolveFont(fontFamily: string, fontWeight: number | string): Pro
   else if (targetStyle === 'Extra Bold') styleVariants.push('Extrabold', 'Extra-Bold');
   if (!styleVariants.includes('Regular')) styleVariants.push('Regular');
 
-  // Con el mapa de fuentes de Figma: la primera candidata que existe, con el estilo más cercano
+  /** Cargada y capaz de dibujar (las que Figma no maqueta se saltan: ver fontRenders) */
+  const usable = async (f: FontName): Promise<boolean> => {
+    if (renderProbeCache.get(fkey(f)) === false) return false;
+    try {
+      await figma.loadFontAsync(f);
+    } catch (_e) {
+      return false;
+    }
+    return fontRenders(f);
+  };
+
+  // Con el mapa de fuentes de Figma: la primera candidata que existe y dibuja, con el estilo más cercano
   if (fontLookupMap.size > 0) {
     for (const cand of candidates) {
       const availableStyles = fontLookupMap.get(cand.toLowerCase());
@@ -207,19 +278,11 @@ async function resolveFont(fontFamily: string, fontWeight: number | string): Pro
         // 1. Coincidencia exacta con el estilo / peso deseado
         for (const wantStyle of styleVariants) {
           const match = availableStyles.find(s => s.style.toLowerCase() === wantStyle.toLowerCase());
-          if (match) {
-            try {
-              await figma.loadFontAsync(match);
-              return match;
-            } catch (_e) {}
-          }
+          if (match && (await usable(match))) return match;
         }
         // 2. Si no está ese estilo, Regular o el primero disponible
         const regularMatch = availableStyles.find(s => s.style.toLowerCase() === 'regular') || availableStyles[0];
-        try {
-          await figma.loadFontAsync(regularMatch);
-          return regularMatch;
-        } catch (_e) {}
+        if (await usable(regularMatch)) return regularMatch;
       }
     }
   }

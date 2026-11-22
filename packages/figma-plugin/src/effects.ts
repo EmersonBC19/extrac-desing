@@ -27,10 +27,11 @@ interface CssShadow {
   offset: { x: number; y: number };
   radius: number;
   spread?: number;
+  inset?: boolean;
 }
 
-const dropShadow = (s: CssShadow, withSpread: boolean): DropShadowEffect => ({
-  type: 'DROP_SHADOW',
+const dropShadow = (s: CssShadow, withSpread: boolean): DropShadowEffect | InnerShadowEffect => ({
+  type: s.inset ? 'INNER_SHADOW' : 'DROP_SHADOW',
   color: { r: s.color.r, g: s.color.g, b: s.color.b, a: s.color.a !== undefined ? s.color.a : 1 },
   offset: { x: s.offset.x, y: s.offset.y },
   radius: Math.max(0, s.radius),

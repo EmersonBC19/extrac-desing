@@ -5,19 +5,32 @@
   <title>Code to Figma AI — Studio & Receiver</title>
   <style>
     :root {
-      --bg: #0d1117;
-      --card-bg: #161b22;
-      --card-border: rgba(255, 255, 255, 0.08);
-      --card-border-hover: rgba(162, 89, 255, 0.45);
-      --text: #f0f6fc;
-      --text-muted: #8b949e;
-      --accent: #a855f7;
-      --accent-blue: #3b82f6;
-      --accent-glow: rgba(168, 85, 247, 0.25);
+      --bg: #131417;
+      --surface-1: #1a1b20;
+      --surface-2: #22242b;
+      --surface-hover: #292c35;
+      --surface-active: #323541;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-hover: rgba(255, 255, 255, 0.16);
+      --border-focus: #8b5cf6;
+      --text: #f4f4f7;
+      --text-muted: #8b8f9e;
+      --text-dim: #606473;
+      --accent: #8b5cf6;
+      --accent-gradient: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+      --accent-gradient-hover: linear-gradient(135deg, #986ef8 0%, #7276f5 100%);
+      --accent-glow: rgba(139, 92, 246, 0.25);
       --green: #10b981;
-      --green-glow: rgba(16, 185, 129, 0.2);
+      --green-bg: rgba(16, 185, 129, 0.12);
+      --green-border: rgba(16, 185, 129, 0.28);
       --amber: #f59e0b;
-      --red: #ef4444;
+      --red: #f43f5e;
+      --red-bg: rgba(244, 63, 94, 0.12);
+      --red-border: rgba(244, 63, 94, 0.28);
+      --radius-sm: 6px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      --radius-pill: 9999px;
     }
 
     * {
@@ -26,22 +39,24 @@
       padding: 0;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif;
       scrollbar-width: thin;
-      scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+      scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
 
     ::-webkit-scrollbar {
-      width: 5px;
-      height: 5px;
+      width: 4px;
+      height: 4px;
     }
     ::-webkit-scrollbar-track {
       background: transparent;
     }
     ::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.15);
+      background: rgba(255, 255, 255, 0.14);
       border-radius: 4px;
     }
     ::-webkit-scrollbar-thumb:hover {
-      background: rgba(255, 255, 255, 0.3);
+      background: rgba(255, 255, 255, 0.24);
     }
     ::-webkit-scrollbar-button {
       display: none !important;
@@ -67,14 +82,14 @@
       flex-shrink: 0;
     }
 
-    /* Header */
+    /* ── Header ── */
     .header {
       display: flex;
       align-items: center;
       justify-content: space-between;
       margin-bottom: 8px;
       padding-bottom: 8px;
-      border-bottom: 1px solid var(--card-border);
+      border-bottom: 1px solid var(--border);
       flex-shrink: 0;
     }
 
@@ -88,7 +103,7 @@
       width: 26px;
       height: 26px;
       border-radius: 7px;
-      background: linear-gradient(135deg, #a855f7, #3b82f6);
+      background: var(--accent-gradient);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -101,6 +116,20 @@
       font-size: 12.5px;
       letter-spacing: -0.2px;
       color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .brand-pill {
+      font-size: 9px;
+      font-weight: 600;
+      color: #a78bfa;
+      background: rgba(139, 92, 246, 0.15);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      padding: 1px 5px;
+      border-radius: 10px;
+      letter-spacing: 0;
     }
 
     .brand-sub {
@@ -109,32 +138,33 @@
       font-weight: 500;
     }
 
-    /* Badges */
+    /* ── Status Badge ── */
     .badge {
       display: inline-flex;
       align-items: center;
       gap: 5px;
-      padding: 3px 8px;
+      padding: 3px 9px;
       border-radius: 12px;
       font-size: 10px;
       font-weight: 600;
       cursor: pointer;
       transition: all 0.2s ease;
+      border: 1px solid transparent;
     }
     .badge.connected {
-      background: rgba(16, 185, 129, 0.12);
+      background: var(--green-bg);
       color: #34d399;
-      border: 1px solid rgba(16, 185, 129, 0.3);
+      border-color: var(--green-border);
     }
     .badge.disconnected {
-      background: rgba(239, 68, 68, 0.12);
-      color: #f87171;
-      border: 1px solid rgba(239, 68, 68, 0.3);
+      background: var(--red-bg);
+      color: #fb7185;
+      border-color: var(--red-border);
     }
     .badge.connecting {
       background: rgba(245, 158, 11, 0.12);
       color: #fbbf24;
-      border: 1px solid rgba(245, 158, 11, 0.3);
+      border-color: rgba(245, 158, 11, 0.3);
     }
     .pulse-dot {
       width: 6px;
@@ -144,36 +174,63 @@
     }
     .badge.connected .pulse-dot {
       box-shadow: 0 0 6px #10b981;
+      animation: pulseGreen 2s infinite ease-in-out;
+    }
+    @keyframes pulseGreen {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(1.15); }
     }
 
-    /* Pestañas de Navegación — 100% Responsive, Zero Scrollbar */
+    /* ── Vinculación con el hub ── */
+    .pairing-banner {
+      display: none;
+      margin-bottom: 8px;
+      padding: 10px 12px;
+      background: var(--surface-1);
+      border: 1px solid rgba(139, 92, 246, 0.4);
+      border-radius: var(--radius-md);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+    }
+    .pairing-banner.visible { display: block; }
+    .pairing-title { font-size: 11.5px; font-weight: 700; color: #fff; margin-bottom: 3px; display: flex; align-items: center; gap: 6px; }
+    .pairing-desc { font-size: 10px; color: var(--text-muted); line-height: 1.4; margin-bottom: 8px; }
+    .pairing-desc code { color: #a78bfa; background: rgba(255, 255, 255, 0.06); padding: 1px 4px; border-radius: 4px; font-family: ui-monospace, monospace; }
+    .pairing-row { display: flex; gap: 6px; }
+    .pairing-row input {
+      flex: 1; min-width: 0;
+      background: var(--bg); color: var(--text);
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      padding: 6px 9px; font: 600 12px/1 ui-monospace, monospace; letter-spacing: 1.5px; text-transform: uppercase;
+      outline: none; transition: border-color 0.15s;
+    }
+    .pairing-row input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
+    .pairing-row button {
+      background: var(--accent-gradient); color: #fff; border: 0; border-radius: var(--radius-sm);
+      padding: 6px 14px; font-size: 10.5px; font-weight: 600; cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .pairing-row button:hover { opacity: 0.95; transform: translateY(-1px); }
+    .pairing-error { font-size: 10px; color: var(--red); margin-top: 5px; min-height: 0; }
+
+    /* ── Pestañas de Navegación (Segmented Bar) ── */
     .tabs-nav {
       display: flex;
       gap: 3px;
       margin-bottom: 8px;
-      background: rgba(22, 27, 34, 0.9);
+      background: rgba(255, 255, 255, 0.035);
       padding: 3px;
-      border-radius: 8px;
-      border: 1px solid var(--card-border);
+      border-radius: 9px;
+      border: 1px solid var(--border);
       flex-shrink: 0;
-      overflow: hidden !important;
-      overflow-x: hidden !important;
-      overflow-y: hidden !important;
-      scrollbar-width: none !important;
-      -ms-overflow-style: none !important;
-    }
-    .tabs-nav::-webkit-scrollbar {
-      display: none !important;
-      width: 0 !important;
-      height: 0 !important;
+      overflow: hidden;
     }
 
     .tab-btn {
       flex: 1 1 0;
       min-width: 0;
-      padding: 6px 2px;
+      padding: 6px 4px;
       border-radius: 6px;
-      border: none;
+      border: 1px solid transparent;
       background: transparent;
       color: var(--text-muted);
       font-size: 10px;
@@ -182,8 +239,8 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 3px;
-      transition: all 0.15s ease;
+      gap: 4px;
+      transition: all 0.18s ease;
       white-space: nowrap;
       overflow: hidden;
     }
@@ -195,26 +252,33 @@
     }
 
     .tab-btn:hover {
-      color: #fff;
+      color: var(--text);
       background: rgba(255, 255, 255, 0.05);
     }
 
     .tab-btn.active {
-      background: linear-gradient(135deg, #a855f7, #3b82f6);
+      background: var(--surface-2);
       color: #fff;
-      box-shadow: 0 2px 8px var(--accent-glow);
+      border-color: rgba(255, 255, 255, 0.12);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
     }
 
     .tab-badge {
       font-size: 9px;
-      background: rgba(255, 255, 255, 0.22);
+      background: rgba(255, 255, 255, 0.12);
+      color: var(--text);
       padding: 1px 4px;
       border-radius: 8px;
       font-weight: 700;
       flex-shrink: 0;
+      transition: all 0.15s ease;
+    }
+    .tab-btn.active .tab-badge {
+      background: var(--accent);
+      color: #fff;
     }
 
-    /* Contenedores de Pestañas */
+    /* ── Contenedores de Pestañas ── */
     .tab-content {
       display: none;
       flex-direction: column;
@@ -228,9 +292,9 @@
 
     /* ── Tab 1: Receptor en Vivo ── */
     .receiver-banner {
-      background: rgba(168, 85, 247, 0.08);
-      border: 1px solid rgba(168, 85, 247, 0.25);
-      border-radius: 8px;
+      background: rgba(139, 92, 246, 0.08);
+      border: 1px solid rgba(139, 92, 246, 0.22);
+      border-radius: var(--radius-md);
       padding: 6px 10px;
       margin-bottom: 8px;
       display: flex;
@@ -244,8 +308,12 @@
       align-items: center;
       gap: 6px;
       font-weight: 600;
-      color: #c084fc;
+      color: #c4b5fd;
       font-size: 10.5px;
+    }
+
+    .receiver-status-title svg {
+      color: var(--accent);
     }
 
     .receiver-shortcuts {
@@ -263,6 +331,7 @@
       padding-right: 2px;
     }
 
+    /* ── Empty State Ilustrado ── */
     .empty-state {
       flex: 1;
       display: flex;
@@ -270,49 +339,116 @@
       align-items: center;
       justify-content: center;
       text-align: center;
-      padding: 24px 16px;
+      padding: 16px 12px;
       color: var(--text-muted);
     }
 
-    .empty-icon-wrap {
-      width: 44px;
-      height: 44px;
-      border-radius: 50%;
-      background: rgba(168, 85, 247, 0.1);
-      border: 1px dashed rgba(168, 85, 247, 0.35);
+    .empty-radar {
+      position: relative;
+      width: 60px;
+      height: 60px;
       display: flex;
       align-items: center;
       justify-content: center;
-      color: var(--accent);
       margin-bottom: 12px;
-      animation: pulseGlow 2.5s infinite;
     }
 
-    @keyframes pulseGlow {
-      0%, 100% { transform: scale(1); opacity: 0.9; }
-      50% { transform: scale(1.06); opacity: 1; }
+    .radar-ring {
+      position: absolute;
+      border-radius: 50%;
+      border: 1px dashed rgba(139, 92, 246, 0.35);
+      animation: radarPulse 3s infinite ease-out;
+    }
+    .radar-ring.r1 { width: 56px; height: 56px; animation-delay: 0s; }
+    .radar-ring.r2 { width: 40px; height: 40px; animation-delay: 1s; }
+
+    .radar-center {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: rgba(139, 92, 246, 0.16);
+      border: 1px solid rgba(139, 92, 246, 0.45);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #a78bfa;
+      box-shadow: 0 0 14px var(--accent-glow);
+    }
+
+    @keyframes radarPulse {
+      0% { transform: scale(0.85); opacity: 0.8; }
+      50% { transform: scale(1.1); opacity: 0.3; }
+      100% { transform: scale(1.25); opacity: 0; }
     }
 
     .empty-title {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+      color: #fff;
       margin-bottom: 4px;
+      letter-spacing: -0.2px;
     }
 
     .empty-desc {
       font-size: 10px;
       line-height: 1.45;
-      max-width: 280px;
-      margin-bottom: 12px;
+      max-width: 310px;
+      margin-bottom: 14px;
+      color: var(--text-muted);
     }
 
-    /* Tarjetas del Inbox */
+    .empty-steps {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 14px;
+      width: 100%;
+      max-width: 380px;
+    }
+
+    .step-card {
+      flex: 1;
+      background: var(--surface-1);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 8px 6px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      font-size: 9.5px;
+      color: var(--text-muted);
+      text-align: center;
+    }
+
+    .step-num {
+      width: 17px;
+      height: 17px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+      font-weight: 700;
+      font-size: 9px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .step-card kbd {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      padding: 0 3px;
+      border-radius: 3px;
+      font-family: ui-monospace, monospace;
+      color: #fff;
+      font-size: 9px;
+    }
+
+    /* ── Tarjetas del Inbox ── */
     .inbox-card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 8px;
-      padding: 9px 10px;
+      background: var(--surface-1);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 8px 10px;
       display: flex;
       flex-direction: column;
       gap: 6px;
@@ -320,8 +456,9 @@
     }
 
     .inbox-card:hover {
-      border-color: var(--card-border-hover);
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+      border-color: var(--border-hover);
+      background: var(--surface-2);
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
     }
 
     .inbox-card-header {
@@ -347,15 +484,15 @@
     .inbox-card-meta {
       display: flex;
       align-items: center;
-      gap: 5px;
+      gap: 4px;
       flex-wrap: wrap;
       font-size: 9.5px;
       color: var(--text-muted);
     }
 
     .meta-tag {
-      background: rgba(255, 255, 255, 0.06);
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
       padding: 1.5px 5px;
       border-radius: 4px;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -363,15 +500,15 @@
     }
 
     .meta-tag.comp {
-      color: #c084fc;
-      border-color: rgba(168, 85, 247, 0.3);
-      background: rgba(168, 85, 247, 0.1);
+      color: #c4b5fd;
+      border-color: rgba(139, 92, 246, 0.35);
+      background: rgba(139, 92, 246, 0.12);
     }
 
     .meta-tag.token {
       color: #34d399;
-      border-color: rgba(16, 185, 129, 0.3);
-      background: rgba(16, 185, 129, 0.1);
+      border-color: var(--green-border);
+      background: var(--green-bg);
     }
 
     .inbox-card-actions {
@@ -382,10 +519,10 @@
     }
 
     .card-btn {
-      background: rgba(255, 255, 255, 0.08);
-      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border);
       border-radius: 5px;
-      padding: 3.5px 7px;
+      padding: 3.5px 8px;
       font-size: 10px;
       font-weight: 500;
       color: var(--text);
@@ -397,29 +534,31 @@
     }
 
     .card-btn:hover {
-      background: rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.12);
+      border-color: var(--border-hover);
       color: #fff;
     }
 
     .card-btn.primary {
-      background: rgba(168, 85, 247, 0.2);
-      border-color: rgba(168, 85, 247, 0.4);
-      color: #c084fc;
+      background: rgba(139, 92, 246, 0.15);
+      border-color: rgba(139, 92, 246, 0.35);
+      color: #c4b5fd;
     }
     .card-btn.primary:hover {
       background: var(--accent);
+      border-color: var(--accent);
       color: #fff;
     }
 
     .card-btn.danger {
-      color: #f87171;
-      border-color: rgba(239, 68, 68, 0.25);
-      background: rgba(239, 68, 68, 0.08);
+      color: #fb7185;
+      border-color: var(--red-border);
+      background: var(--red-bg);
     }
     .card-btn.danger:hover {
-      background: rgba(239, 68, 68, 0.22);
-      border-color: #ef4444;
-      color: #fee2e2;
+      background: rgba(244, 63, 94, 0.22);
+      border-color: var(--red);
+      color: #fff;
     }
 
     /* ── Tab 2: Importar JSON ── */
@@ -430,23 +569,68 @@
       height: 100%;
     }
 
+    .import-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+    }
+
+    .import-title {
+      font-weight: 700;
+      font-size: 11px;
+      color: #fff;
+    }
+
+    .import-subtitle {
+      font-size: 9.5px;
+      color: var(--text-muted);
+    }
+
+    .import-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    .json-editor-wrap {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #0d0e11;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      transition: border-color 0.15s;
+    }
+
+    .json-editor-wrap:focus-within {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-glow);
+    }
+
+    .json-editor-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 8px;
+      background: rgba(255, 255, 255, 0.03);
+      border-bottom: 1px solid var(--border);
+      font-size: 9px;
+      color: var(--text-dim);
+      font-family: ui-monospace, monospace;
+    }
+
     .json-textarea {
       flex: 1;
-      background: #090d13;
-      border: 1px solid var(--card-border);
-      border-radius: 8px;
-      padding: 10px;
-      color: #e6edf3;
+      background: transparent;
+      border: none;
+      padding: 8px 10px;
+      color: #e2e8f0;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       font-size: 10px;
       resize: none;
       outline: none;
-      line-height: 1.4;
-    }
-
-    .json-textarea:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 2px var(--accent-glow);
+      line-height: 1.45;
     }
 
     .json-status-bar {
@@ -455,14 +639,35 @@
       justify-content: space-between;
       font-size: 10px;
       color: var(--text-muted);
-      padding: 0 4px;
+      padding: 0 2px;
+    }
+
+    .import-options-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 4px 0;
+    }
+
+    .checkbox-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      font-size: 10px;
+      color: var(--text);
+      user-select: none;
+    }
+    .checkbox-pill input[type="checkbox"] {
+      accent-color: var(--accent);
+      cursor: pointer;
     }
 
     .btn-gradient {
-      background: linear-gradient(135deg, #a855f7, #3b82f6);
+      background: var(--accent-gradient);
       color: #fff;
       border: none;
-      border-radius: 7px;
+      border-radius: var(--radius-sm);
       padding: 9px 14px;
       font-weight: 600;
       font-size: 11px;
@@ -472,70 +677,275 @@
       justify-content: center;
       gap: 6px;
       box-shadow: 0 2px 10px var(--accent-glow);
-      transition: all 0.2s ease;
+      transition: all 0.18s ease;
     }
 
     .btn-gradient:hover:not(:disabled) {
+      background: var(--accent-gradient-hover);
       transform: translateY(-1px);
-      box-shadow: 0 4px 14px rgba(168, 85, 247, 0.4);
+      box-shadow: 0 4px 14px rgba(139, 92, 246, 0.4);
     }
 
     .btn-gradient:disabled {
-      opacity: 0.5;
+      opacity: 0.45;
       cursor: not-allowed;
       transform: none;
+      box-shadow: none;
     }
 
-    /* ── Tab 3: Ajustes ── */
+    /* ── Tab 3: Ajustes (Segmented Controls) ── */
     .settings-container {
       overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 8px;
       padding-right: 2px;
     }
 
     .settings-group {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 8px;
-      padding: 10px 12px;
+      background: var(--surface-1);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 9px 11px;
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 7px;
     }
 
     .settings-group-title {
       font-weight: 700;
-      font-size: 11px;
+      font-size: 10.5px;
       color: #fff;
       display: flex;
       align-items: center;
       gap: 6px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-      padding-bottom: 6px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      padding-bottom: 5px;
     }
 
-    .setting-item {
+    /* Segmented Cards para Estructura */
+    .segmented-cards {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    .segmented-card {
+      position: relative;
+      cursor: pointer;
+      display: block;
+    }
+
+    .segmented-card input[type="radio"] {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .segmented-card-inner {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 7px 8px;
       display: flex;
-      align-items: flex-start;
+      flex-direction: column;
+      gap: 3px;
+      transition: all 0.15s ease;
+      height: 100%;
+    }
+
+    .segmented-card:hover .segmented-card-inner {
+      border-color: var(--border-hover);
+    }
+
+    .segmented-card:has(input[type="radio"]:checked) .segmented-card-inner {
+      background: rgba(139, 92, 246, 0.14);
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent);
+    }
+
+    .segmented-card-title {
+      font-weight: 600;
+      font-size: 10.5px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .segmented-card-desc {
+      font-size: 9px;
+      color: var(--text-muted);
+      line-height: 1.35;
+    }
+
+    /* Segmented Tabs para Tablero y Disposición */
+    .segmented-tabs {
+      display: flex;
+      background: rgba(255, 255, 255, 0.04);
+      padding: 2.5px;
+      border-radius: 7px;
+      border: 1px solid var(--border);
+      gap: 2px;
+    }
+
+    .segmented-tab {
+      flex: 1;
+      position: relative;
+      cursor: pointer;
+      text-align: center;
+      user-select: none;
+    }
+
+    .segmented-tab input[type="radio"] {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .segmented-tab-label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      padding: 5px 6px;
+      border-radius: 5px;
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text-muted);
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+
+    .segmented-tab:hover .segmented-tab-label {
+      color: var(--text);
+    }
+
+    .segmented-tab:has(input[type="radio"]:checked) .segmented-tab-label {
+      background: var(--surface-active);
+      color: #fff;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .setting-caption {
+      font-size: 9.2px;
+      color: var(--text-dim);
+      line-height: 1.35;
+      padding: 0 2px;
+    }
+
+    /* Switch Rows para Tokens y Fuentes */
+    .switch-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
       gap: 8px;
       cursor: pointer;
-      font-size: 10.5px;
+      padding: 3px 0;
     }
 
-    .setting-item input[type="radio"],
-    .setting-item input[type="checkbox"] {
-      margin-top: 2px;
-      accent-color: var(--accent);
+    .switch-text {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5px;
+      flex: 1;
+    }
+
+    .switch-title {
+      font-weight: 600;
+      font-size: 10px;
+      color: var(--text);
+    }
+
+    .switch-desc {
+      font-size: 9px;
+      color: var(--text-muted);
+      line-height: 1.3;
+    }
+
+    .switch-toggle {
+      position: relative;
+      width: 30px;
+      height: 17px;
+      flex-shrink: 0;
+    }
+
+    .switch-toggle input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .switch-track {
+      position: absolute;
       cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: rgba(255, 255, 255, 0.12);
+      transition: .2s ease;
+      border-radius: 17px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
     }
 
-    .setting-desc {
+    .switch-track:before {
+      position: absolute;
+      content: "";
+      height: 13px;
+      width: 13px;
+      left: 1px;
+      bottom: 1px;
+      background-color: #fff;
+      transition: .2s ease;
+      border-radius: 50%;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    }
+
+    .switch-toggle input:checked + .switch-track {
+      background-color: var(--accent);
+      border-color: var(--accent);
+    }
+
+    .switch-toggle input:checked + .switch-track:before {
+      transform: translateX(13px);
+    }
+
+    .font-map-box {
+      margin-top: 3px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .font-map-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
       font-size: 9.5px;
       color: var(--text-muted);
-      margin-top: 2px;
-      line-height: 1.35;
+    }
+
+    .font-map-tip {
+      font-family: ui-monospace, monospace;
+      color: var(--text-dim);
+      font-size: 8.5px;
+    }
+
+    #txtFontMap {
+      width: 100%;
+      box-sizing: border-box;
+      font: 10px/1.4 ui-monospace, Menlo, Consolas, monospace;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 6px 8px;
+      resize: vertical;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    #txtFontMap:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent);
     }
 
     /* ── Tab 4: Vistas App ── */
@@ -548,13 +958,14 @@
 
     .search-input {
       flex: 1;
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 6px;
+      background: var(--surface-1);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
       padding: 6px 9px;
       color: #fff;
       font-size: 10px;
       outline: none;
+      transition: border-color 0.15s;
     }
 
     .search-input:focus {
@@ -573,10 +984,10 @@
     }
 
     .chip {
-      background: rgba(255, 255, 255, 0.06);
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
       border-radius: 12px;
-      padding: 3px 8px;
+      padding: 2.5px 8px;
       font-size: 9.5px;
       color: var(--text-muted);
       cursor: pointer;
@@ -585,9 +996,9 @@
     }
 
     .chip.active {
-      background: rgba(59, 130, 246, 0.2);
-      border-color: rgba(59, 130, 246, 0.4);
-      color: #60a5fa;
+      background: rgba(139, 92, 246, 0.15);
+      border-color: rgba(139, 92, 246, 0.4);
+      color: #c4b5fd;
       font-weight: 600;
     }
 
@@ -601,12 +1012,23 @@
     }
 
     .stat-card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 8px;
-      padding: 8px;
+      background: var(--surface-1);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 8px 6px;
       text-align: center;
+      position: relative;
+      overflow: hidden;
     }
+
+    .stat-indicator {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+    }
+    .stat-blue .stat-indicator { background: #38bdf8; }
+    .stat-purple .stat-indicator { background: #a855f7; }
+    .stat-green .stat-indicator { background: #34d399; }
 
     .stat-label {
       font-size: 8.5px;
@@ -624,11 +1046,52 @@
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     }
 
+    .terminal-toolbar {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+
+    .terminal-window {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #090a0d;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+    }
+
+    .terminal-titlebar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 9px;
+      background: rgba(255, 255, 255, 0.03);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .terminal-dots {
+      display: flex;
+      gap: 4px;
+    }
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+    }
+    .dot.red { background: #ef4444; }
+    .dot.yellow { background: #f59e0b; }
+    .dot.green { background: #10b981; }
+
+    .terminal-title {
+      font-size: 9px;
+      color: var(--text-dim);
+      font-family: ui-monospace, monospace;
+    }
+
     .logs-terminal {
       flex: 1;
-      background: #06090e;
-      border: 1px solid var(--card-border);
-      border-radius: 8px;
       padding: 8px 10px;
       overflow-y: auto;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -648,46 +1111,31 @@
     .log-info { color: #94a3b8; }
     .log-success { color: #34d399; }
     .log-warn { color: #fbbf24; }
-    .log-error { color: #f87171; }
+    .log-error { color: #fb7185; }
 
-    /* Footer */
+    /* ── Footer ── */
     .footer {
       display: flex;
       align-items: center;
       justify-content: space-between;
       margin-top: 8px;
       padding-top: 6px;
-      border-top: 1px solid var(--card-border);
-      font-size: 9px;
-      color: #64748b;
+      border-top: 1px solid var(--border);
+      font-size: 9.2px;
+      color: var(--text-dim);
       flex-shrink: 0;
     }
-    /* ── Vinculación con el hub (solo aparece cuando el hub la pide) ── */
-    .pairing-banner {
-      display: none;
-      margin: 8px 12px 0;
-      padding: 10px 12px;
-      background: var(--card-bg);
-      border: 1px solid var(--card-border-hover);
-      border-radius: 10px;
+    .footer-left {
+      display: flex;
+      align-items: center;
+      gap: 5px;
     }
-    .pairing-banner.visible { display: block; }
-    .pairing-title { font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
-    .pairing-desc { font-size: 11px; color: var(--text-muted); line-height: 1.4; margin-bottom: 8px; }
-    .pairing-desc code { color: var(--text); background: rgba(255,255,255,0.06); padding: 1px 4px; border-radius: 4px; }
-    .pairing-row { display: flex; gap: 6px; }
-    .pairing-row input {
-      flex: 1; min-width: 0;
-      background: var(--bg); color: var(--text);
-      border: 1px solid var(--card-border); border-radius: 6px;
-      padding: 6px 8px; font: 600 12px/1 ui-monospace, monospace; letter-spacing: 1px; text-transform: uppercase;
+    .footer-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: #34d399;
     }
-    .pairing-row input:focus { outline: none; border-color: var(--accent); }
-    .pairing-row button {
-      background: var(--accent); color: #fff; border: 0; border-radius: 6px;
-      padding: 6px 12px; font-size: 11px; font-weight: 600; cursor: pointer;
-    }
-    .pairing-error { font-size: 11px; color: var(--red); margin-top: 6px; min-height: 0; }
   </style>
 </head>
 <body>
@@ -699,32 +1147,38 @@
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
       </div>
       <div>
-        <div class="brand-title">Code to Figma AI</div>
-        <div class="brand-sub">Studio & Live Receiver · v3.0</div>
+        <div class="brand-title">
+          Code to Figma AI
+          <span class="brand-pill">Studio v3.0</span>
+        </div>
+        <div class="brand-sub">Live Receiver & Component Cloner</div>
       </div>
     </div>
-    <div id="statusBadge" class="badge disconnected" onclick="reconnectHub()" title="Clic para reconectar al WebSocket Hub (ws://localhost:8080)">
+    <div id="statusBadge" class="badge disconnected" onclick="reconnectHub()" title="Clic para reconectar al Hub local (ws://localhost:8080). En Figma Web permite 'Apps en el dispositivo'.">
       <span class="pulse-dot"></span>
       <span id="statusText">Desconectado</span>
     </div>
   </div>
 
-  <!-- Vinculación con el hub: el código aparece en la terminal al ejecutar `npm run start:hub` -->
+  <!-- Vinculación con el hub: el código se genera en el hub local -->
   <div id="pairingBanner" class="pairing-banner" role="region" aria-label="Vincular con el hub">
-    <div class="pairing-title">Vincular con el Hub</div>
-    <div class="pairing-desc">Pega el código que muestra la terminal del hub (<code>npm run start:hub</code>). Solo se pide una vez.</div>
+    <div class="pairing-title">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      Vincular con el Hub Local
+    </div>
+    <div class="pairing-desc">Ingresa el código de 6 dígitos que mostró el Hub (en <code>~/.code-to-figma/pairing-code</code> o en la consola del hub). Solo se solicita la primera vez.</div>
     <div class="pairing-row">
-      <input id="pairingInput" placeholder="XXXX-XXXX" maxlength="9" autocomplete="off" spellcheck="false"
+      <input id="pairingInput" placeholder="XXXXXX" maxlength="9" autocomplete="off" spellcheck="false"
              onkeydown="if (event.key === 'Enter') submitPairingCode()">
       <button onclick="submitPairingCode()">Vincular</button>
     </div>
     <div id="pairingError" class="pairing-error"></div>
   </div>
 
-  <!-- Pestañas (100% compactas y sin scroll horizontal) -->
+  <!-- Pestañas (Segmented Bar) -->
   <div class="tabs-nav">
     <button class="tab-btn active" id="tabBtnReceiver" onclick="switchTab('receiver')" title="Receptor en Vivo">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/></svg>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"/></svg>
       <span>Receptor</span>
       <span class="tab-badge" id="badgeReceiverCount">0</span>
     </button>
@@ -735,6 +1189,10 @@
     <button class="tab-btn" id="tabBtnSettings" onclick="switchTab('settings')" title="Ajustes de Render">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       <span>Ajustes</span>
+    </button>
+    <button class="tab-btn" id="tabBtnFonts" onclick="switchTab('fonts')" title="Gestor de Tipografías">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+      <span>Fuentes</span>
     </button>
     <button class="tab-btn" id="tabBtnViews" onclick="switchTab('views')" title="Catálogo de Vistas">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
@@ -763,15 +1221,38 @@
 
     <div class="inbox-list" id="inboxList">
       <div class="empty-state" id="receiverEmpty">
-        <div class="empty-icon-wrap">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="11"/></svg>
+        <div class="empty-radar">
+          <div class="radar-ring r1"></div>
+          <div class="radar-ring r2"></div>
+          <div class="radar-center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <path d="M5 12.55a11 11 0 0 1 14.08 0"/>
+              <path d="M1.42 9a16 16 0 0 1 21.16 0"/>
+              <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+              <circle cx="12" cy="20" r="1.5"/>
+            </svg>
+          </div>
         </div>
         <div class="empty-title">Esperando Componentes Web</div>
         <div class="empty-desc">
-          Abre cualquier página web con la extensión <strong>Code to Figma AI</strong>, selecciona o inspecciona componentes y haz clic en <em>"Enviar a Figma"</em>.
+          El receptor está listo en segundo plano. Abre cualquier página en Chrome para clonarla a Figma.
         </div>
-        <button class="card-btn primary" onclick="renderDemoCard()">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        <div class="empty-steps">
+          <div class="step-card">
+            <span class="step-num">1</span>
+            <span>Abre la web en Chrome</span>
+          </div>
+          <div class="step-card">
+            <span class="step-num">2</span>
+            <span>Pulsa <kbd>Alt+Shift+F</kbd></span>
+          </div>
+          <div class="step-card">
+            <span class="step-num">3</span>
+            <span>Clic en "Enviar a Figma"</span>
+          </div>
+        </div>
+        <button class="card-btn primary" onclick="renderDemoCard()" style="padding: 6px 14px; font-weight: 600;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
           Probar con Componente Demo
         </button>
       </div>
@@ -781,25 +1262,41 @@
   <!-- Contenido 2: Importar JSON -->
   <div class="tab-content" id="tabContentImport">
     <div class="import-container">
-      <div style="display:flex;align-items:center;justify-content:space-between;">
-        <span style="font-weight:600;color:#fff;">Pegar JSON desde la Extensión</span>
-        <div style="display:flex;gap:6px;">
-          <button class="card-btn" onclick="pasteFromClipboard()">Pegar Portapapeles</button>
-          <button class="card-btn" onclick="clearJsonInput()">Limpiar</button>
+      <div class="import-header">
+        <div>
+          <div class="import-title">Importar JSON de la Extensión</div>
+          <div class="import-subtitle">Usa el portapapeles para importar sin conexión WebSocket</div>
+        </div>
+        <div class="import-actions">
+          <button class="card-btn primary" onclick="pasteFromClipboard()" title="Pegar contenido desde el portapapeles">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+            Pegar Portapapeles
+          </button>
+          <button class="card-btn" onclick="clearJsonInput()" title="Limpiar área de texto">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            Limpiar
+          </button>
         </div>
       </div>
-      <textarea id="jsonInput" class="json-textarea" placeholder="Pega aquí el JSON exportado con el botón 'Copiar JSON' de la extensión web..."></textarea>
-      <div class="json-status-bar">
-        <span id="jsonDetectInfo">Sin datos cargados</span>
-        <span id="jsonBytesInfo">0 bytes</span>
+
+      <div class="json-editor-wrap">
+        <div class="json-editor-topbar">
+          <span>{ } JSON PAYLOAD</span>
+          <span id="jsonBytesInfo">0 bytes</span>
+        </div>
+        <textarea id="jsonInput" class="json-textarea" placeholder="// Pega aquí el JSON exportado con el botón 'Copiar JSON' de la extensión web..."></textarea>
       </div>
 
-      <div style="display:flex;align-items:center;gap:12px;margin:4px 0;">
-        <label class="setting-item">
+      <div class="json-status-bar">
+        <span id="jsonDetectInfo">Sin datos cargados</span>
+      </div>
+
+      <div class="import-options-row">
+        <label class="checkbox-pill">
           <input type="checkbox" id="chkImportAsComponent" />
           <span>Crear como Componente nativo</span>
         </label>
-        <label class="setting-item">
+        <label class="checkbox-pill">
           <input type="checkbox" id="chkImportTokens" checked />
           <span>Extraer Paint Styles de Tokens</span>
         </label>
@@ -812,28 +1309,36 @@
     </div>
   </div>
 
-  <!-- Contenido 3: Ajustes & Canvas -->
+  <!-- Contenido 3: Ajustes & Canvas (Segmented Controls) -->
   <div class="tab-content" id="tabContentSettings">
     <div class="settings-container">
       <div class="settings-group">
         <div class="settings-group-title">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
           Estructura de Componente
         </div>
-        <label class="setting-item">
-          <input type="radio" name="optStructure" value="FRAME" checked onchange="savePluginSettings()" />
-          <div>
-            <strong>Frame estándar (figma.createFrame)</strong>
-            <div class="setting-desc">Crea marcos editables estándar ideales para composición rápida de layouts.</div>
-          </div>
-        </label>
-        <label class="setting-item">
-          <input type="radio" name="optStructure" value="COMPONENT" onchange="savePluginSettings()" />
-          <div>
-            <strong>Componente oficial (figma.createComponent)</strong>
-            <div class="setting-desc">Crea componentes maestros nativos listos para publicar en tu Design System.</div>
-          </div>
-        </label>
+        <div class="segmented-cards">
+          <label class="segmented-card">
+            <input type="radio" name="optStructure" value="FRAME" checked onchange="savePluginSettings()" />
+            <div class="segmented-card-inner">
+              <div class="segmented-card-title">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+                Frame estándar
+              </div>
+              <div class="segmented-card-desc">Marcos editables para composición rápida de layouts.</div>
+            </div>
+          </label>
+          <label class="segmented-card">
+            <input type="radio" name="optStructure" value="COMPONENT" onchange="savePluginSettings()" />
+            <div class="segmented-card-inner">
+              <div class="segmented-card-title">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                Componente oficial
+              </div>
+              <div class="segmented-card-desc">Componentes maestros listos para tu Design System.</div>
+            </div>
+          </label>
+        </div>
       </div>
 
       <div class="settings-group">
@@ -841,83 +1346,183 @@
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
           Tablero Design System
         </div>
-        <label class="setting-item">
-          <input type="radio" name="optBoard" value="AUTO" checked onchange="savePluginSettings()" />
-          <div>
-            <strong>Automático [Recomendado]</strong>
-            <div class="setting-desc">Página completa o varios componentes → tablero (Página · Secciones · Componentes · Estilos). Un componente suelto → se dibuja tal cual.</div>
-          </div>
-        </label>
-        <label class="setting-item">
-          <input type="radio" name="optBoard" value="ALWAYS" onchange="savePluginSettings()" />
-          <div>
-            <strong>Siempre</strong>
-            <div class="setting-desc">Arma el tablero con cualquier envío, aunque sea un solo componente.</div>
-          </div>
-        </label>
-        <label class="setting-item">
-          <input type="radio" name="optBoard" value="NEVER" onchange="savePluginSettings()" />
-          <div>
-            <strong>Nunca</strong>
-            <div class="setting-desc">Dibuja siempre la extracción tal cual, sin tablero.</div>
-          </div>
-        </label>
+        <div class="segmented-tabs">
+          <label class="segmented-tab">
+            <input type="radio" name="optBoard" value="AUTO" checked onchange="savePluginSettings()" />
+            <span class="segmented-tab-label">Automático</span>
+          </label>
+          <label class="segmented-tab">
+            <input type="radio" name="optBoard" value="ALWAYS" onchange="savePluginSettings()" />
+            <span class="segmented-tab-label">Siempre</span>
+          </label>
+          <label class="segmented-tab">
+            <input type="radio" name="optBoard" value="NEVER" onchange="savePluginSettings()" />
+            <span class="segmented-tab-label">Nunca</span>
+          </label>
+        </div>
+        <div class="setting-caption">
+          <strong>Automático:</strong> Arma el tablero completo (Página · Secciones · Componentes · Estilos) al capturar páginas completas; un componente suelto se dibuja directo.
+        </div>
       </div>
 
       <div class="settings-group">
         <div class="settings-group-title">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
-          Disposición de Nuevos Componentes
+          Disposición en el Lienzo
         </div>
-        <label class="setting-item">
-          <input type="radio" name="optPlacement" value="SIDE" checked onchange="savePluginSettings()" />
-          <div>
-            <strong>A su lado — Horizontal (+120px) [Recomendado]</strong>
-            <div class="setting-desc">Organiza cada nuevo componente a la derecha del anterior en fila ordenada sin solaparse jamás.</div>
-          </div>
-        </label>
-        <label class="setting-item">
-          <input type="radio" name="optPlacement" value="BELOW" onchange="savePluginSettings()" />
-          <div>
-            <strong>Debajo — Vertical (+120px)</strong>
-            <div class="setting-desc">Organiza cada nuevo componente justo debajo del anterior en columna limpia.</div>
-          </div>
-        </label>
-        <label class="setting-item">
-          <input type="radio" name="optPlacement" value="CENTER" onchange="savePluginSettings()" />
-          <div>
-            <strong>En el centro de la vista actual</strong>
-            <div class="setting-desc">Coloca el nuevo componente centrado en el viewport actual de Figma.</div>
-          </div>
-        </label>
+        <div class="segmented-tabs">
+          <label class="segmented-tab">
+            <input type="radio" name="optPlacement" value="SIDE" checked onchange="savePluginSettings()" />
+            <span class="segmented-tab-label">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              Horizontal
+            </span>
+          </label>
+          <label class="segmented-tab">
+            <input type="radio" name="optPlacement" value="BELOW" onchange="savePluginSettings()" />
+            <span class="segmented-tab-label">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+              Vertical
+            </span>
+          </label>
+          <label class="segmented-tab">
+            <input type="radio" name="optPlacement" value="CENTER" onchange="savePluginSettings()" />
+            <span class="segmented-tab-label">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+              Al centro
+            </span>
+          </label>
+        </div>
+        <div class="setting-caption">
+          Organiza cada nuevo componente a la derecha o debajo del anterior con separación exacta (+120px) para evitar solapamientos.
+        </div>
       </div>
 
       <div class="settings-group">
         <div class="settings-group-title">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-          Design Tokens & Estilos
+          Design Tokens & Fuentes
         </div>
-        <label class="setting-item">
-          <input type="checkbox" id="chkAutoPaintStyles" checked onchange="savePluginSettings()" />
-          <div>
-            <strong>Crear Paint Styles automáticos (Token / ...)</strong>
-            <div class="setting-desc">Convierte variables CSS detectadas (:root) en estilos locales de color en Figma.</div>
+        
+        <label class="switch-row">
+          <div class="switch-text">
+            <span class="switch-title">Crear Paint Styles automáticos (Token / ...)</span>
+            <span class="switch-desc">Convierte variables CSS detectadas (:root) en estilos locales de color en Figma.</span>
+          </div>
+          <div class="switch-toggle">
+            <input type="checkbox" id="chkAutoPaintStyles" checked onchange="savePluginSettings()" />
+            <span class="switch-track"></span>
           </div>
         </label>
-        <label class="setting-item">
-          <input type="checkbox" id="chkPrewarmFonts" checked onchange="savePluginSettings()" />
-          <div>
-            <strong>Pre-calentamiento seguro de fuentes tipográficas</strong>
-            <div class="setting-desc">Verifica y precarga Inter, Roboto, Segoe UI y fuentes de sistema con fallback garantizado.</div>
+
+        <label class="switch-row">
+          <div class="switch-text">
+            <span class="switch-title">Pre-calentamiento seguro de fuentes tipográficas</span>
+            <span class="switch-desc">Precarga Inter, Roboto, Segoe UI y fuentes de sistema con fallback garantizado.</span>
+          </div>
+          <div class="switch-toggle">
+            <input type="checkbox" id="chkPrewarmFonts" checked onchange="savePluginSettings()" />
+            <span class="switch-track"></span>
           </div>
         </label>
-        <div class="setting-item" style="flex-direction:column;align-items:stretch;cursor:default">
-          <div>
-            <strong>Equivalencias de fuentes</strong>
-            <div class="setting-desc">Una por línea: <code>familia de la web = familia en Figma</code>. Se usan cuando la fuente original no está instalada; el registro avisa qué se sustituyó.</div>
+
+        <div class="font-map-box">
+          <div class="font-map-header">
+            <span>Equivalencias de fuentes (Fallback)</span>
+            <span class="font-map-tip">familia web = familia Figma</span>
           </div>
-          <textarea id="txtFontMap" rows="3" spellcheck="false" placeholder="Circular = Inter&#10;Proxima Nova = Montserrat" onchange="savePluginSettings()" style="width:100%;box-sizing:border-box;margin-top:6px;font:10.5px/1.4 ui-monospace,Menlo,Consolas,monospace;background:var(--card-bg);color:inherit;border:1px solid var(--card-border);border-radius:6px;padding:6px 8px;resize:vertical"></textarea>
+          <textarea id="txtFontMap" rows="3" spellcheck="false" placeholder="Circular = Inter&#10;Proxima Nova = Montserrat" onchange="savePluginSettings()"></textarea>
         </div>
+      </div>
+
+      <!-- Inteligencia Artificial: Gemini Flash -->
+      <div class="settings-group">
+        <div class="settings-group-title">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          Inteligencia Artificial (Gemini Flash)
+        </div>
+        <label class="switch-row">
+          <div class="switch-text">
+            <span class="switch-title">Optimización semántica de componentes</span>
+            <span class="switch-desc">Usa Gemini Flash para podar wrappers redundantes, estructurar grids y asignar nombres de Design System.</span>
+          </div>
+          <div class="switch-toggle">
+            <input type="checkbox" id="chkAiOptimization" onchange="savePluginSettings()" />
+            <span class="switch-track"></span>
+          </div>
+        </label>
+        <div class="font-map-box" style="margin-top: 8px;">
+          <div class="font-map-header">
+            <span>Google AI Studio API Key (Gratis)</span>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <button type="button" onclick="clearGeminiKey()" style="background: none; border: none; color: #f87171; font-size: 9px; cursor: pointer; padding: 0; text-decoration: underline;" title="Eliminar clave guardada">Borrar clave</button>
+              <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color: #818cf8; font-size: 9px; text-decoration: none;">Obtener Clave</a>
+            </div>
+          </div>
+          <input type="password" id="txtGeminiKey" class="search-input" style="width: 100%; box-sizing: border-box; font-family: ui-monospace, monospace; font-size: 11px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" placeholder="AIzaSy..." oninput="savePluginSettings()" onchange="savePluginSettings()" />
+          <div class="setting-caption" style="margin-top: 4px;">
+            Tier gratuito de Google AI Studio: 15 peticiones/minuto sin costo. Se almacena de forma segura en tu cliente local.
+          </div>
+        </div>
+        <div class="font-map-box" style="margin-top: 8px;">
+          <div class="font-map-header">
+            <span>Modelo de Gemini Flash</span>
+          </div>
+          <select id="selGeminiModel" class="search-input" style="width: 100%; box-sizing: border-box; font-family: ui-monospace, monospace; font-size: 11px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" onchange="savePluginSettings()">
+            <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recomendado — Rápido y Preciso)</option>
+            <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite (Ultrarrápido / Menor latencia)</option>
+            <option value="gemini-3.8-flash">Gemini 3.8 Flash</option>
+            <option value="gemini-3.6-flash">Gemini 3.6 Flash</option>
+            <option value="gemini-flash-latest">gemini-flash-latest (Auto / Último estable)</option>
+            <option value="gemini-1.5-flash">Gemini 1.5 Flash (Legacy)</option>
+          </select>
+          <div class="setting-caption" style="margin-top: 4px;">
+            Si el modelo elegido no está disponible en tu cuenta, el sistema intentará automáticamente con las alternativas Flash compatibles sin fallar.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Contenido: Gestor de Tipografías & Reemplazo Global -->
+  <div class="tab-content" id="tabContentFonts">
+    <div class="settings-container">
+      <div class="settings-group">
+        <div class="settings-group-title">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+          Tipografías Detectadas en la Página
+        </div>
+        <div class="setting-caption">
+          Reemplaza las fuentes web detectadas por tus fuentes corporativas instaladas en Figma en un solo clic.
+        </div>
+        <div id="detectedFontsList" class="detected-fonts-container" style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">
+          <div class="empty-state" style="padding: 20px 0;">
+            <div class="empty-desc">Ninguna fuente detectada aún. Extrae una página o importa un componente web para listar sus tipografías.</div>
+          </div>
+        </div>
+        <button id="btnApplyFontReplacement" class="btn-gradient" style="margin-top: 12px; width: 100%; display: none;" onclick="applyFontReplacement()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          Sustituir Fuentes en el Lienzo de Figma
+        </button>
+      </div>
+
+      <div class="settings-group">
+        <div class="settings-group-title">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Inspeccionar Archivo de Fuente (.ttf / .otf)
+        </div>
+        <div id="fontDropZone" class="font-drop-zone" style="border: 2px dashed rgba(255, 255, 255, 0.15); border-radius: 8px; padding: 18px 12px; text-align: center; cursor: pointer; transition: all 0.2s;" ondragover="handleFontDragOver(event)" ondragleave="handleFontDragLeave(event)" ondrop="handleFontDrop(event)" onclick="document.getElementById('fontFileInput').click()">
+          <input type="file" id="fontFileInput" accept=".ttf,.otf" style="display: none;" onchange="handleFontFileSelected(event)" />
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.8" style="margin: 0 auto 6px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+          <div style="font-size: 11px; font-weight: 600; color: #f1f5f9;">Arrastra tu archivo .ttf u .otf aquí</div>
+          <div style="font-size: 9.5px; color: #94a3b8; margin-top: 3px;">Inspeccionará el nombre exacto de la familia y te indicará cómo activarla en Figma.</div>
+        </div>
+        <div id="fontInspectResult" style="display: none; margin-top: 10px; padding: 10px; border-radius: 6px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); font-size: 10.5px; line-height: 1.4;">
+        </div>
+        <button class="btn-subtle" style="margin-top: 10px; width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px;" onclick="refreshFigmaFonts()">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          Refrescar Fuentes Disponibles en Figma
+        </button>
       </div>
     </div>
   </div>
@@ -932,12 +1537,14 @@
     </div>
     <div class="inbox-list" id="viewsContainer" style="margin-top:8px;">
       <div class="empty-state">
-        <div class="empty-icon-wrap" style="color:#38bdf8;background:rgba(56,189,248,0.1);border-color:rgba(56,189,248,0.25);">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+        <div class="empty-radar" style="width: 50px; height: 50px;">
+          <div class="radar-center" style="color: #38bdf8; background: rgba(56, 189, 248, 0.14); border-color: rgba(56, 189, 248, 0.4); box-shadow: 0 0 12px rgba(56, 189, 248, 0.25);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+          </div>
         </div>
         <div class="empty-title">Sin Catálogo Predefinido</div>
         <div class="empty-desc">
-          Este modo muestra vistas de proyectos pre-mapeados. Para capturar cualquier componente web, usa la extensión de Chrome y envíalo en vivo.
+          Este modo muestra vistas de proyectos pre-mapeados. Para clonar cualquier componente web, usa la extensión de Chrome y envíalo en vivo.
         </div>
       </div>
     </div>
@@ -946,21 +1553,24 @@
   <!-- Contenido 5: Monitor & Logs -->
   <div class="tab-content" id="tabContentLogs">
     <div class="stats-row">
-      <div class="stat-card">
+      <div class="stat-card stat-blue">
+        <div class="stat-indicator"></div>
         <div class="stat-label">Renders</div>
         <div class="stat-value" id="statRenders" style="color:#38bdf8;">0</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card stat-purple">
+        <div class="stat-indicator"></div>
         <div class="stat-label">Nodos</div>
-        <div class="stat-value" id="statNodes" style="color:#a855f7;">0</div>
+        <div class="stat-value" id="statNodes" style="color:#c4b5fd;">0</div>
       </div>
-      <div class="stat-card">
-        <div class="stat-label">Latencia</div>
+      <div class="stat-card stat-green">
+        <div class="stat-indicator"></div>
+        <div class="stat-label">Latencia Hub</div>
         <div class="stat-value" id="statLatency" style="color:#34d399;">0 ms</div>
       </div>
     </div>
 
-    <div style="display:flex;gap:6px;margin-bottom:6px;">
+    <div class="terminal-toolbar">
       <button class="card-btn" onclick="zoomAllCanvas()">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         Enfocar Todo
@@ -969,20 +1579,36 @@
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
         Limpiar Lienzo
       </button>
-      <button class="card-btn" onclick="clearLogs()" style="margin-left:auto;">Limpiar Logs</button>
+      <button class="card-btn" onclick="clearLogs()" style="margin-left:auto;">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+        Limpiar Logs
+      </button>
     </div>
 
-    <div class="logs-terminal" id="logsTerminal">
-      <div class="log-line">
-        <span class="log-time">[Init]</span>
-        <span class="log-info">Studio & Receiver inicializado con borrado bidireccional y posicionamiento continuo.</span>
+    <div class="terminal-window">
+      <div class="terminal-titlebar">
+        <div class="terminal-dots">
+          <span class="dot red"></span>
+          <span class="dot yellow"></span>
+          <span class="dot green"></span>
+        </div>
+        <span class="terminal-title">receiver.log</span>
+      </div>
+      <div class="logs-terminal" id="logsTerminal">
+        <div class="log-line">
+          <span class="log-time">[Init]</span>
+          <span class="log-info">Studio & Receiver v3.0 listo. WebSocket y Auto Layout activos.</span>
+        </div>
       </div>
     </div>
   </div>
 
   <!-- Footer -->
   <div class="footer">
-    <span id="footerWsInfo">ws://localhost:8080 · Auto Layout Nativo</span>
+    <div class="footer-left">
+      <span class="footer-dot"></span>
+      <span id="footerWsInfo">ws://localhost:8080 · Auto Layout Nativo</span>
+    </div>
     <span id="activePageName">Página: Dashboard</span>
   </div>
 
@@ -1025,6 +1651,7 @@
         receiver: 'tabBtnReceiver',
         import: 'tabBtnImport',
         settings: 'tabBtnSettings',
+        fonts: 'tabBtnFonts',
         views: 'tabBtnViews',
         logs: 'tabBtnLogs'
       };
@@ -1033,6 +1660,7 @@
         receiver: 'tabContentReceiver',
         import: 'tabContentImport',
         settings: 'tabContentSettings',
+        fonts: 'tabContentFonts',
         views: 'tabContentViews',
         logs: 'tabContentLogs'
       };
@@ -1043,6 +1671,11 @@
       if (targetBtn && targetContent) {
         targetBtn.classList.add('active');
         targetContent.classList.add('active');
+      }
+
+      if (tabId === 'fonts') {
+        refreshFigmaFonts();
+        renderDetectedFontsList();
       }
     }
 
@@ -1062,12 +1695,15 @@
           updateStatus('connected');
           log('Conectado al Hub WebSocket con éxito.', 'success');
           hubAuthRequired = false;
+          const s = loadPluginSettings();
           const register = () => socket && socket.readyState === WebSocket.OPEN && socket.send(JSON.stringify({
             type: 'REGISTER_CLIENT',
             clientType: 'FIGMA_PLUGIN',
             role: 'plugin',
             client: 'Figma-Studio-Receiver-v3',
-            pairingCode: pairingCode || undefined
+            pairingCode: pairingCode || undefined,
+            geminiApiKey: s?.geminiApiKey || '',
+            aiOptimization: Boolean(s?.aiOptimization)
           }));
           if (pairingCode) {
             register();
@@ -1326,6 +1962,8 @@
       if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
     }
 
+    let renderProgressLine = null;
+
     // Un manejador por mensaje del sandbox (code.ts)
     const SANDBOX_HANDLERS = {
       SETTINGS(msg) {
@@ -1345,12 +1983,24 @@
       DELETED() {
         // El sandbox ya informa en el registro qué se borró; aquí no hay nada más que hacer
       },
+      RENDER_PROGRESS(msg) {
+        if (!renderProgressLine) {
+          renderProgressLine = log(`Renderizando capas en Figma... 0%`, 'info');
+        }
+        if (msg.percent >= 100) {
+          updateLogLine(renderProgressLine, `Renderizado de capas en Figma completado (100%).`, 'success');
+          renderProgressLine = null;
+        } else {
+          updateLogLine(renderProgressLine, `Renderizando capas en Figma: ${msg.rendered} / ${msg.total} (${msg.percent}%)...`, 'info');
+        }
+      },
       PAGE_INFO(msg) {
         if (msg.pageName) {
           activePageName.textContent = `Página: ${msg.pageName}`;
         }
       },
       RENDER_SUCCESS(msg) {
+        renderProgressLine = null;
         const measuredDuration = (msg.durationMs !== undefined && msg.durationMs >= 0) 
           ? msg.durationMs 
           : Math.round(performance.now() - lastRenderStartTime);
@@ -1396,16 +2046,25 @@
           name: String(msg.name || '').slice(0, 1000),
           durationMs: stats.latencyMs,
           timings: msg.timings,
-          fontSubstitutions: msg.fontSubstitutions
+          fontSubstitutions: msg.fontSubstitutions,
+          textReport: msg.textReport
         });
       },
       RENDER_ERROR(msg) {
+        renderProgressLine = null;
         log(`Error al renderizar en Figma: ${msg.error}`, 'error');
         // Avisar al Hub para que el CLI/MCP que pidió el render se entere
         notifyHub({ type: 'RENDER_ERROR', error: String(msg.error || 'Error desconocido').slice(0, 5000) });
       },
       LOG(msg) {
         log(msg.message, msg.level || 'info');
+      },
+      AVAILABLE_FONTS(msg) {
+        availableFigmaFonts = Array.isArray(msg.fonts) ? msg.fonts : [];
+        renderDetectedFontsList();
+      },
+      FONTS_REPLACED(msg) {
+        log(msg.details || `${msg.count} capas de texto actualizadas.`, 'success');
       },
     };
 
@@ -1425,6 +2084,7 @@
       badgeReceiverCount.textContent = receivedItems.length;
       saveReceivedItemsToStorage();
       renderInboxFeed();
+      if (item.rawPayload) collectDetectedFontsFromPayload(item.rawPayload);
     }
 
     function renderInboxFeed() {
@@ -1656,6 +2316,8 @@
         placementGap: 120
       };
 
+      collectDetectedFontsFromPayload(payload);
+
       parent.postMessage({
         pluginMessage: {
           type: 'RENDER_NODES',
@@ -1679,6 +2341,9 @@
         boardMode: ['AUTO', 'ALWAYS', 'NEVER'].includes(saved.boardMode) ? saved.boardMode : 'AUTO',
         autoPaintStyles: saved.autoPaintStyles !== false,
         prewarmFonts: saved.prewarmFonts !== false,
+        aiOptimization: !!saved.aiOptimization,
+        geminiApiKey: typeof saved.geminiApiKey === 'string' ? saved.geminiApiKey : '',
+        geminiModel: typeof saved.geminiModel === 'string' ? saved.geminiModel : 'gemini-2.5-flash',
         fontMap: saved.fontMap && typeof saved.fontMap === 'object' ? saved.fontMap : {}
       };
     }
@@ -1697,17 +2362,43 @@
       return Object.entries(map || {}).map(([from, to]) => `${from} = ${to}`).join('\n');
     }
 
+    function clearGeminiKey() {
+      const txtKey = document.getElementById('txtGeminiKey');
+      if (txtKey) txtKey.value = '';
+      const chkAi = document.getElementById('chkAiOptimization');
+      if (chkAi) chkAi.checked = false;
+      savePluginSettings();
+      log('Clave de Gemini eliminada y optimización desactivada.', 'warn');
+    }
+
     function savePluginSettings() {
+      const keyVal = document.getElementById('txtGeminiKey')?.value?.trim() || '';
+      const chkAi = document.getElementById('chkAiOptimization');
       savedSettings = {
         structure: document.querySelector('input[name="optStructure"]:checked')?.value || 'FRAME',
         placement: document.querySelector('input[name="optPlacement"]:checked')?.value || 'SIDE',
         boardMode: document.querySelector('input[name="optBoard"]:checked')?.value || 'AUTO',
         autoPaintStyles: document.getElementById('chkAutoPaintStyles').checked,
         prewarmFonts: document.getElementById('chkPrewarmFonts').checked,
+        aiOptimization: chkAi ? chkAi.checked : false,
+        geminiApiKey: keyVal,
+        geminiModel: document.getElementById('selGeminiModel')?.value || 'gemini-2.5-flash',
         fontMap: parseFontMap(document.getElementById('txtFontMap').value)
       };
       parent.postMessage({ pluginMessage: { type: 'SET_SETTINGS', settings: savedSettings } }, '*');
       log('Ajustes de render guardados.', 'info');
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({
+          type: 'REGISTER_CLIENT',
+          clientType: 'FIGMA_PLUGIN',
+          role: 'plugin',
+          client: 'Figma-Studio-Receiver-v3',
+          pairingCode: pairingCode || undefined,
+          geminiApiKey: savedSettings.geminiApiKey || '',
+          geminiModel: savedSettings.geminiModel || undefined,
+          aiOptimization: Boolean(savedSettings.aiOptimization)
+        }));
+      }
     }
 
     function applyPluginSettingsToUI() {
@@ -1723,14 +2414,260 @@
 
       document.getElementById('chkAutoPaintStyles').checked = s.autoPaintStyles;
       document.getElementById('chkPrewarmFonts').checked = s.prewarmFonts;
+      const chkAi = document.getElementById('chkAiOptimization');
+      if (chkAi) chkAi.checked = s.aiOptimization;
+      const txtKey = document.getElementById('txtGeminiKey');
+      if (txtKey) txtKey.value = s.geminiApiKey;
+      const selModel = document.getElementById('selGeminiModel');
+      if (selModel) selModel.value = s.geminiModel || 'gemini-2.5-flash';
       document.getElementById('txtFontMap').value = formatFontMap(s.fontMap);
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({
+          type: 'REGISTER_CLIENT',
+          clientType: 'FIGMA_PLUGIN',
+          role: 'plugin',
+          client: 'Figma-Studio-Receiver-v3',
+          pairingCode: pairingCode || undefined,
+          geminiApiKey: s.geminiApiKey || '',
+          geminiModel: s.geminiModel || undefined,
+          aiOptimization: Boolean(s.aiOptimization)
+        }));
+      }
     }
 
     /** Ajustes que viajan con cada render hacia el sandbox */
     function withRenderSettings(payload) {
       const s = loadPluginSettings();
       if (Object.keys(s.fontMap).length) payload.fontMap = s.fontMap;
+      if (s.aiOptimization && s.geminiApiKey) {
+        payload.geminiApiKey = s.geminiApiKey;
+        payload.geminiModel = s.geminiModel || 'gemini-2.5-flash';
+        payload.optimizeWithAi = true;
+      }
       return payload;
+    }
+
+    // ── Gestor de Tipografías & Reemplazo Global ──
+    let availableFigmaFonts = [];
+    let detectedPageFonts = new Map(); // family -> { count: number, sampleStyle: string }
+
+    function refreshFigmaFonts() {
+      parent.postMessage({ pluginMessage: { type: 'GET_AVAILABLE_FONTS' } }, '*');
+      log('Consultando fuentes disponibles en Figma...', 'info');
+    }
+
+    function collectDetectedFontsFromPayload(payload) {
+      if (!payload) return;
+      detectedPageFonts.clear();
+
+      function walk(node) {
+        if (!node) return;
+        if (node.type === 'TEXT' && node.textData) {
+          const fam = node.textData.fontFamily || node.textData.fontStack || 'Inter';
+          const cleanFam = fam.split(',')[0].replace(/['"]/g, '').trim();
+          if (cleanFam) {
+            const cur = detectedPageFonts.get(cleanFam) || { count: 0, sampleStyle: node.textData.fontWeight || 'Regular' };
+            cur.count++;
+            detectedPageFonts.set(cleanFam, cur);
+          }
+        }
+        if (Array.isArray(node.children)) {
+          node.children.forEach(walk);
+        }
+      }
+
+      walk(payload.rootNode || (Array.isArray(payload.nodes) ? payload.nodes[0] : payload));
+      renderDetectedFontsList();
+    }
+
+    function renderDetectedFontsList() {
+      const container = document.getElementById('detectedFontsList');
+      const btnApply = document.getElementById('btnApplyFontReplacement');
+      if (!container) return;
+
+      if (detectedPageFonts.size === 0) {
+        container.innerHTML = `
+          <div class="empty-state" style="padding: 20px 0;">
+            <div class="empty-desc">Ninguna fuente detectada aún. Extrae una página o importa un componente web para listar sus tipografías.</div>
+          </div>`;
+        if (btnApply) btnApply.style.display = 'none';
+        return;
+      }
+
+      if (btnApply) btnApply.style.display = 'block';
+
+      const figmaOptions = availableFigmaFonts.length > 0
+        ? availableFigmaFonts.map(f => `<option value="${escapeHtml(f.family)}">${escapeHtml(f.family)}</option>`).join('')
+        : `<option value="Inter">Inter (Por defecto)</option>
+           <option value="Roboto">Roboto</option>
+           <option value="Open Sans">Open Sans</option>
+           <option value="Poppins">Poppins</option>
+           <option value="Montserrat">Montserrat</option>`;
+
+      let html = '';
+      detectedPageFonts.forEach((info, fontFam) => {
+        html += `
+          <div class="detected-font-card" style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 11px; font-weight: 700; color: #f1f5f9;">${escapeHtml(fontFam)}</span>
+              <span style="font-size: 9.5px; color: var(--accent); background: rgba(56, 189, 248, 0.1); padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.2);">${info.count} capas</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px; margin-top: 2px;">
+              <span style="font-size: 9.5px; color: var(--text-dim); white-space: nowrap;">Sustituir por:</span>
+              <select class="font-replace-select" data-from-font="${escapeHtml(fontFam)}" style="flex: 1; padding: 5px 8px; font-size: 10.5px; border-radius: 5px; border: 1px solid var(--border); background: var(--bg); color: var(--text); outline: none;">
+                <option value="">(Conservar original si está instalada)</option>
+                ${figmaOptions}
+              </select>
+            </div>
+          </div>`;
+      });
+
+      container.innerHTML = html;
+    }
+
+    function applyFontReplacement() {
+      const selects = document.querySelectorAll('.font-replace-select');
+      const mapping = {};
+      let hasMappings = false;
+
+      selects.forEach(sel => {
+        const from = sel.getAttribute('data-from-font');
+        const to = sel.value;
+        if (from && to) {
+          mapping[from] = to;
+          hasMappings = true;
+        }
+      });
+
+      if (!hasMappings) {
+        log('Selecciona al menos una fuente de destino en los selectores.', 'warn');
+        return;
+      }
+
+      parent.postMessage({
+        pluginMessage: {
+          type: 'REPLACE_FONTS',
+          mapping
+        }
+      }, '*');
+      log('Aplicando reemplazo de tipografías en el lienzo de Figma...', 'info');
+    }
+
+    // ── Inspección Drag & Drop de Fuentes Locales (.ttf / .otf) ──
+    function handleFontDragOver(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      const zone = document.getElementById('fontDropZone');
+      if (zone) {
+        zone.style.borderColor = '#38bdf8';
+        zone.style.background = 'rgba(56, 189, 248, 0.06)';
+      }
+    }
+
+    function handleFontDragLeave(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      const zone = document.getElementById('fontDropZone');
+      if (zone) {
+        zone.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+        zone.style.background = 'transparent';
+      }
+    }
+
+    function handleFontDrop(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      handleFontDragLeave(e);
+      const files = e.dataTransfer?.files;
+      if (files && files.length > 0) inspectFontFile(files[0]);
+    }
+
+    function handleFontFileSelected(e) {
+      const files = e.target?.files;
+      if (files && files.length > 0) inspectFontFile(files[0]);
+    }
+
+    function inspectFontFile(file) {
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const buf = ev.target?.result;
+          if (!(buf instanceof ArrayBuffer)) return;
+          const info = parseOpenTypeNameTable(buf);
+          const resBox = document.getElementById('fontInspectResult');
+          if (info && info.family) {
+            resBox.style.display = 'block';
+            resBox.innerHTML = `
+              <div style="font-weight: 700; color: #38bdf8; margin-bottom: 3px;">✓ Archivo Identificado: ${escapeHtml(info.family)}</div>
+              <div><strong>Familia:</strong> ${escapeHtml(info.family)}</div>
+              <div><strong>Estilo:</strong> ${escapeHtml(info.subfamily || 'Regular')}</div>
+              <div style="margin-top: 6px; font-size: 9.5px; color: #94a3b8; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 6px;">
+                💡 <strong>Para usarla en Figma:</strong> Instálala en tu sistema operativo (haz doble clic en el archivo <code>${escapeHtml(file.name)}</code> e "Instalar"). Luego presiona el botón <em>Refrescar Fuentes</em> abajo.
+              </div>`;
+            log(`Fuente inspeccionada: "${info.family}" (${info.subfamily || 'Regular'}).`, 'success');
+          } else {
+            resBox.style.display = 'block';
+            resBox.innerHTML = `<div style="color: #fb7185;">No se pudo extraer la metadata del archivo. Asegúrate de que sea un .ttf u .otf válido.</div>`;
+          }
+        } catch (err) {
+          log(`Error leyendo fuente: ${err.message}`, 'error');
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    function parseOpenTypeNameTable(buffer) {
+      const view = new DataView(buffer);
+      const numTables = view.getUint16(4);
+      let nameTableOffset = 0;
+
+      for (let i = 0; i < numTables; i++) {
+        const offset = 12 + i * 16;
+        const tag = String.fromCharCode(
+          view.getUint8(offset),
+          view.getUint8(offset + 1),
+          view.getUint8(offset + 2),
+          view.getUint8(offset + 3)
+        );
+        if (tag === 'name') {
+          nameTableOffset = view.getUint32(offset + 8);
+          break;
+        }
+      }
+
+      if (!nameTableOffset) return null;
+
+      const count = view.getUint16(nameTableOffset + 2);
+      const stringOffset = nameTableOffset + view.getUint16(nameTableOffset + 4);
+
+      let family = '';
+      let subfamily = '';
+
+      for (let i = 0; i < count; i++) {
+        const recOffset = nameTableOffset + 6 + i * 12;
+        const platformID = view.getUint16(recOffset);
+        const nameID = view.getUint16(recOffset + 6);
+        const length = view.getUint16(recOffset + 8);
+        const strOffset = stringOffset + view.getUint16(recOffset + 10);
+
+        if (nameID === 1 || nameID === 2) {
+          let str = '';
+          if (platformID === 3 || platformID === 0) {
+            for (let j = 0; j < length; j += 2) {
+              str += String.fromCharCode(view.getUint16(strOffset + j));
+            }
+          } else {
+            for (let j = 0; j < length; j++) {
+              str += String.fromCharCode(view.getUint8(strOffset + j));
+            }
+          }
+          if (nameID === 1 && !family) family = str.trim();
+          if (nameID === 2 && !subfamily) subfamily = str.trim();
+        }
+      }
+
+      return { family, subfamily };
     }
 
     // ── Vistas de la App (Catálogo Dinámico) ──

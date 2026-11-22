@@ -83,6 +83,30 @@ describe('boardDetectComponents', () => {
     expect(groups).toHaveLength(1);
     expect(groups[0].occurrences.every((o: any) => o.name.startsWith('Link /'))).toBe(true);
   });
+
+  it('elementos con posicionamiento ABSOLUTE no se convierten en componentes compartidos', () => {
+    const absCard = (label: string, x: number, y: number) => ({
+      ...card(label, 'Ver'),
+      layout: { mode: 'VERTICAL', measuredWidth: 240, measuredHeight: 200, positioning: 'ABSOLUTE', x, y },
+    });
+    const p = page([absCard('Callout 1', 100, 200), absCard('Callout 2', 800, 200)]);
+    const groups = B.boardDetectComponents(p);
+    // La tarjeta absoluta no se convierte en componente maestro; el botón dentro sí puede serlo
+    expect(groups.some((g: any) => g.occurrences.some((o: any) => o.name === 'Card / Container'))).toBe(false);
+  });
+
+  it('elementos de visor/escenario interactivo (Stage/Explorer) no se convierten en componentes', () => {
+    const stageCard = (label: string) => ({
+      type: 'FRAME',
+      name: `_box_1rmax_108_explorer_stage`,
+      layout: { mode: 'VERTICAL', measuredWidth: 240, measuredHeight: 200 },
+      styles: { fills: [{ r: 0.1, g: 0.1, b: 0.1, a: 1 }] },
+      children: [text(label, 14)],
+    });
+    const p = page([stageCard('USB'), stageCard('LED')]);
+    const groups = B.boardDetectComponents(p);
+    expect(groups).toHaveLength(0);
+  });
 });
 
 describe('boardCleanName', () => {
@@ -94,6 +118,9 @@ describe('boardCleanName', () => {
     ['Button / Primary (Más información)', 'Button / Primary'],
     ['Input Group (Email)', 'Input Group'],
     ['Tile-ctas', 'Tile Ctas'],
+    // CSS Modules de Vite en desarrollo (_local_hash_línea): antes salía "Head Pgjsj 6"
+    ['_head_pgjsj_6', 'Head'],
+    ['_lab-tile_x9k2m_41', 'Lab Tile'],
   ])('%s → %s', (raw, expected) => {
     expect(B.boardCleanName(raw)).toBe(expected);
   });
@@ -141,6 +168,14 @@ describe('variantes (fase 6.1)', () => {
         { id: 'b', name: 'Card 2', occurrences: [button('y')] },
       ]),
     ).toEqual([]);
+  });
+
+  it('contenedores genéricos (Card, Container, Box) no se combinan como familias de variantes', () => {
+    const cardGroup = [
+      { id: 'c1', name: 'Card / Container', occurrences: [card('Uno', 'Ver')] },
+      { id: 'c2', name: 'Card / Container 2', occurrences: [card('Dos', 'Ver')] },
+    ];
+    expect(B.boardVariantFamilies(cardGroup)).toEqual([]);
   });
 });
 

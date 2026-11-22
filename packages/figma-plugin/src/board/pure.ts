@@ -82,6 +82,9 @@ export function boardCleanName(raw: string): string {
   if (s.includes('/')) return s.replace(/\s+/g, ' '); // ya es semántico (Button / Primary)
   if (!/[-_]/.test(s)) return s.replace(/\s+/g, ' ') || 'Componente'; // legible (Input Group)
   s = s.split(/\s+/)[0] || s; // primera clase CSS
+  // CSS Modules de postcss-modules (Vite): _local_hash_línea → local (antes: "Head Pgjsj 6")
+  const vite = s.match(/^_([A-Za-z][\w-]*?)_[a-z0-9]{5}(?:_\d+)?$/);
+  if (vite) s = vite[1];
   // Hash de CSS Modules / styled-components: tiene dígitos o varias mayúsculas internas (XeGJJ, bCyRk, 3A2TYk)
   const isHash = (p: string) =>
     /^[A-Za-z0-9]{4,8}$/.test(p) && (/\d/.test(p) || /[A-Z].*[A-Z]/.test(p.slice(1)) || /^[a-z][A-Z]/.test(p));
@@ -108,6 +111,12 @@ export function boardDetectComponents(root: any): BoardGroup[] {
   const eligible = (n: any) => {
     if (n === root || n.type === 'TEXT' || n.type === 'SVG') return false;
     if (!n.children || n.children.length === 0) return false; // imagen/caja suelta: no es componente
+    // Un elemento absoluto (callout de diagrama, overlay, pin de escena) depende de sus
+    // coordenadas exactas y no debe empaquetarse como componente compartido en el tablero.
+    if (n.layout?.positioning === 'ABSOLUTE') return false;
+    // Un elemento con hijos absolutos o dentro de un escenario/visor interactivo tampoco
+    if ((n.children || []).some((c: any) => c.layout?.positioning === 'ABSOLUTE')) return false;
+    if (/explorer|stage|scene|viewer|canvas/i.test(n.name || '')) return false;
     // Demasiado trivial, salvo una caja con estilo propio + contenido (botón, badge, chip):
     // es el componente más básico de un design system
     const styled = (n.styles?.fills || []).length > 0 || (n.styles?.strokes || []).length > 0;
@@ -208,6 +217,9 @@ export function boardVariantFamilies(groups: BoardGroup[]): VariantFamily[] {
   const byKey = new Map<string, BoardGroup[]>();
   for (const g of groups) {
     const base = g.name.replace(/\s+\d+$/, '');
+    // NO agrupar contenedores genéricos ni tarjetas como variantes: tarjetas de contenido,
+    // bloques de escena o secciones no son variantes de un mismo control UI.
+    if (/^(card|container|box|item|stage|explorer|row|col)\b/i.test(base)) continue;
     const key = base + '§' + boardShapeSignature(g.occurrences[0]);
     if (!byKey.has(key)) byKey.set(key, []);
     byKey.get(key)!.push(g);

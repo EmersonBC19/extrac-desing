@@ -84,6 +84,84 @@ describe('render normal', () => {
     expect(err?.error).toMatch(/Payload inválido/);
     expect(figma.currentPage.children).toHaveLength(0);
   });
+
+  it('bordes discontinuos: aplica dashPattern para dashed y dotted en Figma', async () => {
+    const figma = await runPlugin({
+      rootNode: {
+        type: 'FRAME',
+        layout: { width: 300, height: 200 },
+        styles: {
+          strokes: [{ r: 0.1, g: 0.8, b: 0.5, a: 1, width: 2, style: 'DASHED' }],
+        },
+        children: [
+          {
+            type: 'FRAME',
+            layout: { width: 100, height: 50 },
+            styles: {
+              strokes: [{ r: 0.9, g: 0.5, b: 0.1, a: 1, width: 1, style: 'DOTTED' }],
+            },
+          },
+        ],
+      },
+    });
+    const parent = figma.currentPage.children[0];
+    expect(parent.dashPattern).toEqual([6, 4]);
+    const child = parent.children[0];
+    expect(child.dashPattern).toEqual([1, 3]);
+  });
+
+  it('borde de acento sólido y punteado a la izquierda se agregan como Accent / LEFT', async () => {
+    const figma = await runPlugin({
+      rootNode: {
+        type: 'FRAME',
+        layout: { mode: 'HORIZONTAL', width: 400, height: 100 },
+        styles: {
+          accentBorder: { side: 'LEFT', color: { r: 0.2, g: 0.7, b: 0.9, a: 1 }, width: 3, style: 'SOLID' },
+        },
+        children: [
+          {
+            type: 'FRAME',
+            layout: { mode: 'VERTICAL', width: 200, height: 80 },
+            styles: {
+              accentBorder: { side: 'LEFT', color: { r: 0.1, g: 0.8, b: 0.5, a: 1 }, width: 2, style: 'DOTTED' },
+            },
+            children: [],
+          },
+        ],
+      },
+    });
+    const parent = figma.currentPage.children[0];
+    const parentAccent = parent.children.find((c: any) => c.name === 'Accent / LEFT');
+    expect(parentAccent).toBeTruthy();
+    expect(parentAccent.type).toBe('RECTANGLE');
+    expect(parentAccent.layoutPositioning).toBe('ABSOLUTE');
+
+    const child = parent.children.find((c: any) => c !== parentAccent);
+    const childAccent = child.children.find((c: any) => c.name === 'Accent / LEFT');
+    expect(childAccent).toBeTruthy();
+    expect(childAccent.type).toBe('LINE');
+    expect(childAccent.layoutPositioning).toBe('ABSOLUTE');
+  });
+
+  it('SVG con gradientes o filtros no resueltos se sanea en vez de descartarse como frame vacío', async () => {
+    const figma = await runPlugin({
+      rootNode: {
+        type: 'FRAME',
+        layout: { width: 100, height: 100 },
+        children: [
+          {
+            type: 'SVG',
+            name: 'Icon / Wifi',
+            layout: { width: 24, height: 24 },
+            svgContent: '<svg width="24" height="24"><path d="M0 0h24v24" fill="url(#broken-glow)" stroke="url(#missing-grad)" /></svg>',
+          },
+        ],
+      },
+    });
+    const svgFrame = figma.currentPage.children[0].children[0];
+    expect(svgFrame.type).toBe('FRAME');
+    expect(errorsOf(figma)).toEqual([]);
+  });
 });
 
 describe('tablero design system', () => {
@@ -352,6 +430,12 @@ describe('tablero design system', () => {
     const comps = sub.children.filter((c: any) => c.type === 'COMPONENT');
     expect(comps).toHaveLength(2);
     for (const c of comps) expect(c.fills[0].color).toMatchObject({ r: 0.05, g: 0.05 });
+    // …pero en la vista completa la instancia sigue transparente como el original: si no, su fondo
+    // opaco tapaba lo que en la web se ve detrás (la cuadrícula de la página, líneas del título)
+    const full = sectionsOf(figma).find((s: any) => s.name === '01 · Página completa');
+    const insts = full.findAll((n: any) => n.type === 'INSTANCE' && comps.includes(n._master));
+    expect(insts).toHaveLength(2);
+    for (const i of insts) expect(i.fills).toEqual([]);
   });
 
   it('QA-12: borrar el envío desde el plugin borra el tablero entero y el historial se depura', async () => {
@@ -535,5 +619,155 @@ describe('fuentes (fase 5.3)', () => {
     const figma = await runPlugin({ rootNode: page().rootNode.children[2] });
     expect(figma.logs.find((m: any) => m.type === 'RENDER_SUCCESS').fontSubstitutions).toBeUndefined();
     expect(figma.logs.some((m: any) => m.type === 'LOG' && /sustituidas/.test(m.message))).toBe(false);
+  });
+
+  it('fuente instalada que Figma no dibuja (SF Pro en Windows): se usa la siguiente y el texto se ve', async () => {
+    // Caso real de apple.com: "SF Pro" aparece en la lista y carga, pero los textos quedaban en 0×15 sin pintarse
+    const text = (characters: string, fontFamily: string, fontWeight: string, fontSize: number) => ({
+      type: 'TEXT',
+      name: characters,
+      layout: { mode: 'NONE', width: 'HUG', height: 'HUG', x: 0, y: 0 },
+      styles: { fills: [{ r: 0.1, g: 0.1, b: 0.1, a: 1 }] },
+      textData: {
+        characters,
+        fontSize,
+        fontWeight,
+        fontFamily,
+        fontStack: `"${fontFamily}", "SF Pro Icons", "Helvetica Neue", Helvetica, Arial, sans-serif`,
+      },
+    });
+    const root = {
+      type: 'FRAME',
+      name: 'Tile-wrapper',
+      layout: { mode: 'NONE', width: 800, height: 300 },
+      styles: { fills: [] },
+      children: [text('iPhone Duo', 'SF Pro Display', '600', 56), text('Más información', 'SF Pro Text', '400', 17)],
+    };
+    const figma = await runPlugin(
+      { rootNode: root },
+      { families: ['Inter', 'SF Pro', 'Helvetica Neue'], brokenFamilies: ['SF Pro'] },
+    );
+    expect(errorsOf(figma)).toEqual([]);
+    const texts = figma.currentPage.findAll((n: any) => n.type === 'TEXT') as any[];
+    expect(texts.map(t => t.characters).sort()).toEqual(['Más información', 'iPhone Duo']);
+    for (const t of texts) {
+      expect(t.fontName.family, t.characters).not.toBe('SF Pro');
+      expect(t.width, t.characters).toBeGreaterThan(1);
+    }
+    // la sonda no deja textos temporales sueltos en la página
+    expect(figma.currentPage.children.filter((n: any) => n.type === 'TEXT')).toHaveLength(0);
+    const ok = figma.logs.find((m: any) => m.type === 'RENDER_SUCCESS');
+    expect(ok.textReport.unrenderableFonts.join(' ')).toMatch(/SF Pro/);
+    expect(figma.logs.some((m: any) => m.type === 'LOG' && /no puede dibujar: SF Pro/.test(m.message))).toBe(true);
+  });
+
+  it('RENDER_SUCCESS lleva un diagnóstico de textos (creados/esperados, fuente, tamaño, recortes)', async () => {
+    const root = {
+      type: 'FRAME',
+      name: 'Hero',
+      layout: { mode: 'NONE', width: 400, height: 200 },
+      styles: { fills: [] },
+      children: [
+        {
+          type: 'TEXT',
+          name: 'Heading',
+          layout: { mode: 'NONE', width: 'FILL', height: 60, measuredWidth: 326, measuredHeight: 60, x: 0, y: 0 },
+          styles: { fills: [{ r: 0.1, g: 0.1, b: 0.1, a: 1 }] },
+          textData: { characters: 'iPhone Duo', fontSize: 56, fontWeight: '600', fontFamily: 'SF Pro Display', noWrap: true },
+        },
+      ],
+    };
+    const figma = await runPlugin({ rootNode: root });
+    const ok = figma.logs.find((m: any) => m.type === 'RENDER_SUCCESS');
+    expect(ok.textReport).toMatchObject({ expected: 1, created: 1 });
+    expect(ok.textReport.samples[0]).toMatchObject({ text: 'iPhone Duo' });
+    expect(figma.logs.some((m: any) => m.type === 'LOG' && /Textos: 1\/1/.test(m.message))).toBe(true);
+  });
+
+  it('overlay colapsado (5 px) sin recorte CSS: sus hijos se ven y no se toca su tamaño ni su fondo', async () => {
+    const root = {
+      type: 'FRAME',
+      name: 'Stage',
+      layout: { mode: 'NONE', width: 1625, height: 1145, measuredWidth: 1625, measuredHeight: 1145 },
+      styles: { fills: [] },
+      children: [
+        {
+          type: 'FRAME',
+          name: 'Labels Overlay',
+          layout: {
+            mode: 'NONE',
+            width: 1625,
+            height: 5,
+            measuredWidth: 1625,
+            measuredHeight: 5,
+            positioning: 'ABSOLUTE',
+            x: 0,
+            y: 0,
+          },
+          styles: { fills: [] },
+          children: [
+            {
+              type: 'FRAME',
+              name: 'Card 1',
+              layout: { mode: 'NONE', width: 240, height: 200, x: 20, y: 150 },
+              styles: { fills: [] },
+            },
+          ],
+        },
+      ],
+    };
+    const figma = await runPlugin({ rootNode: root });
+    expect(errorsOf(figma)).toEqual([]);
+    const overlay = figma.currentPage.findAll((n: any) => n.name === 'Labels Overlay')[0] as any;
+    expect(overlay.clipsContent).toBe(false); // como overflow: visible en la web
+    const card = figma.currentPage.findAll((n: any) => n.name === 'Card 1')[0] as any;
+    expect(card.y).toBe(150);
+  });
+
+  it('botón pequeño con un hijo que sobresale 1 px conserva su fondo (antes se borraba)', async () => {
+    const blue = { r: 0.1, g: 0.4, b: 0.9, a: 1 };
+    const root = {
+      type: 'FRAME',
+      name: 'Button / Icon',
+      layout: { mode: 'NONE', width: 40, height: 40, measuredWidth: 40, measuredHeight: 40 },
+      styles: { fills: [blue] },
+      children: [
+        {
+          type: 'FRAME',
+          name: 'Glyph',
+          layout: { mode: 'NONE', width: 24, height: 24, x: 8, y: 17 },
+          styles: { fills: [] },
+        },
+      ],
+    };
+    const figma = await runPlugin({ rootNode: root });
+    expect(errorsOf(figma)).toEqual([]);
+    const btn = figma.currentPage.findAll((n: any) => n.name === 'Button / Icon')[0] as any;
+    expect(btn.fills.length).toBe(1);
+    expect(btn.width).toBe(40);
+    expect(btn.height).toBe(40);
+  });
+});
+
+describe('dynamic-page y manifiesto (fase 7)', () => {
+  it('manifiesto: documentAccess "dynamic-page" y networkAccess acotado sin "*"', () => {
+    const manifest = require('../../packages/figma-plugin/manifest.json');
+    expect(manifest.documentAccess).toBe('dynamic-page');
+    expect(manifest.networkAccess).toBeDefined();
+    expect(manifest.networkAccess.allowedDomains).not.toContain('*');
+    expect(manifest.networkAccess.allowedDomains).toContain('ws://localhost:8080');
+    expect(manifest.networkAccess.devAllowedDomains).toContain('ws://localhost:8080');
+  });
+
+  it('dibuja y arma el tablero completo en modo dynamic-page sin llamadas síncronas prohibidas', async () => {
+    const figma = await runPlugin(
+      { rootNode: clone(landing), board: true, source: { url: 'http://localhost/landing' } },
+      { dynamicPage: true },
+    );
+    expect(errorsOf(figma)).toEqual([]);
+    const secs = sectionsOf(figma).map((s: any) => s.name);
+    const ok = figma.logs.find((m: any) => m.type === 'RENDER_SUCCESS');
+    expect(ok).toBeTruthy();
+    expect(secs).toEqual(expect.arrayContaining(['01 · Página completa', '02 · Secciones', '04 · Estilos']));
   });
 });

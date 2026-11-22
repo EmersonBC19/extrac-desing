@@ -2,13 +2,35 @@
  * Construcción de nodos de Figma a partir del árbol UINode.
  */
 import type { UINode } from './types';
-import { loadFontSafely } from './fonts';
+import { loadFontSafely, markFontUnrenderable, trackFontUse } from './fonts';
 import { base64ToBytes, cssFillToPaint } from './paint';
 import { blendModeFromStyles, effectsFromStyles } from './effects';
 import { buildBoardInstance } from './board/board';
 import { getBoardCtx } from './board/context';
 import { applyTextSegments, applyNoWrapSizing } from './text-sizing';
 import { errText, log } from './log';
+
+let _renderedNodeCount = 0;
+let _totalBatchNodes = 0;
+
+export function setRenderBatchContext(total: number): void {
+  _renderedNodeCount = 0;
+  _totalBatchNodes = total;
+}
+
+export async function yieldToFigma(_force = false): Promise<void> {
+  _renderedNodeCount++;
+  if (_totalBatchNodes > 0 && typeof figma !== 'undefined' && figma.ui && _renderedNodeCount % 10 === 0) {
+    try {
+      figma.ui.postMessage({
+        type: 'RENDER_PROGRESS',
+        rendered: _renderedNodeCount,
+        total: _totalBatchNodes,
+        percent: Math.min(100, Math.round((_renderedNodeCount / _totalBatchNodes) * 100)),
+      });
+    } catch (_e) {}
+  }
+}
 
 export function countNodes(node: UINode): number {
   let count = 1;
@@ -43,12 +65,9 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
         await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
       } catch (_e) {}
 
-      // 2. Cargar la fuente deseada preservando peso visual
-      const font = await loadFontSafely(
-        nodeData.textData.fontStack || nodeData.textData.fontFamily,
-        nodeData.textData.fontWeight,
-        { track: true },
-      );
+      // 2. Cargar la fuente deseada preservando peso visual (solo fuentes que Figma dibuja: fonts.ts)
+      const fontStack = nodeData.textData.fontStack || nodeData.textData.fontFamily;
+      let font = await loadFontSafely(fontStack, nodeData.textData.fontWeight);
 
       // 3. Crear el nodo de texto (garantizado libre de excepciones)
       const textNode = figma.createText();
@@ -69,6 +88,23 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
       try {
         textNode.fontSize = Math.max(1, nodeData.textData.fontSize || 14);
       } catch (_e) {}
+
+      // 6b. Si Figma no maqueta el texto con esa fuente (queda en 0 de ancho, sin pintarse), pasar a
+      //     la siguiente de la pila que sí dibuje. La prueba de fonts.ts lo evita casi siempre; esto
+      //     cubre una fuente que falle solo con ciertos caracteres o tamaños.
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (!(textNode.characters || '').trim() || textNode.width >= 1) break;
+        const current = textNode.fontName as FontName;
+        if (!current || (current as any) === figma.mixed || current.family === 'Inter') break;
+        markFontUnrenderable(current);
+        font = await loadFontSafely(fontStack, nodeData.textData.fontWeight);
+        try {
+          textNode.fontName = font;
+        } catch (_e) {
+          break;
+        }
+      }
+      trackFontUse(fontStack, textNode.fontName !== figma.mixed ? (textNode.fontName as FontName) : font);
 
       // 7. Asignar lineHeight
       if (nodeData.textData.lineHeight && nodeData.textData.lineHeight > 0) {
@@ -131,20 +167,54 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
 
       createdNode = textNode;
     } else if (nodeData.type === 'SVG' && nodeData.svgContent) {
+      let svgNode: FrameNode;
       try {
-        const svgNode = figma.createNodeFromSvg(nodeData.svgContent);
-        const targetW = typeof nodeData.layout?.width === 'number' ? nodeData.layout.width : 24;
-        const targetH = typeof nodeData.layout?.height === 'number' ? nodeData.layout.height : 24;
-        if (targetW > 0 && targetH > 0) {
-          svgNode.resize(targetW, targetH);
+        svgNode = figma.createNodeFromSvg(nodeData.svgContent);
+      } catch (_err) {
+        // Reintento: sanear degradados o filtros unresolvables que hacen fallar a Figma
+        try {
+          const fallbackHex = '#94a3b8';
+          const sanitized = nodeData.svgContent
+            .replace(/fill="url\(#[^"]+\)"/gi, `fill="${fallbackHex}"`)
+            .replace(/stroke="url\(#[^"]+\)"/gi, `stroke="${fallbackHex}"`)
+            .replace(/filter="url\(#[^"]+\)"/gi, '')
+            .replace(/<filter[\s\S]*?<\/filter>/gi, '');
+          svgNode = figma.createNodeFromSvg(sanitized);
+        } catch (sanErr) {
+          log.warn('No se pudo crear SVG, se usa un frame de reemplazo', { error: errText(sanErr) });
+          const fallback = figma.createFrame();
+          fallback.resize(24, 24);
+          svgNode = fallback;
         }
-        createdNode = svgNode;
-      } catch (err) {
-        log.warn('No se pudo crear SVG, se usa un frame de reemplazo', { error: errText(err) });
-        const fallback = figma.createFrame();
-        fallback.resize(24, 24);
-        createdNode = fallback;
       }
+      const targetW = typeof nodeData.layout?.width === 'number' ? nodeData.layout.width : 24;
+      const targetH = typeof nodeData.layout?.height === 'number' ? nodeData.layout.height : 24;
+      if (targetW > 0 && targetH > 0) {
+        svgNode.resize(targetW, targetH);
+      }
+      if (nodeData.styles?.cornerRadius !== undefined) {
+        if (typeof nodeData.styles.cornerRadius === 'number' && nodeData.styles.cornerRadius > 0) {
+          svgNode.cornerRadius = nodeData.styles.cornerRadius;
+        } else if (Array.isArray(nodeData.styles.cornerRadius) && nodeData.styles.cornerRadius.length === 4) {
+          const [tl, tr, br, bl] = nodeData.styles.cornerRadius;
+          svgNode.topLeftRadius = Math.max(0, tl);
+          svgNode.topRightRadius = Math.max(0, tr);
+          svgNode.bottomRightRadius = Math.max(0, br);
+          svgNode.bottomLeftRadius = Math.max(0, bl);
+        }
+        svgNode.clipsContent = true;
+      }
+      if (nodeData.styles?.fills && nodeData.styles.fills.length > 0) {
+        const toPaint = (f: any) => cssFillToPaint(f, targetW, targetH);
+        svgNode.fills = nodeData.styles.fills.map(toPaint);
+      }
+      const svgEffects = effectsFromStyles(nodeData.styles, 'FRAME');
+      if (svgEffects.length > 0) {
+        try {
+          svgNode.effects = svgEffects;
+        } catch (_effErr) {}
+      }
+      createdNode = svgNode;
     } else {
       // FRAME o COMPONENT
       const frame = nodeData.type === 'COMPONENT' ? figma.createComponent() : figma.createFrame();
@@ -224,8 +294,10 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
             type: 'IMAGE',
             scaleMode: (nodeData.styles?.imageScaleMode as any) || 'FILL',
             imageHash: image.hash,
+            scalingFactor: nodeData.styles?.imageScaleMode === 'TILE' ? 1 : undefined,
           };
           frame.fills = [...baseFills.map(toPaint), imagePaint, ...overlayFills.map(toPaint)];
+          await yieldToFigma(true);
         } catch (_imgErr: any) {
           log.warn('Error decodificando imagen base64', { error: errText(_imgErr) });
           figma.ui.postMessage({
@@ -238,6 +310,8 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
         }
       } else if (nodeData.styles?.fills) {
         frame.fills = nodeData.styles.fills.map(toPaint);
+      } else {
+        frame.fills = [];
       }
 
       // Bordes (Strokes) y lados individuales
@@ -265,6 +339,27 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
           }
         } else {
           frame.strokeWeight = Math.max(1, stroke.width || 1);
+        }
+
+        // Estilo discontinuo de borde (dashed o dotted)
+        if (stroke.style === 'DASHED') {
+          try {
+            const dash = Math.max(4, stroke.width * 3);
+            const gap = Math.max(3, stroke.width * 2);
+            (frame as any).dashPattern = [dash, gap];
+            (frame as any).strokeDashes = [dash, gap]; // compatibilidad
+            (frame as any).strokeCap = 'ROUND';
+            (frame as any).strokeJoin = 'ROUND';
+          } catch (_e) {}
+        } else if (stroke.style === 'DOTTED') {
+          try {
+            const dot = Math.max(1, stroke.width);
+            const gap = Math.max(3, stroke.width * 2.5);
+            (frame as any).dashPattern = [dot, gap];
+            (frame as any).strokeDashes = [dot, gap]; // compatibilidad
+            (frame as any).strokeCap = 'ROUND';
+            (frame as any).strokeJoin = 'ROUND';
+          } catch (_e) {}
         }
       }
 
@@ -316,19 +411,121 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
         } catch (_e) {}
       }
 
-      // Habilitar Clip Content en frames raíz o frames con fondo y esquinas redondeadas
-      const hasRoundCorners = typeof frame.cornerRadius === 'number' ? frame.cornerRadius > 0 : false;
-      const hasFills = Array.isArray(frame.fills) && frame.fills.length > 0;
       // createFrame() recorta por defecto: fijarlo explícitamente según el CSS (overflow),
-      // si no, contenido desplazado (slides, overlays) desaparece en vez de verse.
-      frame.clipsContent = !!(nodeData.clipsContent || (hasRoundCorners && hasFills));
+      // si no, contenido desplazado (slides, overlays, callouts fuera de la caja) desaparece en vez de verse.
+      frame.clipsContent = !!nodeData.clipsContent;
+
+      // Borde de acento asimétrico individual (ej. barra o línea de color a la izquierda de la tarjeta)
+      if (nodeData.styles?.accentBorder) {
+        const ab = nodeData.styles.accentBorder;
+        try {
+          const abW = ab.width || 3;
+          const abColor = toPaint(ab.color);
+          const fW = Math.max(1, initW);
+          const fH = Math.max(1, initH);
+
+          if (ab.style === 'DOTTED' || ab.style === 'DASHED') {
+            const line = figma.createLine();
+            line.name = `Accent / ${ab.side}`;
+            line.strokes = [abColor];
+            line.strokeWeight = abW;
+            const dash = ab.style === 'DASHED' ? Math.max(4, abW * 3) : Math.max(1, abW);
+            const gap = ab.style === 'DASHED' ? Math.max(3, abW * 2) : Math.max(3, abW * 2.5);
+            try {
+              (line as any).dashPattern = [dash, gap];
+              (line as any).strokeCap = 'ROUND';
+            } catch (_e) {}
+
+            frame.appendChild(line);
+            if (frame.layoutMode !== 'NONE' && 'layoutPositioning' in line) {
+              try {
+                (line as any).layoutPositioning = 'ABSOLUTE';
+              } catch (_e) {}
+            }
+
+            if (ab.side === 'LEFT' || ab.side === 'RIGHT') {
+              line.rotation = -90;
+              line.resize(fH, 0);
+              line.x = ab.side === 'LEFT' ? Math.round(abW / 2) : fW - Math.round(abW / 2);
+              line.y = fH;
+            } else {
+              line.resize(fW, 0);
+              line.x = 0;
+              line.y = ab.side === 'TOP' ? Math.round(abW / 2) : fH - Math.round(abW / 2);
+            }
+          } else {
+            const accentRect = figma.createRectangle();
+            accentRect.name = `Accent / ${ab.side}`;
+            accentRect.fills = [abColor];
+            accentRect.strokes = [];
+            accentRect.strokeWeight = 0;
+
+            // Solo las esquinas del lado del acento (un radio uniforme en una barra de 3 px la volvía píldora)
+            const rawCr = nodeData.styles?.cornerRadius;
+            const cr = typeof rawCr === 'number' ? [rawCr, rawCr, rawCr, rawCr] : rawCr;
+            if (Array.isArray(cr) && cr.length === 4) {
+              const [tl, tr, br, bl] = cr;
+              if (ab.side === 'LEFT') {
+                accentRect.topLeftRadius = Math.max(0, tl);
+                accentRect.bottomLeftRadius = Math.max(0, bl);
+                accentRect.topRightRadius = 0;
+                accentRect.bottomRightRadius = 0;
+              } else if (ab.side === 'RIGHT') {
+                accentRect.topRightRadius = Math.max(0, tr);
+                accentRect.bottomRightRadius = Math.max(0, br);
+                accentRect.topLeftRadius = 0;
+                accentRect.bottomLeftRadius = 0;
+              } else if (ab.side === 'TOP') {
+                accentRect.topLeftRadius = Math.max(0, tl);
+                accentRect.topRightRadius = Math.max(0, tr);
+                accentRect.bottomLeftRadius = 0;
+                accentRect.bottomRightRadius = 0;
+              } else if (ab.side === 'BOTTOM') {
+                accentRect.bottomLeftRadius = Math.max(0, bl);
+                accentRect.bottomRightRadius = Math.max(0, br);
+                accentRect.topLeftRadius = 0;
+                accentRect.topRightRadius = 0;
+              }
+            }
+
+            frame.appendChild(accentRect);
+            if (frame.layoutMode !== 'NONE' && 'layoutPositioning' in accentRect) {
+              try {
+                (accentRect as any).layoutPositioning = 'ABSOLUTE';
+              } catch (_e) {}
+            }
+
+            if (ab.side === 'LEFT') {
+              accentRect.x = 0;
+              accentRect.y = 0;
+              accentRect.resize(abW, fH);
+              accentRect.constraints = { horizontal: 'MIN', vertical: 'STRETCH' };
+            } else if (ab.side === 'RIGHT') {
+              accentRect.x = fW - abW;
+              accentRect.y = 0;
+              accentRect.resize(abW, fH);
+              accentRect.constraints = { horizontal: 'MAX', vertical: 'STRETCH' };
+            } else if (ab.side === 'TOP') {
+              accentRect.x = 0;
+              accentRect.y = 0;
+              accentRect.resize(fW, abW);
+              accentRect.constraints = { horizontal: 'STRETCH', vertical: 'MIN' };
+            } else if (ab.side === 'BOTTOM') {
+              accentRect.x = 0;
+              accentRect.y = fH - abW;
+              accentRect.resize(fW, abW);
+              accentRect.constraints = { horizontal: 'STRETCH', vertical: 'MAX' };
+            }
+          }
+        } catch (_e) {}
+      }
 
       // Procesar hijos recursivamente
       if (nodeData.children && nodeData.children.length > 0) {
         for (const childData of nodeData.children) {
-          const childNode = await buildFigmaNode(childData);
-          if (childNode)
-            try {
+          try {
+            const childNode = await buildFigmaNode(childData);
+            if (childNode) {
               frame.appendChild(childNode);
 
               // Ajustar sizing del hijo dentro del padre con Auto Layout
@@ -337,31 +534,40 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
 
                 if (childData.layout?.positioning === 'ABSOLUTE') {
                   try {
-                    // 1. En Figma un nodo ABSOLUTE no puede tener layoutSizingHorizontal = 'FILL'.
+                    // 1. Establecer layoutPositioning a ABSOLUTE en Figma PRIMERO
+                    // En Figma Auto Layout, un hijo debe ser ABSOLUTE antes de poder posicionarlo y redimensionarlo libremente
+                    if ('layoutPositioning' in layoutChild) {
+                      try {
+                        layoutChild.layoutPositioning = 'ABSOLUTE';
+                      } catch (_posErr) {
+                        log.warn('No se pudo fijar layoutPositioning ABSOLUTE', { error: errText(_posErr) });
+                      }
+                    }
+
+                    // 2. Posicionar en coordenadas exactas relativas al padre (incluso si resize o layoutPositioning dieron aviso)
+                    if (typeof childData.layout.x === 'number') childNode.x = childData.layout.x;
+                    if (typeof childData.layout.y === 'number') childNode.y = childData.layout.y;
+
+                    // 3. En Figma un nodo ABSOLUTE no puede tener layoutSizingHorizontal = 'FILL'.
                     // Debe tener dimensiones explícitas fijas en píxeles.
-                    const targetW =
+                    const specW =
                       typeof childData.layout.width === 'number' && childData.layout.width > 0
                         ? childData.layout.width
                         : childData.layout.measuredWidth || layoutChild.width || 100;
-                    const targetH =
+                    const specH =
                       typeof childData.layout.height === 'number' && childData.layout.height > 0
                         ? childData.layout.height
                         : childData.layout.measuredHeight || layoutChild.height || 100;
+                    // Tamaño medido en la web, no el mayor: con Math.max los elementos crecían más que
+                    // en la web (p. ej. con una fuente sustituta más ancha) y tapaban a sus vecinos
+                    const targetW = specW;
+                    const targetH = specH;
 
                     if (targetW > 0 && targetH > 0 && typeof layoutChild.resize === 'function') {
                       try {
                         layoutChild.resize(targetW, targetH);
                       } catch (_resErr) {}
                     }
-
-                    // 2. Establecer layoutPositioning a ABSOLUTE en Figma
-                    if ('layoutPositioning' in layoutChild) {
-                      layoutChild.layoutPositioning = 'ABSOLUTE';
-                    }
-
-                    // 3. Posicionar en coordenadas exactas relativas al padre
-                    if (typeof childData.layout.x === 'number') childNode.x = childData.layout.x;
-                    if (typeof childData.layout.y === 'number') childNode.y = childData.layout.y;
                   } catch (absErr) {
                     log.warn('Error configurando layoutPositioning ABSOLUTE', { error: errText(absErr) });
                   }
@@ -451,17 +657,22 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
                 // Posicionamiento en modo canvas libre (NONE)
                 if (typeof childData.layout?.x === 'number') childNode.x = childData.layout.x;
                 if (typeof childData.layout?.y === 'number') childNode.y = childData.layout.y;
-                if (childNode.type === 'FRAME' || childNode.type === 'COMPONENT') {
-                  const targetW =
+                if (childNode.type === 'FRAME' || childNode.type === 'COMPONENT' || childNode.type === 'INSTANCE') {
+                  const dataW =
                     (typeof childData.layout?.width === 'number'
                       ? childData.layout.width
                       : childData.layout?.measuredWidth) || childNode.width;
-                  const targetH =
+                  const dataH =
                     (typeof childData.layout?.height === 'number'
                       ? childData.layout.height
                       : childData.layout?.measuredHeight) || childNode.height;
+                  // Tamaño medido en la web (ver nota en los hijos ABSOLUTE)
+                  const targetW = dataW;
+                  const targetH = dataH;
                   if (targetW > 0 && targetH > 0 && (targetW !== childNode.width || targetH !== childNode.height)) {
-                    childNode.resize(targetW, targetH);
+                    try {
+                      childNode.resize(targetW, targetH);
+                    } catch (_e) {}
                   }
                 } else if (childNode.type === 'TEXT' && childData.textData?.noWrap) {
                   applyNoWrapSizing(childNode as TextNode, childData, false);
@@ -482,7 +693,8 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
                   }
                 }
               }
-            } catch (childErr: any) {
+            }
+          } catch (childErr: any) {
               // Un hijo con error de dimensionado no debe abortar a sus hermanos
               figma.ui.postMessage({
                 type: 'LOG',
@@ -508,6 +720,11 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
           frame.resize(targetFrameW, targetFrameH);
         } catch (_e) {}
       }
+
+      // (Sin "auto-expansión defensiva": a todo frame NONE de ≤ 50 px con un hijo que sobresaliera,
+      // aunque fuera 1 px por redondeo, le borraba el fondo — botones, badges y avatares salían sin
+      // color. Los contenedores colapsados de verdad ya los corrige el extractor, y sin recorte CSS el
+      // contenido desbordado se ve igual que en la web.)
 
       if (frame.layoutMode !== 'NONE') {
         try {

@@ -1,17 +1,83 @@
 import type { Logger, PluginSandboxMessage } from '@code-to-figma/contracts';
 import {
   getFontReport,
+  getUnrenderableFonts,
   loadFontSafely,
   prewarmFonts,
   refreshFontCache,
   resetFontReport,
   setUserFontMap,
 } from './fonts';
-import { countNodes, buildFigmaNode } from './render';
+import { countNodes, buildFigmaNode, setRenderBatchContext } from './render';
 import { buildDesignBoard } from './board/board';
 import { setBoardCtx } from './board/context';
 import { guardRenderPayload } from './validation';
 import { cssTokensToVariables, variablesAvailable } from './board/variables';
+
+/**
+ * Diagnóstico de textos tras dibujar: cuántos venían en el payload, cuántos se crearon y, de los
+ * primeros, fuente, tamaño, posición, si Figma los llega a pintar (absoluteRenderBounds) y qué
+ * padres los recortan. Viaja al hub en RENDER_SUCCESS para depurar lo que solo pasa en Figma real.
+ */
+export function textReport(root: SceneNode, payloadRoot: any) {
+  let expected = 0;
+  (function walk(n: any) {
+    if (!n) return;
+    if (n.type === 'TEXT' && n.textData) expected++;
+    for (const c of n.children || []) walk(c);
+  })(payloadRoot);
+  const created: TextNode[] =
+    root.type === 'TEXT'
+      ? [root as TextNode]
+      : typeof (root as any).findAll === 'function'
+        ? (root as any).findAll((n: SceneNode) => n.type === 'TEXT')
+        : [];
+  const rb = (root as any).absoluteBoundingBox || { x: (root as any).x || 0, y: (root as any).y || 0 };
+  const r = (v: unknown) => (typeof v === 'number' ? Math.round(v) : v);
+  const samples = created.slice(0, 12).map(t => {
+    const bb = (t as any).absoluteBoundingBox;
+    const rend = (t as any).absoluteRenderBounds;
+    const clippedBy: string[] = [];
+    for (let p: any = t.parent; p && p.type !== 'PAGE'; p = p.parent) {
+      if (p.clipsContent) clippedBy.push(`${p.name} ${r(p.width)}x${r(p.height)}`);
+      if (p === root) break;
+    }
+    const fn = t.fontName as any;
+    return {
+      text: String(t.characters || '').slice(0, 40),
+      font: fn && fn.family ? `${fn.family} ${fn.style}` : 'mixed',
+      fontSize: r(t.fontSize as any),
+      size: `${r(t.width)}x${r(t.height)}`,
+      at: bb ? `${r(bb.x - rb.x)},${r(bb.y - rb.y)}` : `${r(t.x)},${r(t.y)}`,
+      painted: rend === undefined ? 'n/d' : rend ? `${r(rend.width)}x${r(rend.height)}` : 'NO',
+      visible: t.visible,
+      opacity: t.opacity,
+      fills: JSON.stringify(t.fills).slice(0, 140),
+      autoResize: t.textAutoResize,
+      clippedBy,
+    };
+  });
+  return { expected, created: created.length, unrenderableFonts: getUnrenderableFonts(), samples };
+}
+
+/** El diagnóstico nunca debe tumbar un render que ya terminó; además lo deja en el log del plugin */
+function safeTextReport(root: SceneNode, payloadRoot: any, post: (m: PluginSandboxMessage) => void) {
+  try {
+    const rep = textReport(root, payloadRoot);
+    const notPainted = rep.samples.filter(s => s.painted === 'NO').length;
+    post({
+      type: 'LOG',
+      level: rep.created < rep.expected || notPainted ? 'warn' : 'info',
+      message:
+        `Textos: ${rep.created}/${rep.expected} creados` +
+        (notPainted ? `, ${notPainted} sin pintar en el lienzo` : '') +
+        (rep.samples[0] ? ` · ej. "${rep.samples[0].text}" ${rep.samples[0].font} ${rep.samples[0].size}` : ''),
+    });
+    return rep;
+  } catch (e: any) {
+    return { error: String(e?.message || e) };
+  }
+}
 
 /**
  * Comando RENDER_NODES: valida el payload, crea tokens, dibuja (o arma el tablero) y coloca el
@@ -30,6 +96,17 @@ export async function renderNodesCommand(
   setUserFontMap(payload?.fontMap);
   resetFontReport();
   const reportFonts = () => {
+    const broken = getUnrenderableFonts();
+    if (broken.length) {
+      post({
+        type: 'LOG',
+        level: 'warn',
+        message:
+          `Figma tiene instaladas pero no puede dibujar: ${broken.slice(0, 6).join(', ')}` +
+          `${broken.length > 6 ? ` y ${broken.length - 6} más` : ''}. Se usó la siguiente fuente de la pila. ` +
+          'Reinstala esa fuente (o reinicia Figma y su agente de fuentes) para recuperarla.',
+      });
+    }
     const subs = getFontReport();
     if (!subs.length) return undefined;
     const top = subs.slice(0, 6).map(x => `${x.requested} → ${x.used} (${x.texts})`);
@@ -56,6 +133,9 @@ export async function renderNodesCommand(
 
   // Soporte para crear o cambiar de página en Figma por pestaña
   if (payload.pageName) {
+    if (typeof (figma as any).loadAllPagesAsync === 'function') {
+      await (figma as any).loadAllPagesAsync();
+    }
     const found = figma.root.children.find(p => p.name === payload.pageName);
     if (found) {
       targetPage = found;
@@ -64,7 +144,11 @@ export async function renderNodesCommand(
       newPage.name = payload.pageName;
       targetPage = newPage;
     }
-    figma.currentPage = targetPage;
+    if (typeof (figma as any).setCurrentPageAsync === 'function') {
+      await (figma as any).setCurrentPageAsync(targetPage);
+    } else {
+      figma.currentPage = targetPage;
+    }
   }
 
   // payload.clearPage se ignora a propósito: nunca se borra el trabajo del usuario al dibujar
@@ -79,14 +163,17 @@ export async function renderNodesCommand(
   if (payload.tokens?.colors && variablesAvailable()) {
     // Variables nativas (fase 6.2); sin API de Variables, estilos de color como antes
     try {
-      createdTokensCount = cssTokensToVariables(payload.tokens.colors);
+      createdTokensCount = await cssTokensToVariables(payload.tokens.colors);
     } catch (_varErr) {}
   }
   if (payload.tokens?.colors && !createdTokensCount && typeof figma.createPaintStyle === 'function') {
+    const localStyles = typeof (figma as any).getLocalPaintStylesAsync === 'function'
+      ? await (figma as any).getLocalPaintStylesAsync()
+      : figma.getLocalPaintStyles();
     for (const [tokenName, rgba] of Object.entries(payload.tokens.colors as Record<string, any>)) {
       try {
         const cleanName = 'Token / ' + tokenName.replace(/^--/, '');
-        const existing = figma.getLocalPaintStyles().find(s => s.name === cleanName);
+        const existing = localStyles.find((s: any) => s.name === cleanName);
         const style = existing || figma.createPaintStyle();
         style.name = cleanName;
         style.paints = [
@@ -107,6 +194,10 @@ export async function renderNodesCommand(
   } catch (_e) {}
   await prewarmFonts(payload.rootNode);
   const fontsMs = Date.now() - t0;
+
+  // Registrar total de nodos y habilitar medición de progreso reactivo en Figma
+  const totalNodes = countNodes(payload.rootNode);
+  setRenderBatchContext(totalNodes);
 
   // 🗂️ Landing completa / multi-selección → tablero tipo design system
   if (payload.board) {
@@ -170,6 +261,7 @@ export async function renderNodesCommand(
         tokensCount: createdTokensCount,
         rawPayload: payload.rootNode,
         fontSubstitutions: reportFonts(),
+        textReport: safeTextReport(board.main, payload.rootNode, post),
         durationMs: boardTotal,
         timings: { fontsMs, buildMs: boardTotal - (boardStart - t0), totalMs: boardTotal },
       });
@@ -282,6 +374,7 @@ export async function renderNodesCommand(
       tokensCount: createdTokensCount,
       rawPayload: payload.rootNode,
       fontSubstitutions: reportFonts(),
+      textReport: safeTextReport(rootFigmaNode, payload.rootNode, post),
       durationMs: totalMs,
       timings: { fontsMs, buildMs, placeMs: totalMs - (renderStartTime - t0) - buildMs, totalMs },
     });

@@ -32,10 +32,23 @@ function createFigma(opts = {}) {
       this.strokes = [];
       this.effects = [];
       this.layoutMode = 'NONE';
+      this.layoutPositioning = 'AUTO';
       this.clipsContent = true;
       byId.set(this.id, this);
       if (['FRAME', 'COMPONENT', 'COMPONENT_SET', 'INSTANCE', 'PAGE', 'SECTION', 'GROUP'].includes(type))
         this.children = [];
+    }
+    async setFillStyleIdAsync(id) {
+      if (!styles.paint.find(s => s.id === id)) throw new Error('fillStyleId inexistente');
+      this._fs = id;
+    }
+    set fillStyleId(id) {
+      if (opts.dynamicPage) throw new Error('dynamic-page: fillStyleId síncrono no permitido, usa setFillStyleIdAsync');
+      if (!styles.paint.find(s => s.id === id)) throw new Error('fillStyleId inexistente');
+      this._fs = id;
+    }
+    get fillStyleId() {
+      return this._fs || '';
     }
     appendChild(c) {
       if (!this.children) throw new Error(this.type + ' no admite hijos');
@@ -55,6 +68,11 @@ function createFigma(opts = {}) {
       this.children.splice(Math.max(0, Math.min(i, this.children.length)), 0, c);
     }
     resize(w, h) {
+      if (this.type === 'LINE') {
+        this.width = Math.max(0.01, w);
+        this.height = Math.max(0, h);
+        return;
+      }
       if (!(w >= 0.01 && h >= 0.01)) throw new Error('resize inválido ' + w + 'x' + h);
       this.width = w;
       this.height = h;
@@ -155,6 +173,9 @@ function createFigma(opts = {}) {
   class TextNode extends Node {
     constructor() {
       super('TEXT');
+      // Como en Figma: un texto recién creado (vacío, Inter 12) mide 0 × ~15
+      this.width = 0;
+      this.height = 15;
       this._fontName = { family: 'Inter', style: 'Regular' };
       this._chars = '';
       this._fontSize = 12;
@@ -178,6 +199,9 @@ function createFigma(opts = {}) {
     set characters(v) {
       this._need();
       this._chars = v;
+      // opts.brokenFamilies: fuentes que se listan y "cargan" pero Figma no maqueta (visto con SF Pro
+      // en Windows): el texto conserva el tamaño de vacío y no se pinta
+      if ((opts.brokenFamilies || []).includes(this._fontName.family)) return;
       this.width = Math.max(1, Math.max(...v.split('\n').map(l => l.length)) * this._fontSize * 0.5);
       this.height = this._fontSize * 1.2 * v.split('\n').length;
     }
@@ -203,7 +227,12 @@ function createFigma(opts = {}) {
     setRangeTextDecoration() {
       this._need();
     }
+    async setTextStyleIdAsync(id) {
+      if (!styles.text.find(s => s.id === id)) throw new Error('textStyleId inexistente');
+      this._ts = id;
+    }
     set textStyleId(id) {
+      if (opts.dynamicPage) throw new Error('dynamic-page: textStyleId síncrono no permitido, usa setTextStyleIdAsync');
       if (!styles.text.find(s => s.id === id)) throw new Error('textStyleId inexistente');
       this._ts = id;
     }
@@ -247,8 +276,13 @@ function createFigma(opts = {}) {
       return current;
     },
     set currentPage(p) {
+      if (opts.dynamicPage) throw new Error('dynamic-page: figma.currentPage = ... síncrono no permitido, usa setCurrentPageAsync');
       current = p;
     },
+    setCurrentPageAsync: async p => {
+      current = p;
+    },
+    loadAllPagesAsync: async () => {},
     showUI() {},
     on() {},
     ui: { postMessage: m => logs.push(m), onmessage: null },
@@ -271,6 +305,7 @@ function createFigma(opts = {}) {
     createFrame: () => add(new Node('FRAME')),
     createComponent: () => add(new Node('COMPONENT')),
     createRectangle: () => add(new Node('RECTANGLE')),
+    createLine: () => add(new Node('LINE')),
     createSection: () => {
       if (opts.failSection) throw new Error('fallo simulado en createSection');
       const n = new Node('SECTION');
@@ -315,8 +350,16 @@ function createFigma(opts = {}) {
       styles.paint.push(s);
       return s;
     },
-    getLocalPaintStyles: () => styles.paint,
-    getNodeById: id => byId.get(id) || null,
+    getLocalPaintStyles: () => {
+      if (opts.dynamicPage) throw new Error('dynamic-page: getLocalPaintStyles síncrono no permitido, usa getLocalPaintStylesAsync');
+      return styles.paint;
+    },
+    getLocalPaintStylesAsync: async () => styles.paint,
+    getNodeById: id => {
+      if (opts.dynamicPage) throw new Error('dynamic-page: getNodeById síncrono no permitido, usa getNodeByIdAsync');
+      return byId.get(id) || null;
+    },
+    getNodeByIdAsync: async id => byId.get(id) || null,
     // Como en Figma: solo componentes, nombres "Propiedad=Valor" y sin repetir combinación
     // Variables (fase 6.2). opts.noVariables: archivo/plan sin Variables
     variables: opts.noVariables
@@ -327,8 +370,16 @@ function createFigma(opts = {}) {
           return {
             collections,
             all,
-            getLocalVariableCollections: () => collections,
-            getLocalVariables: type => all.filter(v => !type || v.resolvedType === type),
+            getLocalVariableCollections: () => {
+              if (opts.dynamicPage) throw new Error('dynamic-page: getLocalVariableCollections síncrono no permitido, usa getLocalVariableCollectionsAsync');
+              return collections;
+            },
+            getLocalVariableCollectionsAsync: async () => collections,
+            getLocalVariables: type => {
+              if (opts.dynamicPage) throw new Error('dynamic-page: getLocalVariables síncrono no permitido, usa getLocalVariablesAsync');
+              return all.filter(v => !type || v.resolvedType === type);
+            },
+            getLocalVariablesAsync: async type => all.filter(v => !type || v.resolvedType === type),
             createVariableCollection: name => {
               if (!name) throw new Error('colección sin nombre');
               const c = {

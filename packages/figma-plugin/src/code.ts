@@ -117,10 +117,10 @@ const handlers: { [T in PluginUiMessageType]: Handler<T> } = {
     post({ type: 'PAGE_INFO', pageName: figma.currentPage.name });
   },
 
-  FOCUS_NODE: msg => {
+  FOCUS_NODE: async msg => {
     if (!msg.nodeId) return;
     try {
-      const node = figma.getNodeById(msg.nodeId) as SceneNode;
+      const node = (await findNode(msg.nodeId)) as SceneNode;
       if (node) {
         figma.currentPage.selection = [node];
         figma.viewport.scrollAndZoomIntoView([node]);
@@ -128,10 +128,10 @@ const handlers: { [T in PluginUiMessageType]: Handler<T> } = {
     } catch (_e) {}
   },
 
-  CONVERT_TO_COMPONENT: msg => {
+  CONVERT_TO_COMPONENT: async msg => {
     if (!msg.nodeId) return;
     try {
-      const node = figma.getNodeById(msg.nodeId) as FrameNode;
+      const node = (await findNode(msg.nodeId)) as FrameNode;
       if (node && node.type === 'FRAME') {
         const comp = figma.createComponent();
         comp.name = node.name;
@@ -179,6 +179,71 @@ const handlers: { [T in PluginUiMessageType]: Handler<T> } = {
       log.error('Fallo en RENDER_NODES', { error: err?.message || String(err) });
       post({ type: 'RENDER_ERROR', error: err?.message || String(err) });
     }
+  },
+
+  GET_AVAILABLE_FONTS: async () => {
+    try {
+      if (typeof figma.listAvailableFontsAsync === 'function') {
+        const fonts = await figma.listAvailableFontsAsync();
+        const familiesSet = new Set<string>();
+        for (const f of fonts) familiesSet.add(f.fontName.family);
+        const uniqueFamilies = Array.from(familiesSet).sort();
+        post({
+          type: 'AVAILABLE_FONTS',
+          fonts: uniqueFamilies.map(fam => ({ family: fam, style: 'Regular' })),
+        });
+      }
+    } catch (err: any) {
+      log.warn('No se pudo listar fuentes disponibles', { error: String(err?.message || err) });
+    }
+  },
+
+  REPLACE_FONTS: async msg => {
+    const mapping = msg.mapping || {};
+    const targetNode = msg.targetNodeId ? await findNode(msg.targetNodeId) : null;
+    const scope = targetNode && !targetNode.removed ? targetNode : figma.currentPage;
+
+    const textNodes: TextNode[] = (scope as any).findAllWithCriteria
+      ? (scope as any).findAllWithCriteria({ types: ['TEXT'] })
+      : (scope as any).findAll
+        ? (scope as any).findAll((n: any) => n.type === 'TEXT')
+        : [];
+
+    let replacedCount = 0;
+    for (const tNode of textNodes) {
+      try {
+        const curFont = tNode.fontName;
+        if (curFont === figma.mixed) continue;
+        const curFam = (curFont as FontName).family;
+        const curStyle = (curFont as FontName).style;
+
+        const targetFam = mapping[curFam] || mapping[`${curFam}:::${curStyle}`];
+        if (targetFam && targetFam !== curFam) {
+          try {
+            await figma.loadFontAsync({ family: targetFam, style: curStyle });
+            tNode.fontName = { family: targetFam, style: curStyle };
+            replacedCount++;
+          } catch (_e1) {
+            try {
+              await figma.loadFontAsync({ family: targetFam, style: 'Regular' });
+              tNode.fontName = { family: targetFam, style: 'Regular' };
+              replacedCount++;
+            } catch (_e2) {}
+          }
+        }
+      } catch (_tErr) {}
+    }
+
+    post({
+      type: 'FONTS_REPLACED',
+      count: replacedCount,
+      details: `${replacedCount} capa(s) de texto actualizadas con las nuevas tipografías.`,
+    });
+    post({
+      type: 'LOG',
+      level: 'success',
+      message: `Tipografía reemplazada en ${replacedCount} capa(s) de texto.`,
+    });
   },
 };
 

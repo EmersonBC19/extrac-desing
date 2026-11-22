@@ -15,10 +15,13 @@ export function safeVarName(name: string): string {
 }
 
 /** Colección nueva con nombre único en el archivo (cada tablero crea la suya) */
-export function newCollection(base: string): { collection: VariableCollection; modeId: string } {
+export async function newCollection(base: string): Promise<{ collection: VariableCollection; modeId: string }> {
   let existing: string[] = [];
   try {
-    existing = (figma.variables.getLocalVariableCollections?.() || []).map(c => c.name);
+    const cols = typeof (figma.variables as any).getLocalVariableCollectionsAsync === 'function'
+      ? await (figma.variables as any).getLocalVariableCollectionsAsync()
+      : figma.variables.getLocalVariableCollections?.() || [];
+    existing = cols.map((c: any) => c.name);
   } catch (_e) {}
   let name = base;
   for (let i = 2; existing.includes(name); i++) name = `${base} ${i}`;
@@ -99,18 +102,26 @@ export function collectNumericTokens(nodes: SceneNode[], minUses = 2) {
  * Tokens de color de la web (variables CSS de :root) → colección "Tokens CSS" (fase 6.2).
  * Reenviar la misma web actualiza los valores en lugar de duplicar variables.
  */
-export function cssTokensToVariables(colors: Record<string, { r: number; g: number; b: number; a?: number }>): number {
+export async function cssTokensToVariables(
+  colors: Record<string, { r: number; g: number; b: number; a?: number }>,
+): Promise<number> {
   const V = figma.variables;
+  const collections = typeof (V as any).getLocalVariableCollectionsAsync === 'function'
+    ? await (V as any).getLocalVariableCollectionsAsync()
+    : V.getLocalVariableCollections?.() || [];
   const collection =
-    (V.getLocalVariableCollections?.() || []).find(c => c.name === 'Tokens CSS') ||
+    collections.find((c: any) => c.name === 'Tokens CSS') ||
     V.createVariableCollection('Tokens CSS');
   const modeId = collection.modes[0].modeId;
-  const existing = (V.getLocalVariables?.('COLOR') || []).filter(v => v.variableCollectionId === collection.id);
+  const allVars = typeof (V as any).getLocalVariablesAsync === 'function'
+    ? await (V as any).getLocalVariablesAsync('COLOR')
+    : V.getLocalVariables?.('COLOR') || [];
+  const existing = allVars.filter((v: any) => v.variableCollectionId === collection.id);
   let count = 0;
   for (const [token, c] of Object.entries(colors)) {
     try {
       const name = safeVarName(token.replace(/^--/, ''));
-      const v = existing.find(x => x.name === name) || V.createVariable(name, collection, 'COLOR');
+      const v = existing.find((x: any) => x.name === name) || V.createVariable(name, collection, 'COLOR');
       v.setValueForMode(modeId, { r: c.r, g: c.g, b: c.b, a: c.a !== undefined ? c.a : 1 });
       count++;
     } catch (_e) {}

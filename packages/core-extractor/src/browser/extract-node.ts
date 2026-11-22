@@ -14,6 +14,8 @@ import {
   canvasPixels,
   hasScrolledAncestor,
   naturalRectOfSticky,
+  isBoxless,
+  boxChildren,
 } from './dom-helpers';
 import { isInlineTextRoot, buildRichText } from './text';
 import { fitAutoLayoutToGeometry, pseudoPosition } from './geometry';
@@ -42,7 +44,7 @@ export function extractNodeTree(
 
   const rect = element.getBoundingClientRect();
   // Texto solo para lectores de pantalla (.sr-only / .visuallyhidden): no es visible, no va a Figma
-  if (parentRect !== null && isVisuallyHidden(style, rect)) return null;
+  if (parentRect !== null && isVisuallyHidden(style, rect, element)) return null;
   const vpW = window.innerWidth || 1440;
   const vpH = window.innerHeight || 900;
   const isRoot = parentRect === null;
@@ -114,6 +116,91 @@ export function extractNodeTree(
     }
     if (current.trim()) parts.push(current.trim());
     return parts;
+  }
+
+  // ── Helper para Corner Radius (Border Radius) individual o uniforme ──
+  function parseCornerRadius(elStyle: CSSStyleDeclaration): number | [number, number, number, number] {
+    const rtl = Math.round(parseFloat(elStyle.borderTopLeftRadius) || 0);
+    const rtr = Math.round(parseFloat(elStyle.borderTopRightRadius) || 0);
+    const rbr = Math.round(parseFloat(elStyle.borderBottomRightRadius) || 0);
+    const rbl = Math.round(parseFloat(elStyle.borderBottomLeftRadius) || 0);
+    return rtl === rtr && rtr === rbr && rbr === rbl ? rtl : [rtl, rtr, rbr, rbl];
+  }
+
+  /**
+   * Nombre local de una clase de CSS Modules. postcss-modules (Vite) genera `_local_hash_línea`
+   * (_head_pgjsj_6 → head) o `_local_hash`; webpack/Next `Archivo_local__hash` (Header_title__a1B2c → title).
+   */
+  function localClassName(c: string): string {
+    let m = c.match(/^_([A-Za-z][\w-]*?)_[a-z0-9]{5}(?:_\d+)?$/);
+    if (m) return m[1];
+    m = c.match(/^[A-Z][A-Za-z0-9]*_([A-Za-z][\w-]*?)__[A-Za-z0-9_-]{5}$/);
+    if (m) return m[1];
+    return c;
+  }
+
+  function hasAnyRadius(cr: number | [number, number, number, number] | undefined): boolean {
+    if (cr === undefined) return false;
+    if (typeof cr === 'number') return cr > 0;
+    return Array.isArray(cr) && cr.some(v => v > 0);
+  }
+
+  // ── Helper para Transformación de Texto (uppercase, lowercase, capitalize) ──
+  function transformText(str: string, tt: string | undefined): string {
+    if (!str || !tt) return str;
+    if (tt === 'uppercase') return str.toUpperCase();
+    if (tt === 'lowercase') return str.toLowerCase();
+    if (tt === 'capitalize') {
+      // Inicio de palabra según Unicode (\b solo entiende ASCII: "acción" daba "AcciÓN");
+      // el apóstrofo no abre palabra ("don't" → "Don't")
+      return str.replace(/(^|[^\p{L}\p{N}'’])(\p{L})/gu, (_m, pre, ch) => pre + ch.toUpperCase());
+    }
+    return str;
+  }
+
+  // ── Helper para Detección y Renderizado de Fuentes de Iconos (Material, FA, Lucide, PUA) ──
+  function isIconFont(fontFamily: string, text: string, className?: string): boolean {
+    const ff = (fontFamily || '').toLowerCase();
+    const cls = (className || '').toLowerCase();
+    if (
+      /material[ -]icons|material[ -]symbols|font[ -]?awesome|dashicons|remixicon|lucide|tabler|bootstrap-icons|glyphicons/i.test(
+        ff,
+      ) ||
+      /\b(material-icons|material-symbols|fa|fas|far|fal|fad|bi|tabler-icon|lucide)\b/i.test(cls)
+    ) {
+      return true;
+    }
+    const trimmed = (text || '').trim();
+    if (
+      trimmed.length > 0 &&
+      trimmed.length <= 4 &&
+      /^[\uE000-\uF8FF\u{F0000}-\u{FFFFD}\u{100000}-\u{10FFFD}]+$/u.test(trimmed)
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  function renderIconFontToDataUrl(text: string, elStyle: CSSStyleDeclaration, w: number, h: number): string | null {
+    try {
+      const c = document.createElement('canvas');
+      const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 2));
+      const cw = Math.max(16, Math.round(w));
+      const ch = Math.max(16, Math.round(h));
+      c.width = Math.round(cw * dpr);
+      c.height = Math.round(ch * dpr);
+      const ctx = c.getContext('2d');
+      if (!ctx) return null;
+      ctx.scale(dpr, dpr);
+      ctx.font = `${elStyle.fontStyle || 'normal'} ${elStyle.fontWeight || '400'} ${elStyle.fontSize || '16px'} ${elStyle.fontFamily || 'sans-serif'}`;
+      ctx.fillStyle = elStyle.color || '#000000';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, cw / 2, ch / 2);
+      return c.toDataURL('image/png');
+    } catch (_e) {
+      return null;
+    }
   }
 
   // ── 1. Color Parser Robusto ──
@@ -333,13 +420,150 @@ export function extractNodeTree(
     return stops.length >= 2 ? { type: 'GRADIENT_ANGULAR', from, at, stops } : null;
   }
 
-  function parseGradient(bgStr: string): any {
-    if (!bgStr || !bgStr.includes('gradient')) return null;
+  function parseAllGradients(bgStr: string): any[] {
+    if (!bgStr || !bgStr.includes('gradient')) return [];
+    const list: any[] = [];
     for (const layer of splitCssList(bgStr)) {
       const g = parseGradientLayer(layer);
-      if (g) return g;
+      if (g) list.push(g);
     }
-    return null;
+    return list;
+  }
+
+  function parseGradient(bgStr: string): any {
+    return parseAllGradients(bgStr)[0] || null;
+  }
+
+  // ── Helper para Fondos de Patrón / Cuadrícula (Grid & Dot Patterns) ──
+  // Se analiza CAPA POR CAPA. Una capa es patrón si es un trazo fino con corte duro que se repite:
+  //  - linear/radial-gradient con tesela en px (background-size) y "color 1px, transparent 1px"
+  //    (o la línea al final: "transparent 39px, color 39px");
+  //  - repeating-linear-gradient(…, color 0 1px, transparent 1px 40px): el periodo sale de las paradas.
+  // Las capas de patrón se dibujan juntas en un mosaico; el resto (viñetas, brillos, degradados
+  // normales) NO se tocan y siguen como degradados editables. Antes bastaba una capa de viñeta junto a
+  // la cuadrícula para descartar todo el patrón, y la cuadrícula quedaba como degradados estirados.
+  function generateGridPatternTile(bgImg: string, bgSize: string): { tile: string; layers: number[] } | null {
+    if (!bgImg || bgImg === 'none') return null;
+    const layers = splitCssList(bgImg).map(l => l.trim());
+    const sizes = splitCssList(bgSize || 'auto').map(s => s.trim());
+    const sizeOf = (i: number) => sizes[i % Math.max(1, sizes.length)] || 'auto';
+    const pxPair = (sz: string) => {
+      const m = sz.match(/^(\d+(?:\.\d+)?)px(?:\s+(\d+(?:\.\d+)?)px)?$/);
+      if (!m) return null;
+      const w = parseFloat(m[1]);
+      const h = m[2] ? parseFloat(m[2]) : w;
+      return w >= 4 && w <= 256 && h >= 4 && h <= 256 ? { w, h } : null;
+    };
+    const TRANSPARENT = '(?:transparent|rgba\\([^)]*,\\s*0\\))';
+    const STOP_START = new RegExp('(\\d+(?:\\.\\d+)?)px\\s*,\\s*' + TRANSPARENT, 'i'); // color Npx, transparent
+    const STOP_END = new RegExp(TRANSPARENT + '\\s+(\\d+(?:\\.\\d+)?)px\\s*,\\s*rgba?\\(', 'i'); // transparent Npx, color
+    const COLOR = /(rgba?\([^)]+\)|#[a-f0-9]{3,8})/gi;
+    const visibleColor = (layer: string) =>
+      (layer.match(COLOR) || []).find(c => !/rgba\([^)]*,\s*0\)$/i.test(c)) || null;
+    /** Dirección del degradado → orientación de la línea dibujada */
+    const lineOf = (layer: string): 'VLINE' | 'HLINE' | null => {
+      const first = (layer.match(/^[^(]*\(\s*([^,]+),/) || [])[1]?.trim().toLowerCase() || '';
+      const isDir = first.startsWith('to ') || /^-?\d+(\.\d+)?(deg|turn|rad|grad)$/.test(first);
+      if (!isDir) return 'HLINE'; // sin dirección = to bottom
+      if (/^to (right|left)$/.test(first) || /^(90|270|-90)deg$/.test(first)) return 'VLINE';
+      if (/^to (bottom|top)$/.test(first) || /^(0|180|360)deg$/.test(first)) return 'HLINE';
+      return null;
+    };
+    const thick = (v: number) => Math.min(4, Math.max(1, v));
+
+    // pos: 'start' (al inicio de cada celda) o 'end' (al final). pw/ph: periodo en cada eje (0 = continuo)
+    interface Mark {
+      kind: 'VLINE' | 'HLINE' | 'DOT';
+      t: number;
+      pos: 'start' | 'end';
+      color: string;
+      pw: number;
+      ph: number;
+      idx: number;
+    }
+    const marks: Mark[] = [];
+    layers.forEach((layer, idx) => {
+      const color = visibleColor(layer);
+      if (!color || /url\(/i.test(layer)) return;
+      if (/^repeating-linear-gradient\(/i.test(layer)) {
+        const kind = lineOf(layer);
+        const stopsPx = [...layer.matchAll(/(\d+(?:\.\d+)?)px/g)].map(m => parseFloat(m[1]));
+        const period = stopsPx.length ? Math.max(...stopsPx) : 0;
+        const st = layer.match(STOP_START);
+        if (!kind || !st || !(period >= 4 && period <= 256)) return;
+        const t = thick(parseFloat(st[1]));
+        marks.push({ kind, t, pos: 'start', color, pw: kind === 'VLINE' ? period : 0, ph: kind === 'HLINE' ? period : 0, idx });
+        return;
+      }
+      const size = pxPair(sizeOf(idx));
+      if (!size) return;
+      const isLin = /^linear-gradient\(/i.test(layer);
+      const isRad = /^(repeating-)?radial-gradient\(/i.test(layer);
+      if (!isLin && !isRad) return;
+      const st = layer.match(STOP_START);
+      const en = isLin && !st ? layer.match(STOP_END) : null;
+      if (!st && !en) return;
+      if (isRad) {
+        if (!st) return;
+        marks.push({ kind: 'DOT', t: thick(parseFloat(st[1])), pos: 'start', color, pw: size.w, ph: size.h, idx });
+        return;
+      }
+      const kind = lineOf(layer);
+      if (!kind) return;
+      const cell = kind === 'VLINE' ? size.w : size.h;
+      const t = st ? thick(parseFloat(st[1])) : thick(cell - parseFloat(en![1]));
+      marks.push({ kind, t, pos: st ? 'start' : 'end', color, pw: size.w, ph: size.h, idx });
+    });
+    if (!marks.length) return null;
+
+    // Tesela común: el mayor periodo de cada eje; las capas que no encajan en él siguen como degradado
+    let W = Math.max(0, ...marks.map(m => m.pw));
+    let H = Math.max(0, ...marks.map(m => m.ph));
+    if (!W) W = H || 8;
+    if (!H) H = W || 8;
+    const fits = (period: number, total: number) => !period || Math.abs(total / period - Math.round(total / period)) < 0.01;
+    const used = marks.filter(m => fits(m.pw, W) && fits(m.ph, H));
+    if (!used.length) return null;
+
+    try {
+      const c = document.createElement('canvas');
+      c.width = Math.round(W);
+      c.height = Math.round(H);
+      const ctx = c.getContext('2d');
+      if (!ctx) return null;
+      for (const m of used) {
+        ctx.fillStyle = m.color;
+        if (m.kind === 'VLINE') {
+          const p = m.pw || W;
+          for (let x = 0; x < W - 0.01; x += p) ctx.fillRect(m.pos === 'start' ? x : x + p - m.t, 0, m.t, H);
+        } else if (m.kind === 'HLINE') {
+          const p = m.ph || H;
+          for (let y = 0; y < H - 0.01; y += p) ctx.fillRect(0, m.pos === 'start' ? y : y + p - m.t, W, m.t);
+        } else {
+          for (let x = 0; x < W - 0.01; x += m.pw)
+            for (let y = 0; y < H - 0.01; y += m.ph) {
+              ctx.beginPath();
+              ctx.arc(x + m.pw / 2, y + m.ph / 2, m.t, 0, Math.PI * 2);
+              ctx.fill();
+            }
+        }
+      }
+      return { tile: c.toDataURL('image/png'), layers: used.map(m => m.idx) };
+    } catch (_e) {
+      return null;
+    }
+  }
+
+  /** Degradados de las capas que NO son patrón (los del patrón van en el mosaico) */
+  function gradientsExcept(bgStr: string, skip: number[]): any[] {
+    if (!bgStr || bgStr === 'none') return [];
+    const out: any[] = [];
+    splitCssList(bgStr).forEach((layer, i) => {
+      if (skip.includes(i)) return;
+      const g = parseGradientLayer(layer);
+      if (g) out.push(g);
+    });
+    return out;
   }
 
   // ── 3. Box Shadow Parser ──
@@ -350,9 +574,13 @@ export function extractNodeTree(
     for (const part of parts) {
       const trimmed = part.trim();
       if (!trimmed) continue;
+      const isInset = /\binset\b/i.test(trimmed);
       const colorMatch = trimmed.match(/(rgba?\([^)]+\)|#[a-f0-9]+)/i);
       const color = colorMatch ? parseColor(colorMatch[1]) : { r: 0, g: 0, b: 0, a: 0.15 };
-      const cleanLength = trimmed.replace(/(rgba?\([^)]+\)|#[a-f0-9]+)/i, '').trim();
+      const cleanLength = trimmed
+        .replace(/(rgba?\([^)]+\)|#[a-f0-9]+)/i, '')
+        .replace(/\binset\b/gi, '')
+        .trim();
       const lengths = cleanLength.split(/\s+/).map(l => parseFloat(l) || 0);
       if (lengths.length >= 2 && color) {
         shadows.push({
@@ -360,6 +588,7 @@ export function extractNodeTree(
           offset: { x: lengths[0], y: lengths[1] },
           radius: lengths[2] || 0,
           spread: lengths[3] || 0,
+          inset: isInset || undefined,
         });
       }
     }
@@ -517,11 +746,27 @@ export function extractNodeTree(
       const content = style.content;
       const hasContent = content && content !== 'none' && content !== 'normal' && content !== '""' && content !== "''";
       if (style.display === 'none') return null;
+      // content: none/normal → el navegador no genera el pseudo-elemento: no hay nada que copiar
+      if (!content || content === 'none' || content === 'normal') return null;
       const bg = parseColor(style.backgroundColor);
-      const w = parseFloat(style.width) || 0;
-      const h = parseFloat(style.height) || 0;
+      let w = parseFloat(style.width) || 0;
+      let h = parseFloat(style.height) || 0;
       const bgUrl = extractBgUrl(style.backgroundImage);
-      const hasBgGrad = !!parseGradient(style.backgroundImage);
+      const decoGrads = parseAllGradients(style.backgroundImage);
+      const hasBgGrad = decoGrads.length > 0;
+
+      // Bordes en el pseudo-elemento (ej. líneas separadoras, puntos, indicadores verticales como border-left: 2px dotted #10b981)
+      const topBW = parseFloat(style.borderTopWidth) || 0;
+      const rightBW = parseFloat(style.borderRightWidth) || 0;
+      const bottomBW = parseFloat(style.borderBottomWidth) || 0;
+      const leftBW = parseFloat(style.borderLeftWidth) || 0;
+      const maxBW = Math.max(topBW, rightBW, bottomBW, leftBW);
+      const hasBorder = maxBW > 0;
+
+      if (w <= 0 && (leftBW > 0 || rightBW > 0)) w = Math.max(leftBW, rightBW);
+      if (h <= 0 && (topBW > 0 || bottomBW > 0)) h = Math.max(topBW, bottomBW);
+      if (h <= 0 && parentRect && (leftBW > 0 || rightBW > 0)) h = Math.round(parentRect.height);
+      if (w <= 0 && parentRect && (topBW > 0 || bottomBW > 0)) w = Math.round(parentRect.width);
 
       // Pseudo-elemento con imagen de fondo (iconos, logos, decoraciones)
       const isRendered = content && content !== 'none' && content !== 'normal';
@@ -542,7 +787,7 @@ export function extractNodeTree(
           },
           styles: {
             fills: bg && bg.a > 0.01 ? [bg] : [],
-            cornerRadius: parseFloat(style.borderRadius) || 0,
+            cornerRadius: parseCornerRadius(style),
             imageScaleMode: bgScaleMode(style),
           },
           children: [],
@@ -552,16 +797,46 @@ export function extractNodeTree(
       }
 
       if (!hasContent) {
-        if ((!bg || bg.a <= 0.05) && !hasBgGrad) return null;
+        // Sin texto, solo se ve si pinta algo (fondo, degradado o borde) y tiene área:
+        // un pseudo transparente o de alto/ancho 0 no existe visualmente en la web
+        if ((!bg || bg.a <= 0.05) && !hasBgGrad && !hasBorder) return null;
         if (w <= 0 || h <= 0) return null;
       }
 
       const rawText = (content || '').replace(/^['"]|['"]$/g, '').trim();
       const tc = parseColor(style.color) || { r: 0.1, g: 0.1, b: 0.1, a: 1 };
       const isPosAbs = style.position === 'absolute' || style.position === 'fixed';
-      const br = parseFloat(style.borderRadius) || 0;
 
       if (rawText.length > 0) {
+        if (isIconFont(style.fontFamily, rawText) && w > 0 && h > 0) {
+          const iconImg = renderIconFontToDataUrl(rawText, style, w, h);
+          const iconNode: any = {
+            id: 'pseudo_' + ++counter.id,
+            name: 'Icon / ' + (pseudo === '::before' ? 'Before' : 'After'),
+            type: 'FRAME',
+            layout: {
+              mode: 'NONE',
+              padding: { top: 0, right: 0, bottom: 0, left: 0 },
+              itemSpacing: 0,
+              width: Math.round(w),
+              height: Math.round(h),
+              positioning: isPosAbs ? 'ABSOLUTE' : 'AUTO',
+              ...(isPosAbs ? pseudoPosition(element, style, w, h) || {} : {}),
+            },
+            styles: {
+              fills: [],
+              cornerRadius: parseCornerRadius(style),
+            },
+            children: [],
+          };
+          if (iconImg) iconNode.imageData = iconImg;
+          else {
+            iconNode._needsShot = true;
+            iconNode._vpRect = vpRectOf(parentRect);
+          }
+          return iconNode;
+        }
+
         return {
           id: 'pseudo_' + ++counter.id,
           name: pseudo === '::before' ? 'Pseudo / Before' : 'Pseudo / After',
@@ -583,8 +858,66 @@ export function extractNodeTree(
             fontStack: style.fontFamily || undefined,
           },
         };
-      } else if (w > 0 && h > 0 && ((bg && bg.a > 0.05) || hasBgGrad)) {
-        const decoFills = hasBgGrad ? [parseGradient(style.backgroundImage)] : [bg];
+      } else if (w > 0 && h > 0 && ((bg && bg.a > 0.05) || hasBgGrad || hasBorder)) {
+        const gridTile = generateGridPatternTile(style.backgroundImage, style.backgroundSize);
+        if (gridTile) {
+          return {
+            id: 'pseudo_' + ++counter.id,
+            name: pseudo === '::before' ? 'Grid / Before' : 'Grid / After',
+            type: 'FRAME',
+            layout: {
+              mode: 'NONE',
+              padding: { top: 0, right: 0, bottom: 0, left: 0 },
+              itemSpacing: 0,
+              width: Math.max(1, Math.round(w)),
+              height: Math.max(1, Math.round(h)),
+              positioning: isPosAbs ? 'ABSOLUTE' : 'AUTO',
+              ...(isPosAbs ? pseudoPosition(element, style, w, h) || {} : {}),
+            },
+            styles: {
+              // color de fondo debajo, mosaico en medio y el resto de capas (viñetas) encima
+              fills: [
+                ...(bg && bg.a > 0.01 ? [bg] : []),
+                ...gradientsExcept(style.backgroundImage, gridTile.layers),
+              ],
+              imageScaleMode: 'TILE',
+              cornerRadius: parseCornerRadius(style),
+            },
+            imageData: gridTile.tile,
+            children: [],
+          };
+        }
+        const decoFills = decoGrads.length > 0 ? decoGrads : (bg && bg.a > 0.01 ? [bg] : []);
+        const decoStrokes: any[] = [];
+        let borderSides: any = undefined;
+        if (hasBorder) {
+          const borderColorStr =
+            (leftBW > 0 ? style.borderLeftColor : '') ||
+            (topBW > 0 ? style.borderTopColor : '') ||
+            (bottomBW > 0 ? style.borderBottomColor : '') ||
+            (rightBW > 0 ? style.borderRightColor : '') ||
+            style.borderColor ||
+            style.color;
+          const strokeColor = parseColor(borderColorStr, style.color) || { r: 0.1, g: 0.8, b: 0.5, a: 1 };
+          const sideStyles = [
+            topBW > 0 ? style.borderTopStyle : '',
+            rightBW > 0 ? style.borderRightStyle : '',
+            bottomBW > 0 ? style.borderBottomStyle : '',
+            leftBW > 0 ? style.borderLeftStyle : '',
+            style.borderStyle,
+          ].filter(s => s && s !== 'none');
+          const bStyle = sideStyles.find(s => s === 'dashed' || s === 'dotted') || sideStyles[0] || 'solid';
+          const strokeDashStyle = bStyle === 'dashed' ? 'DASHED' : bStyle === 'dotted' ? 'DOTTED' : 'SOLID';
+          decoStrokes.push({ ...strokeColor, width: maxBW || 1, align: 'INSIDE', style: strokeDashStyle });
+          if (topBW !== rightBW || topBW !== bottomBW || topBW !== leftBW) {
+            borderSides = {
+              top: Math.round(topBW),
+              right: Math.round(rightBW),
+              bottom: Math.round(bottomBW),
+              left: Math.round(leftBW),
+            };
+          }
+        }
         return {
           id: 'pseudo_' + ++counter.id,
           name: pseudo === '::before' ? 'Decorator / Before' : 'Decorator / After',
@@ -593,14 +926,16 @@ export function extractNodeTree(
             mode: 'NONE',
             padding: { top: 0, right: 0, bottom: 0, left: 0 },
             itemSpacing: 0,
-            width: Math.round(w),
-            height: Math.round(h),
+            width: Math.max(1, Math.round(w)),
+            height: Math.max(1, Math.round(h)),
             positioning: isPosAbs ? 'ABSOLUTE' : 'AUTO',
-            ...(isPosAbs ? pseudoPosition(element, style, w, h) || {} : {}),
+            ...(isPosAbs ? pseudoPosition(element, style, Math.max(1, w), Math.max(1, h)) || {} : {}),
           },
           styles: {
             fills: decoFills,
-            cornerRadius: br > 0 ? br : 0,
+            strokes: decoStrokes,
+            borderSides,
+            cornerRadius: parseCornerRadius(style),
           },
           children: [],
         };
@@ -700,14 +1035,24 @@ export function extractNodeTree(
       return 'Header / Navbar';
     if (tag === 'form') return 'Form / Container';
 
-    // Limpiar clases utilitarias de Tailwind / Angular para no usarlas de nombre
+    // Limpiar clases utilitarias de Tailwind / Angular y hashes de frameworks para no usarlas de nombre.
+    // (Antes se partía con /\\s+/ —barra invertida literal— y se usaba la cadena de clases entera.)
     const rawClass = typeof el.className === 'string' ? el.className.trim() : '';
     if (rawClass) {
-      const cleanClasses = rawClass.split(/\\s+/).filter(c => {
-        return !/^(mb-|mt-|ml-|mr-|p-|px-|py-|w-|h-|flex|grid|block|inline|relative|absolute|text-|bg-|border-|rounded-|ng-|mat-|cursor-|transition-|duration-|hover:|focus:)/.test(
-          c,
-        );
-      });
+      const cleanClasses = rawClass
+        .split(/\s+/)
+        .filter(c => {
+          if (
+            /^(mb-|mt-|ml-|mr-|p-|px-|py-|w-|h-|flex|grid|block|inline|relative|absolute|text-|bg-|border-|rounded-|ng-|mat-|cursor-|transition-|duration-|hover:|focus:)/.test(
+              c,
+            )
+          )
+            return false;
+          // Clases de alcance generadas: svelte-1x2y3z, astro-ABC123, css-1q2w3e (emotion), sc-aXZVg, jsx-123
+          return !/^(svelte|astro|css|sc|jsx|emotion)-[A-Za-z0-9]+$/.test(c);
+        })
+        .map(localClassName)
+        .filter(Boolean);
       if (cleanClasses.length > 0) {
         const c0 = cleanClasses[0];
         return c0.charAt(0).toUpperCase() + c0.slice(1);
@@ -737,8 +1082,8 @@ export function extractNodeTree(
     const svgHasStroke =
       (svgCompStyle.stroke && svgCompStyle.stroke !== 'none') || element.getAttribute('stroke') !== null;
 
-    const origVectors = element.querySelectorAll('path, circle, rect, polygon, line, ellipse');
-    const cloneVectors = svgClone.querySelectorAll('path, circle, rect, polygon, line, ellipse');
+    const origVectors = element.querySelectorAll('path, circle, rect, polygon, polyline, line, ellipse, text');
+    const cloneVectors = svgClone.querySelectorAll('path, circle, rect, polygon, polyline, line, ellipse, text');
     for (let vi = 0; vi < origVectors.length; vi++) {
       const ov = origVectors[vi];
       const cv = cloneVectors[vi];
@@ -761,77 +1106,161 @@ export function extractNodeTree(
       const hasStroke = (vStroke && vStroke !== 'none') || svgHasStroke;
 
       const vFill = vs.fill;
-      if (vFill && vFill !== 'none') {
-        if (hasStroke) {
-          // Icono tipo outline / stroke: si no tiene fill explícito inline o es none/transparent, NUNCA forzar sólido
-          const explicitFill = ov.getAttribute('fill');
-          if (!explicitFill || explicitFill === 'none' || explicitFill === 'transparent') {
-            cv.setAttribute('fill', 'none');
-          } else {
-            const pf = parseColor(explicitFill, style.color) || parseColor(vFill, style.color) || cc;
-            const fHex =
-              '#' +
-              Math.round(pf.r * 255)
-                .toString(16)
-                .padStart(2, '0') +
-              Math.round(pf.g * 255)
-                .toString(16)
-                .padStart(2, '0') +
-              Math.round(pf.b * 255)
-                .toString(16)
-                .padStart(2, '0');
-            cv.setAttribute('fill', fHex);
-            if (pf.a < 1) cv.setAttribute('fill-opacity', String(pf.a));
-          }
-        } else {
-          // Icono puramente sólido (ej. logo Banco Pichincha)
-          const pf = parseColor(vFill, style.color) || cc;
-          const fHex =
-            '#' +
-            Math.round(pf.r * 255)
-              .toString(16)
-              .padStart(2, '0') +
-            Math.round(pf.g * 255)
-              .toString(16)
-              .padStart(2, '0') +
-            Math.round(pf.b * 255)
-              .toString(16)
-              .padStart(2, '0');
-          cv.setAttribute('fill', fHex);
-          if (pf.a < 1) cv.setAttribute('fill-opacity', String(pf.a));
+      const explicitFill = ov.getAttribute('fill') || '';
+      const explicitStroke = ov.getAttribute('stroke') || '';
+      // url(#id), url("#id") o url("https://pagina/#id") → id
+      const urlRef = (v: string | null | undefined) =>
+        (String(v || '').match(/url\(\s*["']?[^#"')]*#([^)"']+)["']?\s*\)/) || [])[1] || null;
+      const fillRef = urlRef(explicitFill) || urlRef(vFill);
+      const strokeRef = urlRef(explicitStroke) || urlRef(vStroke);
+
+      /** Copia el <linearGradient>/<radialGradient>/<pattern> referenciado a los <defs> del clon */
+      const inlineDef = (id: string | null): boolean => {
+        if (!id) return false;
+        const defEl = document.getElementById(id);
+        if (!defEl) return false;
+        let defs = svgClone.querySelector('defs');
+        if (!defs) {
+          defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+          svgClone.insertBefore(defs, svgClone.firstChild);
         }
+        if (!svgClone.querySelector('#' + CSS.escape(id))) defs.appendChild(defEl.cloneNode(true));
+        return true;
+      };
+
+      /**
+       * Color sólido + su opacidad. Solo fill-opacity / stroke-opacity: añadir también `opacity`
+       * multiplicaba la transparencia (α²) y la del trazo apagaba también el relleno.
+       */
+      const setPaint = (attr: 'fill' | 'stroke', c: { r: number; g: number; b: number; a: number }, cssOpacity: string) => {
+        const hex = (v: number) =>
+          Math.round(v * 255)
+            .toString(16)
+            .padStart(2, '0');
+        cv.setAttribute(attr, '#' + hex(c.r) + hex(c.g) + hex(c.b));
+        const alpha = (c.a !== undefined ? c.a : 1) * (parseFloat(cssOpacity) >= 0 ? parseFloat(cssOpacity) : 1);
+        if (alpha < 1) cv.setAttribute(attr + '-opacity', String(Math.round(alpha * 1000) / 1000));
+        else cv.removeAttribute(attr + '-opacity');
+      };
+
+      // ── Relleno ──
+      if (fillRef && inlineDef(fillRef)) {
+        cv.setAttribute('fill', `url(#${fillRef})`);
+      } else if (vFill && vFill !== 'none' && vFill !== 'transparent') {
+        // Icono de contorno (con trazo y sin fill propio): el negro por defecto de SVG no se rellena
+        const defaultBlackOnOutline = hasStroke && !explicitFill && /^rgb\(0,\s*0,\s*0\)$/.test(vFill);
+        const pf = defaultBlackOnOutline
+          ? null
+          : (fillRef ? null : parseColor(vFill, style.color)) || parseColor(explicitFill, style.color) || cc;
+        if (pf && pf.a > 0.01) setPaint('fill', pf, vs.fillOpacity);
+        else cv.setAttribute('fill', 'none');
       } else {
         cv.setAttribute('fill', 'none');
       }
 
-      if (hasStroke) {
-        const strokeColorStr =
-          vStroke && vStroke !== 'none'
-            ? vStroke
-            : svgCompStyle.stroke && svgCompStyle.stroke !== 'none'
-              ? svgCompStyle.stroke
-              : style.color;
-        const ps = parseColor(strokeColorStr, style.color) || cc;
-        const sHex =
-          '#' +
-          Math.round(ps.r * 255)
-            .toString(16)
-            .padStart(2, '0') +
-          Math.round(ps.g * 255)
-            .toString(16)
-            .padStart(2, '0') +
-          Math.round(ps.b * 255)
-            .toString(16)
-            .padStart(2, '0');
-        cv.setAttribute('stroke', sHex);
-        if (ps.a < 1) cv.setAttribute('stroke-opacity', String(ps.a));
+      // ── Trazo ──
+      const applyStrokeGeometry = () => {
         cv.setAttribute(
           'stroke-width',
           vs.strokeWidth && vs.strokeWidth !== '0px' ? vs.strokeWidth : svgCompStyle.strokeWidth || '2',
         );
         cv.setAttribute('stroke-linecap', vs.strokeLinecap || 'round');
         cv.setAttribute('stroke-linejoin', vs.strokeLinejoin || 'round');
+      };
+      if (strokeRef && inlineDef(strokeRef)) {
+        cv.setAttribute('stroke', `url(#${strokeRef})`);
+        applyStrokeGeometry();
+      } else if (hasStroke) {
+        const usable = (v: string) => !!v && v !== 'none' && !urlRef(v);
+        const strokeColorStr = usable(vStroke) ? vStroke : usable(svgCompStyle.stroke) ? svgCompStyle.stroke : style.color;
+        const ps = parseColor(strokeColorStr, style.color) || cc;
+        setPaint('stroke', ps, vs.strokeOpacity);
+        applyStrokeGeometry();
       }
+
+      // Opacidad propia del elemento (CSS opacity), distinta de la del relleno o trazo
+      const elOpacity = parseFloat(vs.opacity);
+      if (elOpacity >= 0 && elOpacity < 1) cv.setAttribute('opacity', String(elOpacity));
+
+      // Preservar líneas discontinuas y punteadas (stroke-dasharray / stroke-dashoffset)
+      const explicitDash = ov.getAttribute('stroke-dasharray');
+      const compDash = vs.strokeDasharray && vs.strokeDasharray !== 'none' ? vs.strokeDasharray : '';
+      const svgDash =
+        svgCompStyle.strokeDasharray && svgCompStyle.strokeDasharray !== 'none' ? svgCompStyle.strokeDasharray : '';
+      const dash = explicitDash || compDash || svgDash;
+      if (dash && dash !== 'none') {
+        cv.setAttribute('stroke-dasharray', dash);
+      }
+      const explicitOffset = ov.getAttribute('stroke-dashoffset');
+      const compOffset =
+        vs.strokeDashoffset && vs.strokeDashoffset !== 'none' && vs.strokeDashoffset !== '0px'
+          ? vs.strokeDashoffset
+          : '';
+      const offset = explicitOffset || compOffset;
+      if (offset) {
+        cv.setAttribute('stroke-dashoffset', offset);
+      }
+    }
+
+    // Inlinear <use href="#id"> (sprites): Figma no resuelve referencias fuera del SVG.
+    // Se conservan x/y/transform del <use> y el viewBox del <symbol>; fill/stroke y currentColor
+    // se resuelven con los colores reales del <use> en la página.
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+    const origUses = element.querySelectorAll('use');
+    const cloneUses = svgClone.querySelectorAll('use');
+    for (let ui = 0; ui < cloneUses.length; ui++) {
+      const u = cloneUses[ui];
+      const href = u.getAttribute('href') || u.getAttribute('xlink:href') || '';
+      if (!href.startsWith('#')) continue;
+      const targetEl = document.getElementById(href.slice(1));
+      if (!targetEl) continue;
+      const us = window.getComputedStyle(origUses[ui] || element);
+      const x = u.getAttribute('x') || '0';
+      const y = u.getAttribute('y') || '0';
+
+      let replacement: Element;
+      if (targetEl.tagName.toLowerCase() === 'symbol') {
+        // <symbol> equivale a un <svg> anidado con su viewBox y el tamaño del <use>
+        replacement = document.createElementNS(SVG_NS, 'svg');
+        for (const attr of ['viewBox', 'preserveAspectRatio']) {
+          const v = targetEl.getAttribute(attr);
+          if (v) replacement.setAttribute(attr, v);
+        }
+        replacement.setAttribute('x', x);
+        replacement.setAttribute('y', y);
+        replacement.setAttribute('width', u.getAttribute('width') || '100%');
+        replacement.setAttribute('height', u.getAttribute('height') || '100%');
+        for (const ch of Array.from(targetEl.childNodes)) replacement.appendChild(ch.cloneNode(true));
+      } else {
+        replacement = document.createElementNS(SVG_NS, 'g');
+        const copy = targetEl.cloneNode(true) as Element;
+        copy.removeAttribute('id');
+        replacement.appendChild(copy);
+        if (x !== '0' || y !== '0') replacement.setAttribute('transform', `translate(${x} ${y})`);
+      }
+
+      // Lo que el contenido hereda del <use>
+      if (us.fill && us.fill !== 'none' && !us.fill.includes('url(')) replacement.setAttribute('fill', us.fill);
+      else if (us.fill === 'none') replacement.setAttribute('fill', 'none');
+      if (us.stroke && us.stroke !== 'none' && !us.stroke.includes('url(')) {
+        replacement.setAttribute('stroke', us.stroke);
+        if (us.strokeWidth) replacement.setAttribute('stroke-width', us.strokeWidth);
+      }
+      const resolvedColor = us.color || style.color;
+      for (const node of [replacement, ...Array.from(replacement.querySelectorAll('*'))]) {
+        for (const attr of ['fill', 'stroke', 'stop-color']) {
+          if ((node.getAttribute(attr) || '').toLowerCase() === 'currentcolor') node.setAttribute(attr, resolvedColor);
+        }
+      }
+
+      let finalNode: Element = replacement;
+      const useTransform = u.getAttribute('transform');
+      if (useTransform) {
+        finalNode = document.createElementNS(SVG_NS, 'g');
+        finalNode.setAttribute('transform', useTransform);
+        finalNode.appendChild(replacement);
+      }
+      u.parentNode?.replaceChild(finalNode, u);
     }
 
     let w = Math.max(1, Math.round(rect.width) || 24);
@@ -843,15 +1272,48 @@ export function extractNodeTree(
       h = squareSize;
     }
 
+    // Tamaño real en la página, en la etiqueta RAÍZ. Antes se buscaba "width=" en todo el código y
+    // cualquier stroke-width="…" lo daba por puesto: Figma importaba el SVG al tamaño de su viewBox y
+    // las líneas decorativas (circuitos alrededor de un título) salían a otra escala y desplazadas.
+    svgClone.setAttribute('width', String(w));
+    svgClone.setAttribute('height', String(h));
+    const vbAttr = (svgClone.getAttribute('viewBox') || '').trim();
+    if (!vbAttr) {
+      svgClone.setAttribute('viewBox', `0 0 ${w} ${h}`); // sin viewBox: 1 unidad = 1 px, como en la web
+    } else if (/^none\b/.test((svgClone.getAttribute('preserveAspectRatio') || '').trim())) {
+      // preserveAspectRatio="none" estira el dibujo a la caja sin conservar proporciones; Figma no lo
+      // reproduce: se hornea esa escala en un <g> y el viewBox pasa a ser la caja
+      const vb = vbAttr.split(/[\s,]+/).map(parseFloat);
+      if (vb.length === 4 && vb[2] > 0 && vb[3] > 0) {
+        const sx = w / vb[2];
+        const sy = h / vb[3];
+        if (Math.abs(sx - sy) > 0.001) {
+          const g = document.createElementNS(SVG_NS, 'g');
+          g.setAttribute('transform', `matrix(${sx} 0 0 ${sy} ${-vb[0] * sx} ${-vb[1] * sy})`);
+          for (const ch of Array.from(svgClone.childNodes) as any[]) {
+            if (!(ch.nodeType === Node.ELEMENT_NODE && ch.localName === 'defs')) g.appendChild(ch);
+          }
+          svgClone.appendChild(g);
+          svgClone.setAttribute('viewBox', `0 0 ${w} ${h}`);
+          svgClone.removeAttribute('preserveAspectRatio');
+        }
+      }
+    }
+
     let raw = svgClone.outerHTML;
     raw = raw.replace(/currentColor/gi, ccHex);
     // Inlinear y limpiar variables CSS como style="stroke-width:var(--ng-icon__stroke-width, 2)"
     raw = raw.replace(/var\(--[a-zA-Z0-9_-]+,\s*([^)]+)\)/g, '$1');
     raw = raw.replace(/style="[^"]*"/gi, '');
-    if (!/viewBox/i.test(raw)) raw = raw.replace('<svg', '<svg viewBox="0 0 ' + w + ' ' + h + '"');
-    if (!/width=/i.test(raw)) raw = raw.replace('<svg', '<svg width="' + w + '"');
-    if (!/height=/i.test(raw)) raw = raw.replace('<svg', '<svg height="' + h + '"');
-    raw = raw.replace(/\\s+(ng-reflect-[a-z-]+|_ng[a-z]+-[a-z0-9-]+|data-mat-icon-[a-z]+|class)="[^"]*"/gi, '');
+    // Atributos de Angular y clases (los colores ya van como atributos calculados). Antes con /\\s+/
+    // (barra invertida literal) esta limpieza nunca hacía nada.
+    raw = raw.replace(/\s+(ng-reflect-[a-z-]+|_ng[a-z]+-[a-z0-9-]+|data-mat-icon-[a-z]+|class)="[^"]*"/gi, '');
+
+    const svgRadius = parseCornerRadius(style);
+    const svgBg = parseColor(style.backgroundColor);
+    const svgStyles: any = { fills: [] };
+    if (svgBg && svgBg.a > 0.01) svgStyles.fills.push(svgBg);
+    if (hasAnyRadius(svgRadius)) svgStyles.cornerRadius = svgRadius;
 
     return {
       id: currentId,
@@ -866,7 +1328,7 @@ export function extractNodeTree(
         x: relX,
         y: relY,
       },
-      styles: { fills: [] },
+      styles: svgStyles,
       svgContent: raw,
     };
   }
@@ -900,7 +1362,7 @@ export function extractNodeTree(
       },
       styles: {
         fills: [],
-        cornerRadius: parseFloat(style.borderRadius) || 0,
+        cornerRadius: parseCornerRadius(style),
         imageScaleMode: style.objectFit === 'contain' ? 'FIT' : 'FILL',
       },
       children: [],
@@ -1089,6 +1551,9 @@ export function extractNodeTree(
     if (imgW <= 0) imgW = 40;
     if (imgH <= 0) imgH = 40;
 
+    const imgRadius = parseCornerRadius(imgFitStyle);
+    const nodeImgRadius = hasAnyRadius(imgRadius) ? imgRadius : parseCornerRadius(style);
+
     const imgNode: any = {
       id: currentId,
       name: 'Image / ' + (altText || (tagName === 'picture' ? 'Picture' : 'Img')),
@@ -1107,7 +1572,7 @@ export function extractNodeTree(
       },
       styles: {
         fills: [],
-        cornerRadius: parseFloat(imgFitStyle.borderRadius) || parseFloat(style.borderRadius) || 0,
+        cornerRadius: nodeImgRadius,
         imageScaleMode: imgFitStyle.objectFit === 'contain' || imgFitStyle.objectFit === 'scale-down' ? 'FIT' : 'FILL',
       },
       children: [],
@@ -1125,45 +1590,94 @@ export function extractNodeTree(
   // Capas CSS: background-color (abajo) + url() + degradados. Se conservan todas;
   // el plugin coloca la imagen entre el color base y los degradados (overlays).
   const fills = [];
-  const grad = parseGradient(style.backgroundImage);
+  const grads = parseAllGradients(style.backgroundImage);
   const pendingBgSrc = extractBgUrl(style.backgroundImage);
   const bgColor = parseColor(style.backgroundColor);
   if (bgColor && bgColor.a > 0.01) fills.push(bgColor);
-  if (grad) fills.push(grad);
+  if (grads.length > 0) fills.push(...grads);
 
   // ── 9. Strokes & Borders en Cualquier Lado ──
   const topW = Math.round(parseFloat(style.borderTopWidth) || 0);
   const rightBW = Math.round(parseFloat(style.borderRightWidth) || 0);
   const bottomW = Math.round(parseFloat(style.borderBottomWidth) || 0);
-  const leftBW = Math.round(parseFloat(style.borderLeftWidth) || 0);
+  let leftBW = Math.round(parseFloat(style.borderLeftWidth) || 0);
   const hasBorder =
     (topW > 0 && style.borderTopStyle !== 'none') ||
     (rightBW > 0 && style.borderRightStyle !== 'none') ||
     (bottomW > 0 && style.borderBottomStyle !== 'none') ||
     (leftBW > 0 && style.borderLeftStyle !== 'none');
 
-  const strokeColor =
-    parseColor(style.borderTopColor, style.color) ||
-    parseColor(style.borderBottomColor, style.color) ||
-    parseColor(style.borderLeftColor, style.color) ||
-    parseColor(style.borderRightColor, style.color);
+  const topColor = parseColor(style.borderTopColor, style.color);
+  const bottomColor = parseColor(style.borderBottomColor, style.color);
+  const leftColor = parseColor(style.borderLeftColor, style.color);
+  const rightColor = parseColor(style.borderRightColor, style.color);
+
+  // Elegir color activo: priorizar los lados que realmente tienen ancho > 0 y estilo !== none
+  let activeStrokeColor = null;
+  if (leftBW > 0 && leftColor && leftColor.a > 0.01) activeStrokeColor = leftColor;
+  else if (topW > 0 && topColor && topColor.a > 0.01) activeStrokeColor = topColor;
+  else if (bottomW > 0 && bottomColor && bottomColor.a > 0.01) activeStrokeColor = bottomColor;
+  else if (rightBW > 0 && rightColor && rightColor.a > 0.01) activeStrokeColor = rightColor;
+
+  let strokeColor = activeStrokeColor || topColor || leftColor || bottomColor || rightColor;
+
+  // Detección del estilo de trazo discontinuo (DASHED o DOTTED)
+  const borderStyles = [
+    topW > 0 ? style.borderTopStyle : '',
+    rightBW > 0 ? style.borderRightStyle : '',
+    bottomW > 0 ? style.borderBottomStyle : '',
+    leftBW > 0 ? style.borderLeftStyle : '',
+    style.borderTopStyle,
+    style.borderRightStyle,
+    style.borderBottomStyle,
+    style.borderLeftStyle,
+  ].filter(s => s && s !== 'none');
+  const dashOf = (s: string) => (s === 'dashed' ? 'DASHED' : s === 'dotted' ? 'DOTTED' : 'SOLID');
+  const bStyle = borderStyles.find(s => s === 'dashed' || s === 'dotted') || borderStyles[0] || 'solid';
+  let strokeDashStyle = dashOf(bStyle);
+
+  let accentBorder: any = undefined;
+  // Acento: borde izquierdo DISTINTO del resto del marco (color, ancho o estilo), p. ej. una tarjeta
+  // con borde sutil y una barra de color a la izquierda. Un borde izquierdo único no es acento: ya lo
+  // dibujan los lados individuales del stroke (con acento además salía dos veces).
+  const refSide =
+    topW > 0
+      ? { w: topW, c: topColor, s: style.borderTopStyle }
+      : rightBW > 0
+        ? { w: rightBW, c: rightColor, s: style.borderRightStyle }
+        : bottomW > 0
+          ? { w: bottomW, c: bottomColor, s: style.borderBottomStyle }
+          : null;
+  if (refSide && refSide.c && leftBW > 0 && leftColor && leftColor.a > 0.01) {
+    const rc = refSide.c;
+    const distinctColor =
+      Math.abs(leftColor.r - rc.r) > 0.08 ||
+      Math.abs(leftColor.g - rc.g) > 0.08 ||
+      Math.abs(leftColor.b - rc.b) > 0.08 ||
+      Math.abs((leftColor.a ?? 1) - (rc.a ?? 1)) > 0.15;
+    const distinctWidth = leftBW !== refSide.w;
+    const distinctStyle = style.borderLeftStyle !== refSide.s;
+    if (distinctColor || distinctWidth || distinctStyle) {
+      accentBorder = { side: 'LEFT', color: leftColor, width: leftBW, style: dashOf(style.borderLeftStyle) };
+      // El marco conserva el borde del resto de lados; el lado izquierdo lo pinta solo el acento
+      strokeColor = rc;
+      strokeDashStyle = dashOf(refSide.s);
+      leftBW = 0;
+    }
+  }
 
   const strokes = [];
   let borderSides = undefined;
   const maxBW = Math.max(topW, rightBW, bottomW, leftBW);
   if (hasBorder && strokeColor && strokeColor.a > 0.01) {
-    strokes.push({ ...strokeColor, width: maxBW || 1, align: 'INSIDE' });
+    strokes.push({ ...strokeColor, width: maxBW || 1, align: 'INSIDE', style: strokeDashStyle });
     if (topW !== rightBW || topW !== bottomW || topW !== leftBW) {
       borderSides = { top: topW, right: rightBW, bottom: bottomW, left: leftBW };
     }
   }
 
   // ── 10. Corner Radius ──
-  const rtl = parseFloat(style.borderTopLeftRadius) || 0;
-  const rtr = parseFloat(style.borderTopRightRadius) || 0;
-  const rbr = parseFloat(style.borderBottomRightRadius) || 0;
-  const rbl = parseFloat(style.borderBottomLeftRadius) || 0;
-  const cornerRadius = rtl === rtr && rtr === rbr && rbr === rbl ? rtl : [rtl, rtr, rbr, rbl];
+  const cornerRadius = parseCornerRadius(style);
 
   // ── 11. Box Shadows & Glassmorphism Backdrop Blur ──
   const boxShadow = parseBoxShadow(style.boxShadow);
@@ -1186,6 +1700,8 @@ export function extractNodeTree(
   };
 
   // ── 13. Auto Layout Inteligente ──
+  // Hijos que generan caja (los display: contents se sustituyen por los suyos, como en el navegador)
+  const layoutKids = boxChildren(element);
   let mode = 'NONE';
   let itemSpacing = 0;
   let primaryAlign = 'MIN';
@@ -1212,12 +1728,13 @@ export function extractNodeTree(
     if (hasAreas) {
       // Grid con áreas (ej. aside + header + content): NONE para preservar x, y absolutos
       mode = 'NONE';
-    } else if (rows.length > 1 && cols.length > 1) {
+    } else if (cols.length > 1 && (rows.length > 1 || layoutKids.length > cols.length)) {
       // Grid 2D de celdas (tarjetas, galerías) → Auto Layout con wrap de Figma, editable (fase 5.6).
       // fitWrapToGeometry comprueba que las filas sean regulares; si no, vuelve a posiciones exactas.
       mode = 'HORIZONTAL';
       layoutWrap = 'WRAP';
       gridAsWrap = true;
+      itemSpacing = Math.round(parseFloat(style.columnGap || style.gap) || 0);
     } else if (cols.length <= 1) {
       mode = 'VERTICAL';
       itemSpacing = Math.round(parseFloat(style.rowGap || style.gap) || 0);
@@ -1249,7 +1766,7 @@ export function extractNodeTree(
     style.display === 'flow-root' ||
     ['form', 'section', 'article', 'fieldset'].includes(tagName)
   ) {
-    if (element.children.length >= 2) {
+    if (layoutKids.length >= 2) {
       mode = 'VERTICAL';
       itemSpacing = Math.round(parseFloat(style.gap) || 0);
     }
@@ -1258,9 +1775,20 @@ export function extractNodeTree(
   // ── Inferencia Geométrica Real basada en posición de hijos en el DOM ──
   // Si los hijos están uno al lado del otro en el mismo eje Y -> ES HORIZONTAL (ej. KPI cards, grids de Tailwind)
   // Si los hijos están uno debajo del otro y el CSS gap es 0 (porque usaron margin) -> descubrir itemSpacing real
-  const visibleChildren = (Array.from(element.children) as any[]).filter(ch => {
+  const visibleChildren = (layoutKids as any[]).filter(ch => {
     const cs = window.getComputedStyle(ch);
     return cs.display !== 'none' && cs.visibility !== 'hidden' && parseFloat(cs.opacity) > 0;
+  });
+
+  // Escena interactiva con lienzo 3D o visor: los elementos hijos (etiquetas, tarjetas de llamada, controles)
+  // deben colocarse en sus coordenadas exactas relX, relY respecto al escenario, sin Auto Layout.
+  // Solo cuenta un HIJO DIRECTO que ocupe al menos media caja (el escenario); antes se buscaba en todos
+  // los descendientes y cualquier video o canvas dejaba sin Auto Layout a toda la cadena de ancestros.
+  const elArea = Math.max(1, rect.width * rect.height);
+  const hasCanvasOrViewer = layoutKids.some((c: Element) => {
+    if (!c.matches('canvas, video, model-viewer, [data-engine]')) return false;
+    const cr = c.getBoundingClientRect();
+    return cr.width * cr.height >= elArea * 0.5;
   });
 
   if (visibleChildren.length >= 2 && !isWholePage) {
@@ -1301,36 +1829,40 @@ export function extractNodeTree(
 
       // 2. Si hay múltiples hijos en flujo normal, determinar si apilan vertical u horizontalmente
       if (inFlowChildren.length >= 2) {
-        // Geometría en ORDEN VISUAL (no en orden DOM): CSS `order`, `flex-direction: *-reverse`
-        // o grid pueden pintar los hijos en otro orden. Los hijos luego se ordenan por x/y.
-        const rects = inFlowChildren.map(ch => ch.getBoundingClientRect()).filter(r => r.width > 0 || r.height > 0);
-        const TOL = 4;
-        const byTop = [...rects].sort((a, b) => a.top - b.top);
-        const byLeft = [...rects].sort((a, b) => a.left - b.left);
-        let isVerticalStack = rects.length >= 2;
-        let isHorizontalStack = rects.length >= 2;
-        for (let i = 0; i < rects.length - 1; i++) {
-          // Columna: cada hijo (en orden visual) empieza más abajo que el anterior
-          if (byTop[i + 1].top < byTop[i].top + 8) isVerticalStack = false;
-          // Fila: cada hijo empieza más a la derecha que el anterior Y comparten franja vertical
-          const a = byLeft[i],
-            b = byLeft[i + 1];
-          const shareRow = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > TOL;
-          if (b.left < a.left + 8 || !shareRow) isHorizontalStack = false;
-        }
-
-        if (isVerticalStack && !isHorizontalStack) {
-          mode = 'VERTICAL';
-          const measuredGap = Math.round(byTop[1].top - byTop[0].bottom);
-          if (measuredGap >= 0 && measuredGap < 150) itemSpacing = measuredGap;
-        } else if (isHorizontalStack && !isVerticalStack) {
-          mode = 'HORIZONTAL';
-          const measuredGap = Math.round(byLeft[1].left - byLeft[0].right);
-          if (measuredGap >= 0 && measuredGap < 150) itemSpacing = measuredGap;
-        } else if (!isVerticalStack && !isHorizontalStack && layoutWrap !== 'WRAP' && rects.length >= 2) {
-          // Ni fila ni columna (ej. barra de puntos debajo de un carrusel pero primera en el DOM):
-          // Auto Layout los reacomodaría mal y empujaría contenido fuera del frame → posiciones exactas.
+        if (hasCanvasOrViewer) {
           mode = 'NONE';
+        } else {
+          // Geometría en ORDEN VISUAL (no en orden DOM): CSS `order`, `flex-direction: *-reverse`
+          // o grid pueden pintar los hijos en otro orden. Los hijos luego se ordenan por x/y.
+          const rects = inFlowChildren.map(ch => ch.getBoundingClientRect()).filter(r => r.width > 0 || r.height > 0);
+          const TOL = 4;
+          const byTop = [...rects].sort((a, b) => a.top - b.top);
+          const byLeft = [...rects].sort((a, b) => a.left - b.left);
+          let isVerticalStack = rects.length >= 2;
+          let isHorizontalStack = rects.length >= 2;
+          for (let i = 0; i < rects.length - 1; i++) {
+            // Columna: cada hijo (en orden visual) empieza más abajo que el anterior
+            if (byTop[i + 1].top < byTop[i].top + 8) isVerticalStack = false;
+            // Fila: cada hijo empieza más a la derecha que el anterior Y comparten franja vertical
+            const a = byLeft[i],
+              b = byLeft[i + 1];
+            const shareRow = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > TOL;
+            if (b.left < a.left + 8 || !shareRow) isHorizontalStack = false;
+          }
+
+          if (isVerticalStack && !isHorizontalStack) {
+            mode = 'VERTICAL';
+            const measuredGap = Math.round(byTop[1].top - byTop[0].bottom);
+            if (measuredGap >= 0 && measuredGap < 150) itemSpacing = measuredGap;
+          } else if (isHorizontalStack && !isVerticalStack) {
+            mode = 'HORIZONTAL';
+            const measuredGap = Math.round(byLeft[1].left - byLeft[0].right);
+            if (measuredGap >= 0 && measuredGap < 150) itemSpacing = measuredGap;
+          } else if (!isVerticalStack && !isHorizontalStack && layoutWrap !== 'WRAP' && rects.length >= 2) {
+            // Ni fila ni columna (ej. barra de puntos debajo de un carrusel pero primera en el DOM):
+            // Auto Layout los reacomodaría mal y empujaría contenido fuera del frame → posiciones exactas.
+            mode = 'NONE';
+          }
         }
       } else if (inFlowChildren.length === 1) {
         // Contenedor con 1 solo hijo en flujo (los demás son fondos o overlays absolutos)
@@ -1539,9 +2071,38 @@ export function extractNodeTree(
     }
   }
 
+  // ¿HUG reproduce el ancho de la web? Solo si el elemento mide lo que su contenido + padding + borde.
+  // Un círculo de 20 px con un "1" (ancho fijo, centrado) quedaba en Figma de 7 px: una barrita sin
+  // número. Lo mismo un botón de ancho fijo. Entonces se conserva el ancho medido.
+  const hugFitsWidth = (() => {
+    let left = Infinity,
+      right = -Infinity;
+    for (const n of Array.from(element.childNodes) as any[]) {
+      let r: DOMRect | null = null;
+      if (n.nodeType === Node.TEXT_NODE && (n.textContent || '').trim()) {
+        const rg = document.createRange();
+        rg.selectNodeContents(n);
+        r = rg.getBoundingClientRect();
+      } else if (n.nodeType === Node.ELEMENT_NODE) {
+        r = n.getBoundingClientRect();
+      }
+      if (r && r.width > 0) {
+        left = Math.min(left, r.left);
+        right = Math.max(right, r.right);
+      }
+    }
+    if (!isFinite(left)) return true;
+    const chrome =
+      (parseFloat(style.paddingLeft) || 0) +
+      (parseFloat(style.paddingRight) || 0) +
+      (parseFloat(style.borderLeftWidth) || 0) +
+      (parseFloat(style.borderRightWidth) || 0);
+    return measuredW <= right - left + chrome + 2;
+  })();
+
   // Si es un badge o pill, NUNCA debe ser FILL y debe tener Auto Layout centrado
   if (isBadge) {
-    initialWidth = 'HUG';
+    initialWidth = hugFitsWidth ? 'HUG' : measuredW;
     initialHeight = measuredH > 0 ? measuredH : 'HUG';
     if (mode === 'NONE') {
       mode = 'HORIZONTAL';
@@ -1563,7 +2124,8 @@ export function extractNodeTree(
     (tagName === 'button' || semanticName.startsWith('Button') || semanticName.startsWith('Badge') || isBadge) &&
     !isSearchOrFullWidth &&
     !style.width?.includes('%') &&
-    measuredW < 250
+    measuredW < 250 &&
+    hugFitsWidth
   ) {
     initialWidth = 'HUG';
   }
@@ -1641,12 +2203,14 @@ export function extractNodeTree(
       fills,
       strokes,
       borderSides,
+      accentBorder: accentBorder || undefined,
       cornerRadius,
       opacity: parseFloat(style.opacity) || 1,
       boxShadow,
       backdropBlur,
     },
     children: [],
+    // Recorte según el CSS (overflow): si la web recorta, Figma también; si no, el contenido desbordado se ve
     clipsContent:
       isWholePage || CLIPPING_OVERFLOW.test(style.overflowX) || CLIPPING_OVERFLOW.test(style.overflowY)
         ? true
@@ -1662,26 +2226,53 @@ export function extractNodeTree(
   if (filterInfo.opacity < 1) node.styles.opacity = Math.round(node.styles.opacity * filterInfo.opacity * 1000) / 1000;
   const blendMode = BLEND_MODES[style.mixBlendMode];
   if (blendMode) node.styles.blendMode = blendMode;
-  const rasterReason = effectsNeedingRaster(style, filterInfo);
+  // Cuadrícula / puntos de fondo como mosaico (antes de decidir el rasterizado: si el mosaico ya
+  // reproduce todas las capas repetidas, no hace falta una captura que se lleve el contenido)
+  const gridTile = generateGridPatternTile(style.backgroundImage, style.backgroundSize);
+  let rasterReason = effectsNeedingRaster(style, filterInfo);
+  if (rasterReason === 'degradado repetido' && gridTile) {
+    const repeating = splitCssList(style.backgroundImage)
+      .map((l, i) => (/^\s*repeating-/i.test(l) ? i : -1))
+      .filter(i => i >= 0);
+    if (repeating.every(i => gridTile.layers.includes(i))) rasterReason = null;
+  }
   if (rasterReason) {
     node.metadata = { ...(node.metadata || {}), cssEffect: rasterReason };
-    // Solo elementos de tamaño razonable: rasterizar media página perdería toda la edición
+    // Solo elementos de tamaño razonable y sin hijos estructurados de UI (evitar borrar tarjetas o textos editables)
     const vpArea = (window.innerWidth || 1440) * (window.innerHeight || 900);
-    if (rect.width > 2 && rect.height > 2 && rect.width * rect.height <= vpArea * 1.5) {
+    const hasRichUiChildren =
+      element.children.length > 1 &&
+      (!!element.querySelector('p, h1, h2, h3, h4, h5, h6, button, a, [role="button"], input, article, section') ||
+        element.querySelectorAll('div, span, p, a, button').length >= 4);
+    if (!hasRichUiChildren && rect.width > 2 && rect.height > 2 && rect.width * rect.height <= vpArea * 1.5) {
       node._rasterize = rasterReason;
       node._vpRect = vpRectOf(rect);
     }
   }
-  if (pendingBgSrc) {
+  if (gridTile) {
+    // El mosaico reemplaza a las capas que lo dibujaban (si no, salían estiradas encima); las demás
+    // capas (viñetas, brillos) siguen como degradados sobre él
+    node.styles.fills = [
+      ...node.styles.fills.filter((f: any) => !grads.includes(f)),
+      ...gradientsExcept(style.backgroundImage, gridTile.layers),
+    ];
+    node.imageData = gridTile.tile;
+    node.styles.imageScaleMode = 'TILE';
+  } else if (pendingBgSrc) {
     node._pendingBgImageSrc = pendingBgSrc;
     node.styles.imageScaleMode = bgScaleMode(style);
     node._vpRect = vpRectOf(rect);
   }
 
   // ── 17. Form Elements: Inputs & Selects con Contenido Real ──
-  if (element.children.length === 0) {
+  // Un párrafo "todo inline" (texto con <a>, <small>, <b>…) que lleva padding, fondo o borde también
+  // va por aquí: frame con ese padding y UN solo texto con estilos. Antes se troceaba en piezas
+  // sueltas (texto de varias líneas + el enlace + el punto, cada una con su posición) y, con la fuente
+  // sustituta de Figma, el párrafo se reacomodaba y las piezas se montaban (notas al pie de apple.com).
+  const inlineRichRoot = !!(isDirectText && rich && rich.characters && element.children.length > 0);
+  if (element.children.length === 0 || inlineRichRoot) {
     let txt = (element.textContent || '').trim();
-    if (style.textTransform === 'uppercase') txt = txt.toUpperCase();
+    txt = transformText(txt, style.textTransform);
 
     if (tagName === 'input' || tagName === 'textarea') {
       let val = element.value || element.placeholder || '';
@@ -1776,6 +2367,17 @@ export function extractNodeTree(
           '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>',
       });
     } else if (txt.length > 0) {
+      const clsName = typeof element.className === 'string' ? element.className : '';
+      if (isIconFont(style.fontFamily, txt, clsName) && rect.width <= 128 && rect.height <= 128) {
+        const iconImg = renderIconFontToDataUrl(txt, style, rect.width, rect.height);
+        if (iconImg) {
+          node.imageData = iconImg;
+          node.name = 'Icon / ' + (txt.length > 20 ? 'Glyph' : txt);
+          node.styles.imageScaleMode = 'FIT';
+          return node;
+        }
+      }
+
       const tc = parseColor(style.color) || { r: 0.1, g: 0.1, b: 0.1, a: 1 };
 
       // Asegurar Auto Layout en frames contenedores de texto (badges, pills, botones, versión)
@@ -1795,13 +2397,18 @@ export function extractNodeTree(
       else if (style.textAlign.includes('right')) textAlignment = 'RIGHT';
 
       // Iconos en ::before / ::after de un elemento de solo texto (ej. <p class="ico">)
-      const leafBefore = pseudoHasImage(element, '::before')
-        ? extractPseudoElement(element, '::before', rect, currentLayout, counter)
-        : null;
-      const leafAfter = pseudoHasImage(element, '::after')
-        ? extractPseudoElement(element, '::after', rect, currentLayout, counter)
-        : null;
-      if (leafBefore || leafAfter) {
+      // Párrafo inline con padding: conserva sus ::before/::after decorativos como cuando se troceaba
+      const leafBefore =
+        pseudoHasImage(element, '::before') || inlineRichRoot
+          ? extractPseudoElement(element, '::before', rect, currentLayout, counter)
+          : null;
+      const leafAfter =
+        pseudoHasImage(element, '::after') || inlineRichRoot
+          ? extractPseudoElement(element, '::after', rect, currentLayout, counter)
+          : null;
+      // Solo un pseudo en flujo (icono junto al texto) convierte la caja en fila; uno absoluto no
+      const inFlowPseudo = [leafBefore, leafAfter].some(p => p && p.layout?.positioning !== 'ABSOLUTE');
+      if (inFlowPseudo) {
         node.layout.mode = 'HORIZONTAL';
         node.layout.counterAxisAlignItems = 'CENTER';
         const ps = window.getComputedStyle(element, leafBefore ? '::before' : '::after');
@@ -1858,22 +2465,40 @@ export function extractNodeTree(
     if (beforeNode) node.children.push(beforeNode);
 
     // ── 18. Hijos Recursivos ──
-    const __kids = (function (el) {
+    const kidsOf = (el: any): ChildNode[] => {
       if (el.shadowRoot) return [...el.shadowRoot.childNodes];
       if (el.localName === 'slot') {
         const a = el.assignedNodes({ flatten: true });
         return a.length ? a : [...el.childNodes];
       }
       return [...el.childNodes];
-    })(element);
+    };
+    // Hijos sin caja (display: contents, <slot>): sus hijos van directamente a este nodo, medidos
+    // contra esta caja, como los coloca el navegador
+    const expandBoxless = (nodes: ChildNode[]): ChildNode[] =>
+      nodes.flatMap(n =>
+        n.nodeType === Node.ELEMENT_NODE && isBoxless(n as Element) ? expandBoxless(kidsOf(n)) : [n],
+      );
+    const __kids = expandBoxless(kidsOf(element));
+    const elementStyle = style;
     for (const child of __kids) {
       if (child.nodeType === Node.ELEMENT_NODE) {
         const cn = extractNodeTree(child, counter, rect, currentLayout);
         if (cn) node.children.push(cn);
       } else if (child.nodeType === Node.TEXT_NODE) {
-        let raw = (child.textContent || '').trim();
+        // Texto suelto dentro de un contenedor sin caja: se mide contra esta caja, pero conserva el
+        // color y la fuente que hereda de ese contenedor
+        const parentEl = child.parentElement;
+        const style = parentEl && parentEl !== element ? window.getComputedStyle(parentEl) : elementStyle;
+        // Espacios como los colapsa el navegador: antes se copiaban los saltos de línea y tabulaciones
+        // del código fuente ("$45.900 o" / "$62.900 o" salían en líneas separadas y sangradas)
+        const ws = style.whiteSpace || 'normal';
+        let raw = child.textContent || '';
+        if (ws === 'pre-line') raw = raw.replace(/[ \t\r\f]+/g, ' ').replace(/ *\n */g, '\n');
+        else if (!/^pre|break-spaces/.test(ws)) raw = raw.replace(/[ \t\n\r\f]+/g, ' ');
+        raw = raw.trim();
         if (raw.length > 0) {
-          if (style.textTransform === 'uppercase') raw = raw.toUpperCase();
+          raw = transformText(raw, style.textTransform);
           const tc = parseColor(style.color) || { r: 0.1, g: 0.1, b: 0.1, a: 1 };
           let tx = 0,
             ty = 0;
@@ -1946,6 +2571,10 @@ export function extractNodeTree(
                   ? 'RIGHT'
                   : 'LEFT',
               isMultiline: isNodeMulti,
+              // Una sola línea en la web → una sola línea en Figma: si la fuente sustituta es más ancha,
+              // el plugin no la parte (antes los textos sueltos junto a otros elementos se partían)
+              noWrap: !isNodeMulti && tw > 0 ? true : undefined,
+              lineCount: !isNodeMulti && tw > 0 ? 1 : undefined,
             },
           });
         }
@@ -1959,23 +2588,35 @@ export function extractNodeTree(
 
   // ── 19. Corrección de Dimensiones Colapsadas ──
   if (node.children.length > 0) {
-    if (typeof node.layout.height === 'number' && node.layout.height <= 0) {
-      let mb = 0;
-      for (const ch of node.children) {
-        const cy = ch.layout?.y || 0;
-        const ch2 = typeof ch.layout?.height === 'number' ? ch.layout.height : 40;
-        if (cy + ch2 > mb) mb = cy + ch2;
-      }
-      if (mb > 0) node.layout.height = mb;
+    let mb = 0;
+    let mr = 0;
+    for (const ch of node.children) {
+      const cy = ch.layout?.y || 0;
+      const ch2 = typeof ch.layout?.height === 'number' ? ch.layout.height : ch.layout?.measuredHeight || 40;
+      if (cy + ch2 > mb) mb = cy + ch2;
+      const cx = ch.layout?.x || 0;
+      const cw = typeof ch.layout?.width === 'number' ? ch.layout.width : ch.layout?.measuredWidth || 40;
+      if (cx + cw > mr) mr = cx + cw;
     }
-    if (typeof node.layout.width === 'number' && node.layout.width <= 0) {
-      let mr = 0;
-      for (const ch of node.children) {
-        const cx = ch.layout?.x || 0;
-        const cw = typeof ch.layout?.width === 'number' ? ch.layout.width : 40;
-        if (cx + cw > mr) mr = cx + cw;
+
+    const curH = typeof node.layout.height === 'number' ? node.layout.height : node.layout.measuredHeight || 0;
+    const curW = typeof node.layout.width === 'number' ? node.layout.width : node.layout.measuredWidth || 0;
+
+    // Contenedor colapsado a 0 en la web (p. ej. todos sus hijos son absolutos): se agranda solo hasta
+    // abarcar a sus hijos, nunca al tamaño del padre (con el body de padre medía lo que la página).
+    // Una caja de área 0 no pinta su fondo en la web, así que al agrandarla su fondo se quita para no
+    // tapar lo de debajo. Si la web la recorta (overflow), sus hijos no se ven allí: se deja como está.
+    if (!node.clipsContent) {
+      if (curH < 1 && mb > 0) {
+        node.layout.height = mb;
+        node.layout.measuredHeight = mb;
+        node.styles.fills = [];
       }
-      if (mr > 0) node.layout.width = mr;
+      if (curW < 1 && mr > 0) {
+        node.layout.width = mr;
+        node.layout.measuredWidth = mr;
+        node.styles.fills = [];
+      }
     }
   }
 
@@ -2017,6 +2658,20 @@ export function extractNodeTree(
 
   // ── 20.1 Orden de capas de CSS (QA-8): sin esto, un fondo `position: fixed; z-index: -1` que va
   // al final del DOM quedaba ENCIMA de todo en Figma (bloque oscuro tapando el header y el hero).
+  // Contexto de apilamiento: qué z-index escapa de este nodo hacia sus hermanos y si, al no pintar
+  // nada propio, puede subir de capa sin tapar nada que en la web quede debajo
+  node._stack = createsStackingContext(element, style);
+  node._escZ = escapingZ(node);
+  const paintsItself =
+    (node.styles.fills || []).length > 0 ||
+    (node.styles.strokes || []).length > 0 ||
+    (node.styles.boxShadow || []).length > 0 ||
+    !!node.styles.backdropBlur ||
+    !!node.imageData ||
+    !!node._pendingBgImageSrc ||
+    !!node._needsShot ||
+    !!node._rasterize;
+  node._elevatable = !node._stack && !paintsItself;
   if (node.children.length > 1) sortByPaintOrder(node.children, mode);
 
   if (gridAsWrap) node._gridWrap = true;
@@ -2070,109 +2725,6 @@ export function extractNodeTree(
     return singleChild;
   }
 
-  // ── 22. Perfeccionamiento de Componentes Críticos del Sidebar ──
-  const elClass = typeof element.className === 'string' ? element.className : '';
-
-  // 1. Header Workspace Text & Role
-  if (elClass.includes('sidebar-workspace-text')) {
-    node.layout.mode = 'VERTICAL';
-    node.layout.counterAxisAlignItems = 'MIN';
-    node.layout.itemSpacing = 4;
-    node.layout.width = 169;
-  }
-  if (elClass.includes('sidebar-workspace-role')) {
-    node.name = 'Badge / Polaris Cloud';
-    node.layout.mode = 'HORIZONTAL';
-    node.layout.primaryAxisAlignItems = 'CENTER';
-    node.layout.counterAxisAlignItems = 'CENTER';
-    node.layout.padding = { top: 2, right: 9, bottom: 2, left: 9 };
-    node.layout.width = 'HUG';
-    node.layout.height = 19;
-    node.styles.cornerRadius = 999;
-    node.styles.fills = [{ r: 1, g: 1, b: 1, a: 0.14 }];
-    if (node.children && node.children.length > 0 && node.children[0].type === 'TEXT') {
-      node.children[0].textData.characters = 'POLARIS CLOUD';
-      node.children[0].textData.fontSize = 10;
-      node.children[0].textData.fontWeight = 600;
-      node.children[0].styles.fills = [{ r: 1, g: 0.918, b: 0.118, a: 1 }];
-    }
-  }
-
-  // 2. Search Container & Search Trigger
-  if (elClass.includes('sidebar-search') && tagName === 'div') {
-    node.name = 'Sidebar / Search';
-    node.layout.mode = 'HORIZONTAL';
-    node.layout.primaryAxisAlignItems = 'CENTER';
-    node.layout.counterAxisAlignItems = 'CENTER';
-    node.layout.padding = { top: 0, right: 12, bottom: 6, left: 12 };
-    node.layout.width = 'FILL';
-    node.layout.height = 40;
-    if (node.children && node.children.length > 0) {
-      node.children[0].layout.width = 'FILL';
-    }
-  }
-  if (elClass.includes('sidebar-search-trigger')) {
-    node.name = 'Button / Search Trigger';
-    node.layout.mode = 'HORIZONTAL';
-    node.layout.primaryAxisAlignItems = 'SPACE_BETWEEN';
-    node.layout.counterAxisAlignItems = 'CENTER';
-    node.layout.padding = { top: 0, right: 8, bottom: 0, left: 10 };
-    node.layout.width = 'FILL';
-    node.layout.height = 34;
-    node.styles.cornerRadius = 9;
-  }
-
-  // 3. Version Footer
-  if (elClass.includes('sidebar-version')) {
-    node.name = 'Sidebar / Version';
-    node.layout.mode = 'HORIZONTAL';
-    node.layout.primaryAxisAlignItems = 'CENTER';
-    node.layout.counterAxisAlignItems = 'CENTER';
-    node.layout.padding = { top: 0, right: 16, bottom: 0, left: 16 };
-    node.layout.width = 'FILL';
-    node.layout.height = 36;
-    node.styles.strokes = [{ r: 1, g: 1, b: 1, a: 0.12, width: 1, align: 'INSIDE' }];
-    node.styles.borderSides = { top: 1, right: 0, bottom: 0, left: 0 };
-    if (node.children && node.children.length > 0 && node.children[0].type === 'TEXT') {
-      node.children[0].styles.fills = [{ r: 0.776, g: 0.816, b: 0.863, a: 1 }];
-      node.children[0].textData.textAlign = 'CENTER';
-    }
-  }
-
-  // 4. User Footer Row & Avatar & Logout
-  if (elClass.includes('sidebar-user') && tagName === 'div') {
-    node.name = 'Sidebar / User';
-    node.layout.mode = 'HORIZONTAL';
-    node.layout.primaryAxisAlignItems = 'SPACE_BETWEEN';
-    node.layout.counterAxisAlignItems = 'CENTER';
-    node.layout.padding = { top: 10, right: 12, bottom: 10, left: 12 };
-    node.layout.width = 'FILL';
-    node.layout.height = 63;
-    node.styles.strokes = [{ r: 1, g: 1, b: 1, a: 0.12, width: 1, align: 'INSIDE' }];
-    node.styles.borderSides = { top: 1, right: 0, bottom: 0, left: 0 };
-  }
-  if (elClass.includes('sidebar-user-avatar')) {
-    node.name = 'Avatar / P';
-    node.layout.mode = 'HORIZONTAL';
-    node.layout.primaryAxisAlignItems = 'CENTER';
-    node.layout.counterAxisAlignItems = 'CENTER';
-    node.layout.width = 30;
-    node.layout.height = 30;
-    node.styles.cornerRadius = 15;
-    node.styles.fills = [{ r: 0, g: 0.129, b: 0.341, a: 1 }];
-    node.styles.strokes = [{ r: 1, g: 1, b: 1, a: 0.2, width: 1, align: 'INSIDE' }];
-  }
-  if (elClass.includes('sidebar-user-logout')) {
-    node.name = 'Button / Logout';
-    node.layout.mode = 'HORIZONTAL';
-    node.layout.primaryAxisAlignItems = 'CENTER';
-    node.layout.counterAxisAlignItems = 'CENTER';
-    node.layout.width = 34;
-    node.layout.height = 34;
-    node.styles.cornerRadius = 10;
-    node.styles.strokes = [{ r: 1, g: 1, b: 1, a: 0.12, width: 1, align: 'INSIDE' }];
-  }
-
   return node;
 }
 
@@ -2192,9 +2744,56 @@ export function paintLayerOf(element: Element, style: CSSStyleDeclaration): numb
   return isNaN(z) ? 0 : z;
 }
 
-/** Clave de orden: z negativo → en flujo → posicionado (z auto/0) → z positivo */
+/**
+ * ¿Forma este elemento su propio contexto de apilamiento? Si no, los z-index de sus descendientes
+ * compiten con los hermanos del elemento (en CSS "escapan" del contenedor).
+ */
+export function createsStackingContext(element: Element, style: CSSStyleDeclaration): boolean {
+  const pos = style.position;
+  if (pos === 'fixed' || pos === 'sticky') return true;
+  if (pos !== 'static' && style.zIndex !== 'auto') return true;
+  if (parseFloat(style.opacity) < 1) return true;
+  const s = style as any;
+  for (const prop of ['transform', 'filter', 'backdropFilter', 'clipPath', 'maskImage', 'webkitMaskImage']) {
+    if (s[prop] && s[prop] !== 'none') return true;
+  }
+  if (style.mixBlendMode && style.mixBlendMode !== 'normal') return true;
+  if (style.isolation === 'isolate') return true;
+  if (/transform|opacity|filter/.test(style.willChange || '')) return true;
+  if (/paint|layout|strict|content/.test(style.contain || '')) return true;
+  if (style.zIndex !== 'auto' && element.parentElement) {
+    return /flex|grid/.test(window.getComputedStyle(element.parentElement).display);
+  }
+  return false;
+}
+
+/**
+ * Mayor z-index positivo que "escapa" de un nodo hacia sus hermanos: el de sus hijos con z-index
+ * propio, o lo que escapa de los hijos que tampoco forman contexto. 0 si nada escapa.
+ */
+export function escapingZ(node: RawNode): number {
+  if (node._stack) return 0;
+  let max = 0;
+  for (const c of node.children || []) {
+    const own = typeof c._paint === 'number' && c._paint > 0 ? c._paint : 0;
+    const inner = !c._stack && typeof c._escZ === 'number' ? c._escZ : 0;
+    max = Math.max(max, own, inner);
+  }
+  return max;
+}
+
+/**
+ * Clave de orden: z negativo → en flujo → posicionado (z auto/0) → z positivo.
+ * Un contenedor transparente que no forma contexto sube a la capa de lo que escapa de él: p. ej.
+ * un envoltorio normal con tarjetas `position: relative; z-index: 2` junto a un canvas absoluto.
+ * En CSS las tarjetas quedan sobre el canvas; comparando solo hermanos, la captura opaca del canvas
+ * las tapaba en Figma.
+ */
 function paintKey(n: RawNode): [number, number] {
-  const z = n._paint;
+  let z = n._paint;
+  if (n._elevatable && typeof n._escZ === 'number' && n._escZ > 0 && (z === null || z === undefined || z <= 0)) {
+    z = n._escZ;
+  }
   if (z === null || z === undefined) return [1, 0];
   if (z < 0) return [0, z];
   if (z === 0) return [2, 0];
@@ -2217,7 +2816,11 @@ export function sortByPaintOrder(children: RawNode[], mode: string): void {
   }
   const isAbs = (c: RawNode) => c.layout?.positioning === 'ABSOLUTE';
   const flow = indexed.filter(x => !isAbs(x.c));
-  const below = indexed.filter(x => isAbs(x.c) && x.k[0] === 0).sort(byPaint);
-  const above = indexed.filter(x => isAbs(x.c) && x.k[0] !== 0).sort(byPaint);
+  // Un absoluto va debajo del flujo si tiene z negativo o si algún hijo en flujo quedó elevado por
+  // encima de él (tarjetas con z-index dentro de un envoltorio en flujo, sobre un canvas absoluto)
+  const keyLt = (a: [number, number], b: [number, number]) => a[0] < b[0] || (a[0] === b[0] && a[1] < b[1]);
+  const goesBelow = (x: (typeof indexed)[number]) => x.k[0] === 0 || flow.some(f => keyLt(x.k, f.k));
+  const below = indexed.filter(x => isAbs(x.c) && goesBelow(x)).sort(byPaint);
+  const above = indexed.filter(x => isAbs(x.c) && !goesBelow(x)).sort(byPaint);
   [...below, ...flow, ...above].forEach((x, i) => (children[i] = x.c));
 }

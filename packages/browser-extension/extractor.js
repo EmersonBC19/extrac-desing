@@ -8,6 +8,17 @@
 (() => {
   // packages/core-extractor/src/browser/dom-helpers.ts
   var CLIPPING_OVERFLOW = /^(hidden|clip|auto|scroll)$/;
+  function isBoxless(el) {
+    return window.getComputedStyle(el).display === "contents";
+  }
+  function boxChildren(el) {
+    const out = [];
+    for (const c of Array.from(el.children)) {
+      if (isBoxless(c)) out.push(...boxChildren(c));
+      else out.push(c);
+    }
+    return out;
+  }
   function isCarouselSlide(el, rect, vpW) {
     if (Math.abs(rect.left) > vpW * 25) return false;
     let p = el.parentElement;
@@ -52,9 +63,32 @@
     if (/^data:image\/gif/i.test(u)) return null;
     return u;
   }
-  function isVisuallyHidden(cs, rect) {
+  function hasVisibleOverflow(element) {
+    const visibleBox = (cs, w, h) => w > 4 && h > 4 && cs.display !== "none" && cs.visibility !== "hidden" && parseFloat(cs.opacity) > 0;
+    for (const p of ["::before", "::after"]) {
+      const ps = window.getComputedStyle(element, p);
+      if (ps.content && ps.content !== "none" && ps.content !== "normal") {
+        if (visibleBox(ps, parseFloat(ps.width) || 0, parseFloat(ps.height) || 0)) return true;
+      }
+    }
+    let level = Array.from(element.children);
+    for (let depth = 0; depth < 3 && level.length; depth++) {
+      const next = [];
+      for (const c of level.slice(0, 40)) {
+        const r = c.getBoundingClientRect();
+        if (visibleBox(window.getComputedStyle(c), r.width, r.height)) return true;
+        next.push(...Array.from(c.children));
+      }
+      level = next;
+    }
+    return false;
+  }
+  function isVisuallyHidden(cs, rect, element) {
     if (cs.position !== "absolute" && cs.position !== "fixed") return false;
-    if (rect.width <= 2 && rect.height <= 2) return true;
+    if (rect.width <= 2 && rect.height <= 2) {
+      const clips = CLIPPING_OVERFLOW.test(cs.overflowX) || CLIPPING_OVERFLOW.test(cs.overflowY) || /rect\(/.test(cs.clip || "") || !!cs.clipPath && cs.clipPath !== "none";
+      return clips || !element || !hasVisibleOverflow(element);
+    }
     const sy = cs.position === "fixed" ? 0 : window.scrollY;
     const sx = cs.position === "fixed" ? 0 : window.scrollX;
     if (rect.bottom + sy <= 0 || rect.right + sx <= 0) return true;
@@ -211,9 +245,12 @@
     }
     return null;
   }
-  function applyTextTransform(ch, tt) {
+  function applyTextTransform(ch, tt, prevCh) {
     if (tt === "uppercase") return ch.toUpperCase();
     if (tt === "lowercase") return ch.toLowerCase();
+    if (tt === "capitalize") {
+      if (!prevCh || !/[\p{L}\p{N}'’]/u.test(prevCh)) return ch.toUpperCase();
+    }
     return ch;
   }
   function buildRichText(root, rootStyle) {
@@ -322,7 +359,7 @@
         } else if (measured >= MAX_MEASURE) {
           measureOk = false;
         }
-        let outCh = applyTextTransform(ch, st._tt);
+        let outCh = applyTextTransform(ch, st._tt, out.length > 0 ? out[out.length - 1] : void 0);
         if (st.baseline === "SUPER" && SUP_MAP[outCh]) outCh = SUP_MAP[outCh];
         else if (st.baseline === "SUB" && SUB_MAP[outCh]) outCh = SUB_MAP[outCh];
         pushChar(outCh, st);
@@ -571,6 +608,9 @@
       fitAutoLayoutToGeometry(node);
       return;
     }
+    if (L.width === "FILL") {
+      L.width = Math.round(W);
+    }
     const gaps = [];
     for (const r2 of rows)
       for (let i = 1; i < r2.items.length; i++) {
@@ -623,26 +663,52 @@
       }
     }
   }
+  function isContainingBlock(s, fixedToo) {
+    const transformed = s.transform !== "none" || s.filter !== "none" || /paint|layout|strict|content/.test(s.contain || "");
+    return fixedToo ? transformed : transformed || s.position !== "static";
+  }
   function pseudoPosition(element, ps, w, h) {
-    const es = window.getComputedStyle(element);
-    if (es.position === "static") return null;
     const er = element.getBoundingClientRect();
-    const bl = parseFloat(es.borderLeftWidth) || 0, bt = parseFloat(es.borderTopWidth) || 0;
-    const br = parseFloat(es.borderRightWidth) || 0, bb = parseFloat(es.borderBottomWidth) || 0;
-    const px = (v) => v && v.endsWith("px") ? parseFloat(v) : null;
-    let x = null, y = null;
-    const left = px(ps.left), right = px(ps.right), top = px(ps.top), bottom = px(ps.bottom);
-    if (left !== null) x = bl + left;
-    else if (right !== null) x = er.width - br - right - w;
-    if (top !== null) y = bt + top;
-    else if (bottom !== null) y = er.height - bb - bottom - h;
+    const es = window.getComputedStyle(element);
+    const fixed = ps.position === "fixed";
+    let cb = null;
+    for (let el = element; el && el !== document.documentElement; el = el.parentElement) {
+      const s = window.getComputedStyle(el);
+      if (!isContainingBlock(s, fixed)) continue;
+      const r = el.getBoundingClientRect();
+      const bl = parseFloat(s.borderLeftWidth) || 0;
+      const bt = parseFloat(s.borderTopWidth) || 0;
+      const br = parseFloat(s.borderRightWidth) || 0;
+      const bb = parseFloat(s.borderBottomWidth) || 0;
+      cb = { left: r.left + bl, top: r.top + bt, width: r.width - bl - br, height: r.height - bt - bb };
+      break;
+    }
+    if (!cb) {
+      cb = fixed ? { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight } : { left: -window.scrollX, top: -window.scrollY, width: window.innerWidth, height: window.innerHeight };
+    }
+    const parseVal = (v, dim) => {
+      if (!v || v === "auto") return null;
+      if (v.endsWith("%")) {
+        const pct = parseFloat(v);
+        return !isNaN(pct) ? pct / 100 * dim : null;
+      }
+      const num = parseFloat(v);
+      return !isNaN(num) ? num : null;
+    };
+    const left = parseVal(ps.left, cb.width), right = parseVal(ps.right, cb.width), top = parseVal(ps.top, cb.height), bottom = parseVal(ps.bottom, cb.height);
+    let x, y;
+    if (left !== null) x = cb.left + left - er.left;
+    else if (right !== null) x = cb.left + cb.width - right - w - er.left;
+    else x = (parseFloat(es.borderLeftWidth) || 0) + (parseFloat(es.paddingLeft) || 0);
+    if (top !== null) y = cb.top + top - er.top;
+    else if (bottom !== null) y = cb.top + cb.height - bottom - h - er.top;
+    else y = (parseFloat(es.borderTopWidth) || 0) + (parseFloat(es.paddingTop) || 0);
     const m = (ps.transform || "").match(/^matrix\(([^)]+)\)$/);
     if (m) {
       const k = m[1].split(",").map(parseFloat);
-      if (x !== null) x += k[4] || 0;
-      if (y !== null) y += k[5] || 0;
+      x += k[4] || 0;
+      y += k[5] || 0;
     }
-    if (x === null || y === null) return null;
     return { x: Math.round(x), y: Math.round(y) };
   }
 
@@ -748,7 +814,7 @@
       return null;
     }
     const rect = element.getBoundingClientRect();
-    if (parentRect !== null && isVisuallyHidden(style, rect)) return null;
+    if (parentRect !== null && isVisuallyHidden(style, rect, element)) return null;
     const vpW = window.innerWidth || 1440;
     const vpH = window.innerHeight || 900;
     const isRoot = parentRect === null;
@@ -801,6 +867,69 @@
       }
       if (current.trim()) parts.push(current.trim());
       return parts;
+    }
+    function parseCornerRadius(elStyle) {
+      const rtl = Math.round(parseFloat(elStyle.borderTopLeftRadius) || 0);
+      const rtr = Math.round(parseFloat(elStyle.borderTopRightRadius) || 0);
+      const rbr = Math.round(parseFloat(elStyle.borderBottomRightRadius) || 0);
+      const rbl = Math.round(parseFloat(elStyle.borderBottomLeftRadius) || 0);
+      return rtl === rtr && rtr === rbr && rbr === rbl ? rtl : [rtl, rtr, rbr, rbl];
+    }
+    function localClassName(c) {
+      let m = c.match(/^_([A-Za-z][\w-]*?)_[a-z0-9]{5}(?:_\d+)?$/);
+      if (m) return m[1];
+      m = c.match(/^[A-Z][A-Za-z0-9]*_([A-Za-z][\w-]*?)__[A-Za-z0-9_-]{5}$/);
+      if (m) return m[1];
+      return c;
+    }
+    function hasAnyRadius(cr) {
+      if (cr === void 0) return false;
+      if (typeof cr === "number") return cr > 0;
+      return Array.isArray(cr) && cr.some((v) => v > 0);
+    }
+    function transformText(str, tt) {
+      if (!str || !tt) return str;
+      if (tt === "uppercase") return str.toUpperCase();
+      if (tt === "lowercase") return str.toLowerCase();
+      if (tt === "capitalize") {
+        return str.replace(/(^|[^\p{L}\p{N}'’])(\p{L})/gu, (_m, pre, ch) => pre + ch.toUpperCase());
+      }
+      return str;
+    }
+    function isIconFont(fontFamily, text, className) {
+      const ff = (fontFamily || "").toLowerCase();
+      const cls = (className || "").toLowerCase();
+      if (/material[ -]icons|material[ -]symbols|font[ -]?awesome|dashicons|remixicon|lucide|tabler|bootstrap-icons|glyphicons/i.test(
+        ff
+      ) || /\b(material-icons|material-symbols|fa|fas|far|fal|fad|bi|tabler-icon|lucide)\b/i.test(cls)) {
+        return true;
+      }
+      const trimmed = (text || "").trim();
+      if (trimmed.length > 0 && trimmed.length <= 4 && /^[\uE000-\uF8FF\u{F0000}-\u{FFFFD}\u{100000}-\u{10FFFD}]+$/u.test(trimmed)) {
+        return true;
+      }
+      return false;
+    }
+    function renderIconFontToDataUrl(text, elStyle, w, h) {
+      try {
+        const c = document.createElement("canvas");
+        const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 2));
+        const cw = Math.max(16, Math.round(w));
+        const ch = Math.max(16, Math.round(h));
+        c.width = Math.round(cw * dpr);
+        c.height = Math.round(ch * dpr);
+        const ctx = c.getContext("2d");
+        if (!ctx) return null;
+        ctx.scale(dpr, dpr);
+        ctx.font = `${elStyle.fontStyle || "normal"} ${elStyle.fontWeight || "400"} ${elStyle.fontSize || "16px"} ${elStyle.fontFamily || "sans-serif"}`;
+        ctx.fillStyle = elStyle.color || "#000000";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(text, cw / 2, ch / 2);
+        return c.toDataURL("image/png");
+      } catch (_e) {
+        return null;
+      }
     }
     let _sharedCanvas = null;
     let _sharedCtx = null;
@@ -997,13 +1126,122 @@
       const stops = parseStops(stopParts, true);
       return stops.length >= 2 ? { type: "GRADIENT_ANGULAR", from, at, stops } : null;
     }
-    function parseGradient(bgStr) {
-      if (!bgStr || !bgStr.includes("gradient")) return null;
+    function parseAllGradients(bgStr) {
+      if (!bgStr || !bgStr.includes("gradient")) return [];
+      const list = [];
       for (const layer of splitCssList(bgStr)) {
         const g = parseGradientLayer(layer);
-        if (g) return g;
+        if (g) list.push(g);
       }
-      return null;
+      return list;
+    }
+    function parseGradient(bgStr) {
+      return parseAllGradients(bgStr)[0] || null;
+    }
+    function generateGridPatternTile(bgImg, bgSize) {
+      if (!bgImg || bgImg === "none") return null;
+      const layers = splitCssList(bgImg).map((l) => l.trim());
+      const sizes = splitCssList(bgSize || "auto").map((s) => s.trim());
+      const sizeOf = (i) => sizes[i % Math.max(1, sizes.length)] || "auto";
+      const pxPair = (sz) => {
+        const m = sz.match(/^(\d+(?:\.\d+)?)px(?:\s+(\d+(?:\.\d+)?)px)?$/);
+        if (!m) return null;
+        const w = parseFloat(m[1]);
+        const h = m[2] ? parseFloat(m[2]) : w;
+        return w >= 4 && w <= 256 && h >= 4 && h <= 256 ? { w, h } : null;
+      };
+      const TRANSPARENT = "(?:transparent|rgba\\([^)]*,\\s*0\\))";
+      const STOP_START = new RegExp("(\\d+(?:\\.\\d+)?)px\\s*,\\s*" + TRANSPARENT, "i");
+      const STOP_END = new RegExp(TRANSPARENT + "\\s+(\\d+(?:\\.\\d+)?)px\\s*,\\s*rgba?\\(", "i");
+      const COLOR = /(rgba?\([^)]+\)|#[a-f0-9]{3,8})/gi;
+      const visibleColor = (layer) => (layer.match(COLOR) || []).find((c) => !/rgba\([^)]*,\s*0\)$/i.test(c)) || null;
+      const lineOf = (layer) => {
+        const first = (layer.match(/^[^(]*\(\s*([^,]+),/) || [])[1]?.trim().toLowerCase() || "";
+        const isDir = first.startsWith("to ") || /^-?\d+(\.\d+)?(deg|turn|rad|grad)$/.test(first);
+        if (!isDir) return "HLINE";
+        if (/^to (right|left)$/.test(first) || /^(90|270|-90)deg$/.test(first)) return "VLINE";
+        if (/^to (bottom|top)$/.test(first) || /^(0|180|360)deg$/.test(first)) return "HLINE";
+        return null;
+      };
+      const thick = (v) => Math.min(4, Math.max(1, v));
+      const marks = [];
+      layers.forEach((layer, idx) => {
+        const color = visibleColor(layer);
+        if (!color || /url\(/i.test(layer)) return;
+        if (/^repeating-linear-gradient\(/i.test(layer)) {
+          const kind2 = lineOf(layer);
+          const stopsPx = [...layer.matchAll(/(\d+(?:\.\d+)?)px/g)].map((m) => parseFloat(m[1]));
+          const period = stopsPx.length ? Math.max(...stopsPx) : 0;
+          const st2 = layer.match(STOP_START);
+          if (!kind2 || !st2 || !(period >= 4 && period <= 256)) return;
+          const t2 = thick(parseFloat(st2[1]));
+          marks.push({ kind: kind2, t: t2, pos: "start", color, pw: kind2 === "VLINE" ? period : 0, ph: kind2 === "HLINE" ? period : 0, idx });
+          return;
+        }
+        const size = pxPair(sizeOf(idx));
+        if (!size) return;
+        const isLin = /^linear-gradient\(/i.test(layer);
+        const isRad = /^(repeating-)?radial-gradient\(/i.test(layer);
+        if (!isLin && !isRad) return;
+        const st = layer.match(STOP_START);
+        const en = isLin && !st ? layer.match(STOP_END) : null;
+        if (!st && !en) return;
+        if (isRad) {
+          if (!st) return;
+          marks.push({ kind: "DOT", t: thick(parseFloat(st[1])), pos: "start", color, pw: size.w, ph: size.h, idx });
+          return;
+        }
+        const kind = lineOf(layer);
+        if (!kind) return;
+        const cell = kind === "VLINE" ? size.w : size.h;
+        const t = st ? thick(parseFloat(st[1])) : thick(cell - parseFloat(en[1]));
+        marks.push({ kind, t, pos: st ? "start" : "end", color, pw: size.w, ph: size.h, idx });
+      });
+      if (!marks.length) return null;
+      let W = Math.max(0, ...marks.map((m) => m.pw));
+      let H = Math.max(0, ...marks.map((m) => m.ph));
+      if (!W) W = H || 8;
+      if (!H) H = W || 8;
+      const fits = (period, total) => !period || Math.abs(total / period - Math.round(total / period)) < 0.01;
+      const used = marks.filter((m) => fits(m.pw, W) && fits(m.ph, H));
+      if (!used.length) return null;
+      try {
+        const c = document.createElement("canvas");
+        c.width = Math.round(W);
+        c.height = Math.round(H);
+        const ctx = c.getContext("2d");
+        if (!ctx) return null;
+        for (const m of used) {
+          ctx.fillStyle = m.color;
+          if (m.kind === "VLINE") {
+            const p = m.pw || W;
+            for (let x = 0; x < W - 0.01; x += p) ctx.fillRect(m.pos === "start" ? x : x + p - m.t, 0, m.t, H);
+          } else if (m.kind === "HLINE") {
+            const p = m.ph || H;
+            for (let y = 0; y < H - 0.01; y += p) ctx.fillRect(0, m.pos === "start" ? y : y + p - m.t, W, m.t);
+          } else {
+            for (let x = 0; x < W - 0.01; x += m.pw)
+              for (let y = 0; y < H - 0.01; y += m.ph) {
+                ctx.beginPath();
+                ctx.arc(x + m.pw / 2, y + m.ph / 2, m.t, 0, Math.PI * 2);
+                ctx.fill();
+              }
+          }
+        }
+        return { tile: c.toDataURL("image/png"), layers: used.map((m) => m.idx) };
+      } catch (_e) {
+        return null;
+      }
+    }
+    function gradientsExcept(bgStr, skip) {
+      if (!bgStr || bgStr === "none") return [];
+      const out = [];
+      splitCssList(bgStr).forEach((layer, i) => {
+        if (skip.includes(i)) return;
+        const g = parseGradientLayer(layer);
+        if (g) out.push(g);
+      });
+      return out;
     }
     function parseBoxShadow(shadowStr) {
       if (!shadowStr || shadowStr === "none") return [];
@@ -1012,16 +1250,18 @@
       for (const part of parts) {
         const trimmed = part.trim();
         if (!trimmed) continue;
+        const isInset = /\binset\b/i.test(trimmed);
         const colorMatch = trimmed.match(/(rgba?\([^)]+\)|#[a-f0-9]+)/i);
         const color = colorMatch ? parseColor(colorMatch[1]) : { r: 0, g: 0, b: 0, a: 0.15 };
-        const cleanLength = trimmed.replace(/(rgba?\([^)]+\)|#[a-f0-9]+)/i, "").trim();
+        const cleanLength = trimmed.replace(/(rgba?\([^)]+\)|#[a-f0-9]+)/i, "").replace(/\binset\b/gi, "").trim();
         const lengths = cleanLength.split(/\s+/).map((l) => parseFloat(l) || 0);
         if (lengths.length >= 2 && color) {
           shadows.push({
             color,
             offset: { x: lengths[0], y: lengths[1] },
             radius: lengths[2] || 0,
-            spread: lengths[3] || 0
+            spread: lengths[3] || 0,
+            inset: isInset || void 0
           });
         }
       }
@@ -1146,11 +1386,23 @@
         const content = style2.content;
         const hasContent = content && content !== "none" && content !== "normal" && content !== '""' && content !== "''";
         if (style2.display === "none") return null;
+        if (!content || content === "none" || content === "normal") return null;
         const bg = parseColor(style2.backgroundColor);
-        const w = parseFloat(style2.width) || 0;
-        const h = parseFloat(style2.height) || 0;
+        let w = parseFloat(style2.width) || 0;
+        let h = parseFloat(style2.height) || 0;
         const bgUrl = extractBgUrl(style2.backgroundImage);
-        const hasBgGrad = !!parseGradient(style2.backgroundImage);
+        const decoGrads = parseAllGradients(style2.backgroundImage);
+        const hasBgGrad = decoGrads.length > 0;
+        const topBW = parseFloat(style2.borderTopWidth) || 0;
+        const rightBW2 = parseFloat(style2.borderRightWidth) || 0;
+        const bottomBW = parseFloat(style2.borderBottomWidth) || 0;
+        const leftBW2 = parseFloat(style2.borderLeftWidth) || 0;
+        const maxBW2 = Math.max(topBW, rightBW2, bottomBW, leftBW2);
+        const hasBorder2 = maxBW2 > 0;
+        if (w <= 0 && (leftBW2 > 0 || rightBW2 > 0)) w = Math.max(leftBW2, rightBW2);
+        if (h <= 0 && (topBW > 0 || bottomBW > 0)) h = Math.max(topBW, bottomBW);
+        if (h <= 0 && parentRect2 && (leftBW2 > 0 || rightBW2 > 0)) h = Math.round(parentRect2.height);
+        if (w <= 0 && parentRect2 && (topBW > 0 || bottomBW > 0)) w = Math.round(parentRect2.width);
         const isRendered = content && content !== "none" && content !== "normal";
         if (bgUrl && isRendered && w > 0 && h > 0) {
           const isAbs = style2.position === "absolute" || style2.position === "fixed";
@@ -1169,7 +1421,7 @@
             },
             styles: {
               fills: bg && bg.a > 0.01 ? [bg] : [],
-              cornerRadius: parseFloat(style2.borderRadius) || 0,
+              cornerRadius: parseCornerRadius(style2),
               imageScaleMode: bgScaleMode(style2)
             },
             children: []
@@ -1178,14 +1430,41 @@
           return pNode;
         }
         if (!hasContent) {
-          if ((!bg || bg.a <= 0.05) && !hasBgGrad) return null;
+          if ((!bg || bg.a <= 0.05) && !hasBgGrad && !hasBorder2) return null;
           if (w <= 0 || h <= 0) return null;
         }
         const rawText = (content || "").replace(/^['"]|['"]$/g, "").trim();
         const tc = parseColor(style2.color) || { r: 0.1, g: 0.1, b: 0.1, a: 1 };
         const isPosAbs = style2.position === "absolute" || style2.position === "fixed";
-        const br = parseFloat(style2.borderRadius) || 0;
         if (rawText.length > 0) {
+          if (isIconFont(style2.fontFamily, rawText) && w > 0 && h > 0) {
+            const iconImg = renderIconFontToDataUrl(rawText, style2, w, h);
+            const iconNode = {
+              id: "pseudo_" + ++counter2.id,
+              name: "Icon / " + (pseudo === "::before" ? "Before" : "After"),
+              type: "FRAME",
+              layout: {
+                mode: "NONE",
+                padding: { top: 0, right: 0, bottom: 0, left: 0 },
+                itemSpacing: 0,
+                width: Math.round(w),
+                height: Math.round(h),
+                positioning: isPosAbs ? "ABSOLUTE" : "AUTO",
+                ...isPosAbs ? pseudoPosition(element2, style2, w, h) || {} : {}
+              },
+              styles: {
+                fills: [],
+                cornerRadius: parseCornerRadius(style2)
+              },
+              children: []
+            };
+            if (iconImg) iconNode.imageData = iconImg;
+            else {
+              iconNode._needsShot = true;
+              iconNode._vpRect = vpRectOf(parentRect2);
+            }
+            return iconNode;
+          }
           return {
             id: "pseudo_" + ++counter2.id,
             name: pseudo === "::before" ? "Pseudo / Before" : "Pseudo / After",
@@ -1207,8 +1486,60 @@
               fontStack: style2.fontFamily || void 0
             }
           };
-        } else if (w > 0 && h > 0 && (bg && bg.a > 0.05 || hasBgGrad)) {
-          const decoFills = hasBgGrad ? [parseGradient(style2.backgroundImage)] : [bg];
+        } else if (w > 0 && h > 0 && (bg && bg.a > 0.05 || hasBgGrad || hasBorder2)) {
+          const gridTile2 = generateGridPatternTile(style2.backgroundImage, style2.backgroundSize);
+          if (gridTile2) {
+            return {
+              id: "pseudo_" + ++counter2.id,
+              name: pseudo === "::before" ? "Grid / Before" : "Grid / After",
+              type: "FRAME",
+              layout: {
+                mode: "NONE",
+                padding: { top: 0, right: 0, bottom: 0, left: 0 },
+                itemSpacing: 0,
+                width: Math.max(1, Math.round(w)),
+                height: Math.max(1, Math.round(h)),
+                positioning: isPosAbs ? "ABSOLUTE" : "AUTO",
+                ...isPosAbs ? pseudoPosition(element2, style2, w, h) || {} : {}
+              },
+              styles: {
+                // color de fondo debajo, mosaico en medio y el resto de capas (viñetas) encima
+                fills: [
+                  ...bg && bg.a > 0.01 ? [bg] : [],
+                  ...gradientsExcept(style2.backgroundImage, gridTile2.layers)
+                ],
+                imageScaleMode: "TILE",
+                cornerRadius: parseCornerRadius(style2)
+              },
+              imageData: gridTile2.tile,
+              children: []
+            };
+          }
+          const decoFills = decoGrads.length > 0 ? decoGrads : bg && bg.a > 0.01 ? [bg] : [];
+          const decoStrokes = [];
+          let borderSides2 = void 0;
+          if (hasBorder2) {
+            const borderColorStr = (leftBW2 > 0 ? style2.borderLeftColor : "") || (topBW > 0 ? style2.borderTopColor : "") || (bottomBW > 0 ? style2.borderBottomColor : "") || (rightBW2 > 0 ? style2.borderRightColor : "") || style2.borderColor || style2.color;
+            const strokeColor2 = parseColor(borderColorStr, style2.color) || { r: 0.1, g: 0.8, b: 0.5, a: 1 };
+            const sideStyles = [
+              topBW > 0 ? style2.borderTopStyle : "",
+              rightBW2 > 0 ? style2.borderRightStyle : "",
+              bottomBW > 0 ? style2.borderBottomStyle : "",
+              leftBW2 > 0 ? style2.borderLeftStyle : "",
+              style2.borderStyle
+            ].filter((s) => s && s !== "none");
+            const bStyle2 = sideStyles.find((s) => s === "dashed" || s === "dotted") || sideStyles[0] || "solid";
+            const strokeDashStyle2 = bStyle2 === "dashed" ? "DASHED" : bStyle2 === "dotted" ? "DOTTED" : "SOLID";
+            decoStrokes.push({ ...strokeColor2, width: maxBW2 || 1, align: "INSIDE", style: strokeDashStyle2 });
+            if (topBW !== rightBW2 || topBW !== bottomBW || topBW !== leftBW2) {
+              borderSides2 = {
+                top: Math.round(topBW),
+                right: Math.round(rightBW2),
+                bottom: Math.round(bottomBW),
+                left: Math.round(leftBW2)
+              };
+            }
+          }
           return {
             id: "pseudo_" + ++counter2.id,
             name: pseudo === "::before" ? "Decorator / Before" : "Decorator / After",
@@ -1217,14 +1548,16 @@
               mode: "NONE",
               padding: { top: 0, right: 0, bottom: 0, left: 0 },
               itemSpacing: 0,
-              width: Math.round(w),
-              height: Math.round(h),
+              width: Math.max(1, Math.round(w)),
+              height: Math.max(1, Math.round(h)),
               positioning: isPosAbs ? "ABSOLUTE" : "AUTO",
-              ...isPosAbs ? pseudoPosition(element2, style2, w, h) || {} : {}
+              ...isPosAbs ? pseudoPosition(element2, style2, Math.max(1, w), Math.max(1, h)) || {} : {}
             },
             styles: {
               fills: decoFills,
-              cornerRadius: br > 0 ? br : 0
+              strokes: decoStrokes,
+              borderSides: borderSides2,
+              cornerRadius: parseCornerRadius(style2)
             },
             children: []
           };
@@ -1302,11 +1635,13 @@
       if (tag === "form") return "Form / Container";
       const rawClass = typeof el.className === "string" ? el.className.trim() : "";
       if (rawClass) {
-        const cleanClasses = rawClass.split(/\\s+/).filter((c) => {
-          return !/^(mb-|mt-|ml-|mr-|p-|px-|py-|w-|h-|flex|grid|block|inline|relative|absolute|text-|bg-|border-|rounded-|ng-|mat-|cursor-|transition-|duration-|hover:|focus:)/.test(
+        const cleanClasses = rawClass.split(/\s+/).filter((c) => {
+          if (/^(mb-|mt-|ml-|mr-|p-|px-|py-|w-|h-|flex|grid|block|inline|relative|absolute|text-|bg-|border-|rounded-|ng-|mat-|cursor-|transition-|duration-|hover:|focus:)/.test(
             c
-          );
-        });
+          ))
+            return false;
+          return !/^(svelte|astro|css|sc|jsx|emotion)-[A-Za-z0-9]+$/.test(c);
+        }).map(localClassName).filter(Boolean);
         if (cleanClasses.length > 0) {
           const c0 = cleanClasses[0];
           return c0.charAt(0).toUpperCase() + c0.slice(1);
@@ -1320,8 +1655,8 @@
       const ccHex = "#" + Math.round(cc.r * 255).toString(16).padStart(2, "0") + Math.round(cc.g * 255).toString(16).padStart(2, "0") + Math.round(cc.b * 255).toString(16).padStart(2, "0");
       const svgCompStyle = window.getComputedStyle(element);
       const svgHasStroke = svgCompStyle.stroke && svgCompStyle.stroke !== "none" || element.getAttribute("stroke") !== null;
-      const origVectors = element.querySelectorAll("path, circle, rect, polygon, line, ellipse");
-      const cloneVectors = svgClone.querySelectorAll("path, circle, rect, polygon, line, ellipse");
+      const origVectors = element.querySelectorAll("path, circle, rect, polygon, polyline, line, ellipse, text");
+      const cloneVectors = svgClone.querySelectorAll("path, circle, rect, polygon, polyline, line, ellipse, text");
       for (let vi = 0; vi < origVectors.length; vi++) {
         const ov = origVectors[vi];
         const cv = cloneVectors[vi];
@@ -1336,39 +1671,125 @@
         const vStroke = vs.stroke;
         const hasStroke = vStroke && vStroke !== "none" || svgHasStroke;
         const vFill = vs.fill;
-        if (vFill && vFill !== "none") {
-          if (hasStroke) {
-            const explicitFill = ov.getAttribute("fill");
-            if (!explicitFill || explicitFill === "none" || explicitFill === "transparent") {
-              cv.setAttribute("fill", "none");
-            } else {
-              const pf = parseColor(explicitFill, style.color) || parseColor(vFill, style.color) || cc;
-              const fHex = "#" + Math.round(pf.r * 255).toString(16).padStart(2, "0") + Math.round(pf.g * 255).toString(16).padStart(2, "0") + Math.round(pf.b * 255).toString(16).padStart(2, "0");
-              cv.setAttribute("fill", fHex);
-              if (pf.a < 1) cv.setAttribute("fill-opacity", String(pf.a));
-            }
-          } else {
-            const pf = parseColor(vFill, style.color) || cc;
-            const fHex = "#" + Math.round(pf.r * 255).toString(16).padStart(2, "0") + Math.round(pf.g * 255).toString(16).padStart(2, "0") + Math.round(pf.b * 255).toString(16).padStart(2, "0");
-            cv.setAttribute("fill", fHex);
-            if (pf.a < 1) cv.setAttribute("fill-opacity", String(pf.a));
+        const explicitFill = ov.getAttribute("fill") || "";
+        const explicitStroke = ov.getAttribute("stroke") || "";
+        const urlRef = (v) => (String(v || "").match(/url\(\s*["']?[^#"')]*#([^)"']+)["']?\s*\)/) || [])[1] || null;
+        const fillRef = urlRef(explicitFill) || urlRef(vFill);
+        const strokeRef = urlRef(explicitStroke) || urlRef(vStroke);
+        const inlineDef = (id) => {
+          if (!id) return false;
+          const defEl = document.getElementById(id);
+          if (!defEl) return false;
+          let defs = svgClone.querySelector("defs");
+          if (!defs) {
+            defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+            svgClone.insertBefore(defs, svgClone.firstChild);
           }
+          if (!svgClone.querySelector("#" + CSS.escape(id))) defs.appendChild(defEl.cloneNode(true));
+          return true;
+        };
+        const setPaint = (attr, c, cssOpacity) => {
+          const hex = (v) => Math.round(v * 255).toString(16).padStart(2, "0");
+          cv.setAttribute(attr, "#" + hex(c.r) + hex(c.g) + hex(c.b));
+          const alpha = (c.a !== void 0 ? c.a : 1) * (parseFloat(cssOpacity) >= 0 ? parseFloat(cssOpacity) : 1);
+          if (alpha < 1) cv.setAttribute(attr + "-opacity", String(Math.round(alpha * 1e3) / 1e3));
+          else cv.removeAttribute(attr + "-opacity");
+        };
+        if (fillRef && inlineDef(fillRef)) {
+          cv.setAttribute("fill", `url(#${fillRef})`);
+        } else if (vFill && vFill !== "none" && vFill !== "transparent") {
+          const defaultBlackOnOutline = hasStroke && !explicitFill && /^rgb\(0,\s*0,\s*0\)$/.test(vFill);
+          const pf = defaultBlackOnOutline ? null : (fillRef ? null : parseColor(vFill, style.color)) || parseColor(explicitFill, style.color) || cc;
+          if (pf && pf.a > 0.01) setPaint("fill", pf, vs.fillOpacity);
+          else cv.setAttribute("fill", "none");
         } else {
           cv.setAttribute("fill", "none");
         }
-        if (hasStroke) {
-          const strokeColorStr = vStroke && vStroke !== "none" ? vStroke : svgCompStyle.stroke && svgCompStyle.stroke !== "none" ? svgCompStyle.stroke : style.color;
-          const ps = parseColor(strokeColorStr, style.color) || cc;
-          const sHex = "#" + Math.round(ps.r * 255).toString(16).padStart(2, "0") + Math.round(ps.g * 255).toString(16).padStart(2, "0") + Math.round(ps.b * 255).toString(16).padStart(2, "0");
-          cv.setAttribute("stroke", sHex);
-          if (ps.a < 1) cv.setAttribute("stroke-opacity", String(ps.a));
+        const applyStrokeGeometry = () => {
           cv.setAttribute(
             "stroke-width",
             vs.strokeWidth && vs.strokeWidth !== "0px" ? vs.strokeWidth : svgCompStyle.strokeWidth || "2"
           );
           cv.setAttribute("stroke-linecap", vs.strokeLinecap || "round");
           cv.setAttribute("stroke-linejoin", vs.strokeLinejoin || "round");
+        };
+        if (strokeRef && inlineDef(strokeRef)) {
+          cv.setAttribute("stroke", `url(#${strokeRef})`);
+          applyStrokeGeometry();
+        } else if (hasStroke) {
+          const usable = (v) => !!v && v !== "none" && !urlRef(v);
+          const strokeColorStr = usable(vStroke) ? vStroke : usable(svgCompStyle.stroke) ? svgCompStyle.stroke : style.color;
+          const ps = parseColor(strokeColorStr, style.color) || cc;
+          setPaint("stroke", ps, vs.strokeOpacity);
+          applyStrokeGeometry();
         }
+        const elOpacity = parseFloat(vs.opacity);
+        if (elOpacity >= 0 && elOpacity < 1) cv.setAttribute("opacity", String(elOpacity));
+        const explicitDash = ov.getAttribute("stroke-dasharray");
+        const compDash = vs.strokeDasharray && vs.strokeDasharray !== "none" ? vs.strokeDasharray : "";
+        const svgDash = svgCompStyle.strokeDasharray && svgCompStyle.strokeDasharray !== "none" ? svgCompStyle.strokeDasharray : "";
+        const dash = explicitDash || compDash || svgDash;
+        if (dash && dash !== "none") {
+          cv.setAttribute("stroke-dasharray", dash);
+        }
+        const explicitOffset = ov.getAttribute("stroke-dashoffset");
+        const compOffset = vs.strokeDashoffset && vs.strokeDashoffset !== "none" && vs.strokeDashoffset !== "0px" ? vs.strokeDashoffset : "";
+        const offset = explicitOffset || compOffset;
+        if (offset) {
+          cv.setAttribute("stroke-dashoffset", offset);
+        }
+      }
+      const SVG_NS = "http://www.w3.org/2000/svg";
+      const origUses = element.querySelectorAll("use");
+      const cloneUses = svgClone.querySelectorAll("use");
+      for (let ui = 0; ui < cloneUses.length; ui++) {
+        const u = cloneUses[ui];
+        const href = u.getAttribute("href") || u.getAttribute("xlink:href") || "";
+        if (!href.startsWith("#")) continue;
+        const targetEl = document.getElementById(href.slice(1));
+        if (!targetEl) continue;
+        const us = window.getComputedStyle(origUses[ui] || element);
+        const x = u.getAttribute("x") || "0";
+        const y = u.getAttribute("y") || "0";
+        let replacement;
+        if (targetEl.tagName.toLowerCase() === "symbol") {
+          replacement = document.createElementNS(SVG_NS, "svg");
+          for (const attr of ["viewBox", "preserveAspectRatio"]) {
+            const v = targetEl.getAttribute(attr);
+            if (v) replacement.setAttribute(attr, v);
+          }
+          replacement.setAttribute("x", x);
+          replacement.setAttribute("y", y);
+          replacement.setAttribute("width", u.getAttribute("width") || "100%");
+          replacement.setAttribute("height", u.getAttribute("height") || "100%");
+          for (const ch of Array.from(targetEl.childNodes)) replacement.appendChild(ch.cloneNode(true));
+        } else {
+          replacement = document.createElementNS(SVG_NS, "g");
+          const copy = targetEl.cloneNode(true);
+          copy.removeAttribute("id");
+          replacement.appendChild(copy);
+          if (x !== "0" || y !== "0") replacement.setAttribute("transform", `translate(${x} ${y})`);
+        }
+        if (us.fill && us.fill !== "none" && !us.fill.includes("url(")) replacement.setAttribute("fill", us.fill);
+        else if (us.fill === "none") replacement.setAttribute("fill", "none");
+        if (us.stroke && us.stroke !== "none" && !us.stroke.includes("url(")) {
+          replacement.setAttribute("stroke", us.stroke);
+          if (us.strokeWidth) replacement.setAttribute("stroke-width", us.strokeWidth);
+        }
+        const resolvedColor = us.color || style.color;
+        for (const node2 of [replacement, ...Array.from(replacement.querySelectorAll("*"))]) {
+          for (const attr of ["fill", "stroke", "stop-color"]) {
+            if ((node2.getAttribute(attr) || "").toLowerCase() === "currentcolor") node2.setAttribute(attr, resolvedColor);
+          }
+        }
+        let finalNode = replacement;
+        const useTransform = u.getAttribute("transform");
+        if (useTransform) {
+          finalNode = document.createElementNS(SVG_NS, "g");
+          finalNode.setAttribute("transform", useTransform);
+          finalNode.appendChild(replacement);
+        }
+        u.parentNode?.replaceChild(finalNode, u);
       }
       let w = Math.max(1, Math.round(rect.width) || 24);
       let h = Math.max(1, Math.round(rect.height) || 24);
@@ -1377,14 +1798,38 @@
         w = squareSize;
         h = squareSize;
       }
+      svgClone.setAttribute("width", String(w));
+      svgClone.setAttribute("height", String(h));
+      const vbAttr = (svgClone.getAttribute("viewBox") || "").trim();
+      if (!vbAttr) {
+        svgClone.setAttribute("viewBox", `0 0 ${w} ${h}`);
+      } else if (/^none\b/.test((svgClone.getAttribute("preserveAspectRatio") || "").trim())) {
+        const vb = vbAttr.split(/[\s,]+/).map(parseFloat);
+        if (vb.length === 4 && vb[2] > 0 && vb[3] > 0) {
+          const sx = w / vb[2];
+          const sy = h / vb[3];
+          if (Math.abs(sx - sy) > 1e-3) {
+            const g = document.createElementNS(SVG_NS, "g");
+            g.setAttribute("transform", `matrix(${sx} 0 0 ${sy} ${-vb[0] * sx} ${-vb[1] * sy})`);
+            for (const ch of Array.from(svgClone.childNodes)) {
+              if (!(ch.nodeType === Node.ELEMENT_NODE && ch.localName === "defs")) g.appendChild(ch);
+            }
+            svgClone.appendChild(g);
+            svgClone.setAttribute("viewBox", `0 0 ${w} ${h}`);
+            svgClone.removeAttribute("preserveAspectRatio");
+          }
+        }
+      }
       let raw = svgClone.outerHTML;
       raw = raw.replace(/currentColor/gi, ccHex);
       raw = raw.replace(/var\(--[a-zA-Z0-9_-]+,\s*([^)]+)\)/g, "$1");
       raw = raw.replace(/style="[^"]*"/gi, "");
-      if (!/viewBox/i.test(raw)) raw = raw.replace("<svg", '<svg viewBox="0 0 ' + w + " " + h + '"');
-      if (!/width=/i.test(raw)) raw = raw.replace("<svg", '<svg width="' + w + '"');
-      if (!/height=/i.test(raw)) raw = raw.replace("<svg", '<svg height="' + h + '"');
-      raw = raw.replace(/\\s+(ng-reflect-[a-z-]+|_ng[a-z]+-[a-z0-9-]+|data-mat-icon-[a-z]+|class)="[^"]*"/gi, "");
+      raw = raw.replace(/\s+(ng-reflect-[a-z-]+|_ng[a-z]+-[a-z0-9-]+|data-mat-icon-[a-z]+|class)="[^"]*"/gi, "");
+      const svgRadius = parseCornerRadius(style);
+      const svgBg = parseColor(style.backgroundColor);
+      const svgStyles = { fills: [] };
+      if (svgBg && svgBg.a > 0.01) svgStyles.fills.push(svgBg);
+      if (hasAnyRadius(svgRadius)) svgStyles.cornerRadius = svgRadius;
       return {
         id: currentId,
         name: getSemanticName(element, tagName, style, rect),
@@ -1398,7 +1843,7 @@
           x: relX,
           y: relY
         },
-        styles: { fills: [] },
+        styles: svgStyles,
         svgContent: raw
       };
     }
@@ -1419,7 +1864,7 @@
         },
         styles: {
           fills: [],
-          cornerRadius: parseFloat(style.borderRadius) || 0,
+          cornerRadius: parseCornerRadius(style),
           imageScaleMode: style.objectFit === "contain" ? "FIT" : "FILL"
         },
         children: []
@@ -1571,6 +2016,8 @@
       if (imgH <= 1 && imgEl && imgEl.naturalHeight > 1) imgH = imgEl.naturalHeight;
       if (imgW <= 0) imgW = 40;
       if (imgH <= 0) imgH = 40;
+      const imgRadius = parseCornerRadius(imgFitStyle);
+      const nodeImgRadius = hasAnyRadius(imgRadius) ? imgRadius : parseCornerRadius(style);
       const imgNode = {
         id: currentId,
         name: "Image / " + (altText || (tagName === "picture" ? "Picture" : "Img")),
@@ -1589,7 +2036,7 @@
         },
         styles: {
           fills: [],
-          cornerRadius: parseFloat(imgFitStyle.borderRadius) || parseFloat(style.borderRadius) || 0,
+          cornerRadius: nodeImgRadius,
           imageScaleMode: imgFitStyle.objectFit === "contain" || imgFitStyle.objectFit === "scale-down" ? "FIT" : "FILL"
         },
         children: []
@@ -1601,31 +2048,63 @@
       return imgNode;
     }
     const fills = [];
-    const grad = parseGradient(style.backgroundImage);
+    const grads = parseAllGradients(style.backgroundImage);
     const pendingBgSrc = extractBgUrl(style.backgroundImage);
     const bgColor = parseColor(style.backgroundColor);
     if (bgColor && bgColor.a > 0.01) fills.push(bgColor);
-    if (grad) fills.push(grad);
+    if (grads.length > 0) fills.push(...grads);
     const topW = Math.round(parseFloat(style.borderTopWidth) || 0);
     const rightBW = Math.round(parseFloat(style.borderRightWidth) || 0);
     const bottomW = Math.round(parseFloat(style.borderBottomWidth) || 0);
-    const leftBW = Math.round(parseFloat(style.borderLeftWidth) || 0);
+    let leftBW = Math.round(parseFloat(style.borderLeftWidth) || 0);
     const hasBorder = topW > 0 && style.borderTopStyle !== "none" || rightBW > 0 && style.borderRightStyle !== "none" || bottomW > 0 && style.borderBottomStyle !== "none" || leftBW > 0 && style.borderLeftStyle !== "none";
-    const strokeColor = parseColor(style.borderTopColor, style.color) || parseColor(style.borderBottomColor, style.color) || parseColor(style.borderLeftColor, style.color) || parseColor(style.borderRightColor, style.color);
+    const topColor = parseColor(style.borderTopColor, style.color);
+    const bottomColor = parseColor(style.borderBottomColor, style.color);
+    const leftColor = parseColor(style.borderLeftColor, style.color);
+    const rightColor = parseColor(style.borderRightColor, style.color);
+    let activeStrokeColor = null;
+    if (leftBW > 0 && leftColor && leftColor.a > 0.01) activeStrokeColor = leftColor;
+    else if (topW > 0 && topColor && topColor.a > 0.01) activeStrokeColor = topColor;
+    else if (bottomW > 0 && bottomColor && bottomColor.a > 0.01) activeStrokeColor = bottomColor;
+    else if (rightBW > 0 && rightColor && rightColor.a > 0.01) activeStrokeColor = rightColor;
+    let strokeColor = activeStrokeColor || topColor || leftColor || bottomColor || rightColor;
+    const borderStyles = [
+      topW > 0 ? style.borderTopStyle : "",
+      rightBW > 0 ? style.borderRightStyle : "",
+      bottomW > 0 ? style.borderBottomStyle : "",
+      leftBW > 0 ? style.borderLeftStyle : "",
+      style.borderTopStyle,
+      style.borderRightStyle,
+      style.borderBottomStyle,
+      style.borderLeftStyle
+    ].filter((s) => s && s !== "none");
+    const dashOf = (s) => s === "dashed" ? "DASHED" : s === "dotted" ? "DOTTED" : "SOLID";
+    const bStyle = borderStyles.find((s) => s === "dashed" || s === "dotted") || borderStyles[0] || "solid";
+    let strokeDashStyle = dashOf(bStyle);
+    let accentBorder = void 0;
+    const refSide = topW > 0 ? { w: topW, c: topColor, s: style.borderTopStyle } : rightBW > 0 ? { w: rightBW, c: rightColor, s: style.borderRightStyle } : bottomW > 0 ? { w: bottomW, c: bottomColor, s: style.borderBottomStyle } : null;
+    if (refSide && refSide.c && leftBW > 0 && leftColor && leftColor.a > 0.01) {
+      const rc = refSide.c;
+      const distinctColor = Math.abs(leftColor.r - rc.r) > 0.08 || Math.abs(leftColor.g - rc.g) > 0.08 || Math.abs(leftColor.b - rc.b) > 0.08 || Math.abs((leftColor.a ?? 1) - (rc.a ?? 1)) > 0.15;
+      const distinctWidth = leftBW !== refSide.w;
+      const distinctStyle = style.borderLeftStyle !== refSide.s;
+      if (distinctColor || distinctWidth || distinctStyle) {
+        accentBorder = { side: "LEFT", color: leftColor, width: leftBW, style: dashOf(style.borderLeftStyle) };
+        strokeColor = rc;
+        strokeDashStyle = dashOf(refSide.s);
+        leftBW = 0;
+      }
+    }
     const strokes = [];
     let borderSides = void 0;
     const maxBW = Math.max(topW, rightBW, bottomW, leftBW);
     if (hasBorder && strokeColor && strokeColor.a > 0.01) {
-      strokes.push({ ...strokeColor, width: maxBW || 1, align: "INSIDE" });
+      strokes.push({ ...strokeColor, width: maxBW || 1, align: "INSIDE", style: strokeDashStyle });
       if (topW !== rightBW || topW !== bottomW || topW !== leftBW) {
         borderSides = { top: topW, right: rightBW, bottom: bottomW, left: leftBW };
       }
     }
-    const rtl = parseFloat(style.borderTopLeftRadius) || 0;
-    const rtr = parseFloat(style.borderTopRightRadius) || 0;
-    const rbr = parseFloat(style.borderBottomRightRadius) || 0;
-    const rbl = parseFloat(style.borderBottomLeftRadius) || 0;
-    const cornerRadius = rtl === rtr && rtr === rbr && rbr === rbl ? rtl : [rtl, rtr, rbr, rbl];
+    const cornerRadius = parseCornerRadius(style);
     const boxShadow = parseBoxShadow(style.boxShadow);
     let backdropBlur = void 0;
     const bFilter = style.backdropFilter || style.webkitBackdropFilter || "";
@@ -1642,6 +2121,7 @@
       bottom: Math.round(parseFloat(style.paddingBottom) || 0),
       left: Math.round(parseFloat(style.paddingLeft) || 0)
     };
+    const layoutKids = boxChildren(element);
     let mode = "NONE";
     let itemSpacing = 0;
     let primaryAlign = "MIN";
@@ -1666,10 +2146,11 @@
       const cols = (style.gridTemplateColumns || "").split(/\s+/).filter(Boolean);
       if (hasAreas) {
         mode = "NONE";
-      } else if (rows.length > 1 && cols.length > 1) {
+      } else if (cols.length > 1 && (rows.length > 1 || layoutKids.length > cols.length)) {
         mode = "HORIZONTAL";
         layoutWrap = "WRAP";
         gridAsWrap = true;
+        itemSpacing = Math.round(parseFloat(style.columnGap || style.gap) || 0);
       } else if (cols.length <= 1) {
         mode = "VERTICAL";
         itemSpacing = Math.round(parseFloat(style.rowGap || style.gap) || 0);
@@ -1693,14 +2174,20 @@
     } else if (["tbody", "table", "thead", "tfoot"].includes(tagName) || style.display.includes("table")) {
       mode = "VERTICAL";
     } else if (style.display === "block" || style.display === "flow-root" || ["form", "section", "article", "fieldset"].includes(tagName)) {
-      if (element.children.length >= 2) {
+      if (layoutKids.length >= 2) {
         mode = "VERTICAL";
         itemSpacing = Math.round(parseFloat(style.gap) || 0);
       }
     }
-    const visibleChildren = Array.from(element.children).filter((ch) => {
+    const visibleChildren = layoutKids.filter((ch) => {
       const cs = window.getComputedStyle(ch);
       return cs.display !== "none" && cs.visibility !== "hidden" && parseFloat(cs.opacity) > 0;
+    });
+    const elArea = Math.max(1, rect.width * rect.height);
+    const hasCanvasOrViewer = layoutKids.some((c) => {
+      if (!c.matches("canvas, video, model-viewer, [data-engine]")) return false;
+      const cr = c.getBoundingClientRect();
+      return cr.width * cr.height >= elArea * 0.5;
     });
     if (visibleChildren.length >= 2 && !isWholePage) {
       let hasSignificantOverlap = false;
@@ -1730,28 +2217,32 @@
           return cs.position !== "absolute" && cs.position !== "fixed";
         });
         if (inFlowChildren.length >= 2) {
-          const rects = inFlowChildren.map((ch) => ch.getBoundingClientRect()).filter((r) => r.width > 0 || r.height > 0);
-          const TOL2 = 4;
-          const byTop = [...rects].sort((a, b) => a.top - b.top);
-          const byLeft = [...rects].sort((a, b) => a.left - b.left);
-          let isVerticalStack = rects.length >= 2;
-          let isHorizontalStack = rects.length >= 2;
-          for (let i = 0; i < rects.length - 1; i++) {
-            if (byTop[i + 1].top < byTop[i].top + 8) isVerticalStack = false;
-            const a = byLeft[i], b = byLeft[i + 1];
-            const shareRow = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > TOL2;
-            if (b.left < a.left + 8 || !shareRow) isHorizontalStack = false;
-          }
-          if (isVerticalStack && !isHorizontalStack) {
-            mode = "VERTICAL";
-            const measuredGap = Math.round(byTop[1].top - byTop[0].bottom);
-            if (measuredGap >= 0 && measuredGap < 150) itemSpacing = measuredGap;
-          } else if (isHorizontalStack && !isVerticalStack) {
-            mode = "HORIZONTAL";
-            const measuredGap = Math.round(byLeft[1].left - byLeft[0].right);
-            if (measuredGap >= 0 && measuredGap < 150) itemSpacing = measuredGap;
-          } else if (!isVerticalStack && !isHorizontalStack && layoutWrap !== "WRAP" && rects.length >= 2) {
+          if (hasCanvasOrViewer) {
             mode = "NONE";
+          } else {
+            const rects = inFlowChildren.map((ch) => ch.getBoundingClientRect()).filter((r) => r.width > 0 || r.height > 0);
+            const TOL2 = 4;
+            const byTop = [...rects].sort((a, b) => a.top - b.top);
+            const byLeft = [...rects].sort((a, b) => a.left - b.left);
+            let isVerticalStack = rects.length >= 2;
+            let isHorizontalStack = rects.length >= 2;
+            for (let i = 0; i < rects.length - 1; i++) {
+              if (byTop[i + 1].top < byTop[i].top + 8) isVerticalStack = false;
+              const a = byLeft[i], b = byLeft[i + 1];
+              const shareRow = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > TOL2;
+              if (b.left < a.left + 8 || !shareRow) isHorizontalStack = false;
+            }
+            if (isVerticalStack && !isHorizontalStack) {
+              mode = "VERTICAL";
+              const measuredGap = Math.round(byTop[1].top - byTop[0].bottom);
+              if (measuredGap >= 0 && measuredGap < 150) itemSpacing = measuredGap;
+            } else if (isHorizontalStack && !isVerticalStack) {
+              mode = "HORIZONTAL";
+              const measuredGap = Math.round(byLeft[1].left - byLeft[0].right);
+              if (measuredGap >= 0 && measuredGap < 150) itemSpacing = measuredGap;
+            } else if (!isVerticalStack && !isHorizontalStack && layoutWrap !== "WRAP" && rects.length >= 2) {
+              mode = "NONE";
+            }
           }
         } else if (inFlowChildren.length === 1) {
           if (style.justifyContent.includes("center") || style.alignItems.includes("center") || style.textAlign.includes("center")) {
@@ -1888,8 +2379,28 @@
         initialWidth = "FILL";
       }
     }
+    const hugFitsWidth = (() => {
+      let left = Infinity, right = -Infinity;
+      for (const n of Array.from(element.childNodes)) {
+        let r = null;
+        if (n.nodeType === Node.TEXT_NODE && (n.textContent || "").trim()) {
+          const rg = document.createRange();
+          rg.selectNodeContents(n);
+          r = rg.getBoundingClientRect();
+        } else if (n.nodeType === Node.ELEMENT_NODE) {
+          r = n.getBoundingClientRect();
+        }
+        if (r && r.width > 0) {
+          left = Math.min(left, r.left);
+          right = Math.max(right, r.right);
+        }
+      }
+      if (!isFinite(left)) return true;
+      const chrome2 = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0) + (parseFloat(style.borderLeftWidth) || 0) + (parseFloat(style.borderRightWidth) || 0);
+      return measuredW <= right - left + chrome2 + 2;
+    })();
     if (isBadge) {
-      initialWidth = "HUG";
+      initialWidth = hugFitsWidth ? "HUG" : measuredW;
       initialHeight = measuredH > 0 ? measuredH : "HUG";
       if (mode === "NONE") {
         mode = "HORIZONTAL";
@@ -1900,7 +2411,7 @@
     const isSearchOrFullWidth = initialWidth === "FILL" || parentRect && Math.abs(
       measuredW - (parentRect.width - (parentLayout?.padding?.left || 0) - (parentLayout?.padding?.right || 0))
     ) <= 8 || typeof element.className === "string" && element.className.includes("search");
-    if ((tagName === "button" || semanticName.startsWith("Button") || semanticName.startsWith("Badge") || isBadge) && !isSearchOrFullWidth && !style.width?.includes("%") && measuredW < 250) {
+    if ((tagName === "button" || semanticName.startsWith("Button") || semanticName.startsWith("Badge") || isBadge) && !isSearchOrFullWidth && !style.width?.includes("%") && measuredW < 250 && hugFitsWidth) {
       initialWidth = "HUG";
     }
     if (isRoot && fills.length === 0) {
@@ -1969,12 +2480,14 @@
         fills,
         strokes,
         borderSides,
+        accentBorder: accentBorder || void 0,
         cornerRadius,
         opacity: parseFloat(style.opacity) || 1,
         boxShadow,
         backdropBlur
       },
       children: [],
+      // Recorte según el CSS (overflow): si la web recorta, Figma también; si no, el contenido desbordado se ve
       clipsContent: isWholePage || CLIPPING_OVERFLOW.test(style.overflowX) || CLIPPING_OVERFLOW.test(style.overflowY) ? true : void 0
     };
     node._paint = paintLayerOf(element, style);
@@ -1984,23 +2497,37 @@
     if (filterInfo.opacity < 1) node.styles.opacity = Math.round(node.styles.opacity * filterInfo.opacity * 1e3) / 1e3;
     const blendMode = BLEND_MODES[style.mixBlendMode];
     if (blendMode) node.styles.blendMode = blendMode;
-    const rasterReason = effectsNeedingRaster(style, filterInfo);
+    const gridTile = generateGridPatternTile(style.backgroundImage, style.backgroundSize);
+    let rasterReason = effectsNeedingRaster(style, filterInfo);
+    if (rasterReason === "degradado repetido" && gridTile) {
+      const repeating = splitCssList(style.backgroundImage).map((l, i) => /^\s*repeating-/i.test(l) ? i : -1).filter((i) => i >= 0);
+      if (repeating.every((i) => gridTile.layers.includes(i))) rasterReason = null;
+    }
     if (rasterReason) {
       node.metadata = { ...node.metadata || {}, cssEffect: rasterReason };
       const vpArea = (window.innerWidth || 1440) * (window.innerHeight || 900);
-      if (rect.width > 2 && rect.height > 2 && rect.width * rect.height <= vpArea * 1.5) {
+      const hasRichUiChildren = element.children.length > 1 && (!!element.querySelector('p, h1, h2, h3, h4, h5, h6, button, a, [role="button"], input, article, section') || element.querySelectorAll("div, span, p, a, button").length >= 4);
+      if (!hasRichUiChildren && rect.width > 2 && rect.height > 2 && rect.width * rect.height <= vpArea * 1.5) {
         node._rasterize = rasterReason;
         node._vpRect = vpRectOf(rect);
       }
     }
-    if (pendingBgSrc) {
+    if (gridTile) {
+      node.styles.fills = [
+        ...node.styles.fills.filter((f) => !grads.includes(f)),
+        ...gradientsExcept(style.backgroundImage, gridTile.layers)
+      ];
+      node.imageData = gridTile.tile;
+      node.styles.imageScaleMode = "TILE";
+    } else if (pendingBgSrc) {
       node._pendingBgImageSrc = pendingBgSrc;
       node.styles.imageScaleMode = bgScaleMode(style);
       node._vpRect = vpRectOf(rect);
     }
-    if (element.children.length === 0) {
+    const inlineRichRoot = !!(isDirectText && rich && rich.characters && element.children.length > 0);
+    if (element.children.length === 0 || inlineRichRoot) {
       let txt = (element.textContent || "").trim();
-      if (style.textTransform === "uppercase") txt = txt.toUpperCase();
+      txt = transformText(txt, style.textTransform);
       if (tagName === "input" || tagName === "textarea") {
         let val = element.value || element.placeholder || "";
         let isPlaceholder = !element.value;
@@ -2085,6 +2612,16 @@
           svgContent: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>'
         });
       } else if (txt.length > 0) {
+        const clsName = typeof element.className === "string" ? element.className : "";
+        if (isIconFont(style.fontFamily, txt, clsName) && rect.width <= 128 && rect.height <= 128) {
+          const iconImg = renderIconFontToDataUrl(txt, style, rect.width, rect.height);
+          if (iconImg) {
+            node.imageData = iconImg;
+            node.name = "Icon / " + (txt.length > 20 ? "Glyph" : txt);
+            node.styles.imageScaleMode = "FIT";
+            return node;
+          }
+        }
         const tc = parseColor(style.color) || { r: 0.1, g: 0.1, b: 0.1, a: 1 };
         if (node.layout.mode === "NONE" && (padding.top > 0 || padding.left > 0 || fills.length > 0 || strokes.length > 0 || isBadge)) {
           node.layout.mode = "HORIZONTAL";
@@ -2096,9 +2633,10 @@
         let textAlignment = "LEFT";
         if (style.textAlign.includes("center")) textAlignment = "CENTER";
         else if (style.textAlign.includes("right")) textAlignment = "RIGHT";
-        const leafBefore = pseudoHasImage(element, "::before") ? extractPseudoElement(element, "::before", rect, currentLayout, counter) : null;
-        const leafAfter = pseudoHasImage(element, "::after") ? extractPseudoElement(element, "::after", rect, currentLayout, counter) : null;
-        if (leafBefore || leafAfter) {
+        const leafBefore = pseudoHasImage(element, "::before") || inlineRichRoot ? extractPseudoElement(element, "::before", rect, currentLayout, counter) : null;
+        const leafAfter = pseudoHasImage(element, "::after") || inlineRichRoot ? extractPseudoElement(element, "::after", rect, currentLayout, counter) : null;
+        const inFlowPseudo = [leafBefore, leafAfter].some((p) => p && p.layout?.positioning !== "ABSOLUTE");
+        if (inFlowPseudo) {
           node.layout.mode = "HORIZONTAL";
           node.layout.counterAxisAlignItems = "CENTER";
           const ps = window.getComputedStyle(element, leafBefore ? "::before" : "::after");
@@ -2146,23 +2684,34 @@
     } else {
       const beforeNode = extractPseudoElement(element, "::before", rect, currentLayout, counter);
       if (beforeNode) node.children.push(beforeNode);
-      const __kids = (function(el) {
+      const kidsOf = (el) => {
         if (el.shadowRoot) return [...el.shadowRoot.childNodes];
         if (el.localName === "slot") {
           const a = el.assignedNodes({ flatten: true });
           return a.length ? a : [...el.childNodes];
         }
         return [...el.childNodes];
-      })(element);
+      };
+      const expandBoxless = (nodes) => nodes.flatMap(
+        (n) => n.nodeType === Node.ELEMENT_NODE && isBoxless(n) ? expandBoxless(kidsOf(n)) : [n]
+      );
+      const __kids = expandBoxless(kidsOf(element));
+      const elementStyle = style;
       for (const child of __kids) {
         if (child.nodeType === Node.ELEMENT_NODE) {
           const cn = extractNodeTree(child, counter, rect, currentLayout);
           if (cn) node.children.push(cn);
         } else if (child.nodeType === Node.TEXT_NODE) {
-          let raw = (child.textContent || "").trim();
+          const parentEl = child.parentElement;
+          const style2 = parentEl && parentEl !== element ? window.getComputedStyle(parentEl) : elementStyle;
+          const ws = style2.whiteSpace || "normal";
+          let raw = child.textContent || "";
+          if (ws === "pre-line") raw = raw.replace(/[ \t\r\f]+/g, " ").replace(/ *\n */g, "\n");
+          else if (!/^pre|break-spaces/.test(ws)) raw = raw.replace(/[ \t\n\r\f]+/g, " ");
+          raw = raw.trim();
           if (raw.length > 0) {
-            if (style.textTransform === "uppercase") raw = raw.toUpperCase();
-            const tc = parseColor(style.color) || { r: 0.1, g: 0.1, b: 0.1, a: 1 };
+            raw = transformText(raw, style2.textTransform);
+            const tc = parseColor(style2.color) || { r: 0.1, g: 0.1, b: 0.1, a: 1 };
             let tx = 0, ty = 0;
             let tw = 0, th = 0;
             try {
@@ -2177,18 +2726,18 @@
               }
             } catch (_e) {
             }
-            const nodeFontSize = parseFloat(style.fontSize) || 14;
+            const nodeFontSize = parseFloat(style2.fontSize) || 14;
             let nodeLh = void 0;
-            if (style.lineHeight && style.lineHeight !== "normal") {
-              const lhV = parseFloat(style.lineHeight);
+            if (style2.lineHeight && style2.lineHeight !== "normal") {
+              const lhV = parseFloat(style2.lineHeight);
               if (!isNaN(lhV))
-                nodeLh = style.lineHeight.endsWith("px") ? Math.round(lhV) : Math.round(lhV * nodeFontSize);
+                nodeLh = style2.lineHeight.endsWith("px") ? Math.round(lhV) : Math.round(lhV * nodeFontSize);
             }
             const effLh = nodeLh || Math.round(nodeFontSize * 1.3);
             const isNodeMulti = th > effLh * 1.35 || raw.includes("\n");
             let nodeLs = void 0;
-            if (style.letterSpacing && style.letterSpacing !== "normal") {
-              const lsV = parseFloat(style.letterSpacing);
+            if (style2.letterSpacing && style2.letterSpacing !== "normal") {
+              const lsV = parseFloat(style2.letterSpacing);
               if (!isNaN(lsV) && Math.abs(lsV) > 5e-3) nodeLs = Math.round(lsV * 1e3) / 1e3;
             }
             let childWidth = "HUG";
@@ -2218,13 +2767,17 @@
               textData: {
                 characters: raw,
                 fontSize: Math.round(nodeFontSize),
-                fontWeight: style.fontWeight || 400,
-                fontFamily: style.fontFamily ? style.fontFamily.split(",")[0].replace(/['"]/g, "").trim() : "Inter",
-                fontStack: style.fontFamily || void 0,
+                fontWeight: style2.fontWeight || 400,
+                fontFamily: style2.fontFamily ? style2.fontFamily.split(",")[0].replace(/['"]/g, "").trim() : "Inter",
+                fontStack: style2.fontFamily || void 0,
                 lineHeight: nodeLh,
                 letterSpacing: nodeLs,
-                textAlign: style.textAlign.includes("center") ? "CENTER" : style.textAlign.includes("right") ? "RIGHT" : "LEFT",
-                isMultiline: isNodeMulti
+                textAlign: style2.textAlign.includes("center") ? "CENTER" : style2.textAlign.includes("right") ? "RIGHT" : "LEFT",
+                isMultiline: isNodeMulti,
+                // Una sola línea en la web → una sola línea en Figma: si la fuente sustituta es más ancha,
+                // el plugin no la parte (antes los textos sueltos junto a otros elementos se partían)
+                noWrap: !isNodeMulti && tw > 0 ? true : void 0,
+                lineCount: !isNodeMulti && tw > 0 ? 1 : void 0
               }
             });
           }
@@ -2234,23 +2787,29 @@
       if (afterNode) node.children.push(afterNode);
     }
     if (node.children.length > 0) {
-      if (typeof node.layout.height === "number" && node.layout.height <= 0) {
-        let mb = 0;
-        for (const ch of node.children) {
-          const cy = ch.layout?.y || 0;
-          const ch2 = typeof ch.layout?.height === "number" ? ch.layout.height : 40;
-          if (cy + ch2 > mb) mb = cy + ch2;
-        }
-        if (mb > 0) node.layout.height = mb;
+      let mb = 0;
+      let mr = 0;
+      for (const ch of node.children) {
+        const cy = ch.layout?.y || 0;
+        const ch2 = typeof ch.layout?.height === "number" ? ch.layout.height : ch.layout?.measuredHeight || 40;
+        if (cy + ch2 > mb) mb = cy + ch2;
+        const cx = ch.layout?.x || 0;
+        const cw = typeof ch.layout?.width === "number" ? ch.layout.width : ch.layout?.measuredWidth || 40;
+        if (cx + cw > mr) mr = cx + cw;
       }
-      if (typeof node.layout.width === "number" && node.layout.width <= 0) {
-        let mr = 0;
-        for (const ch of node.children) {
-          const cx = ch.layout?.x || 0;
-          const cw = typeof ch.layout?.width === "number" ? ch.layout.width : 40;
-          if (cx + cw > mr) mr = cx + cw;
+      const curH = typeof node.layout.height === "number" ? node.layout.height : node.layout.measuredHeight || 0;
+      const curW = typeof node.layout.width === "number" ? node.layout.width : node.layout.measuredWidth || 0;
+      if (!node.clipsContent) {
+        if (curH < 1 && mb > 0) {
+          node.layout.height = mb;
+          node.layout.measuredHeight = mb;
+          node.styles.fills = [];
         }
-        if (mr > 0) node.layout.width = mr;
+        if (curW < 1 && mr > 0) {
+          node.layout.width = mr;
+          node.layout.measuredWidth = mr;
+          node.styles.fills = [];
+        }
       }
     }
     if (node.children.length > 1) {
@@ -2284,6 +2843,10 @@
         node.children.sort((a, b) => (a.layout?.y || 0) - (b.layout?.y || 0));
       }
     }
+    node._stack = createsStackingContext(element, style);
+    node._escZ = escapingZ(node);
+    const paintsItself = (node.styles.fills || []).length > 0 || (node.styles.strokes || []).length > 0 || (node.styles.boxShadow || []).length > 0 || !!node.styles.backdropBlur || !!node.imageData || !!node._pendingBgImageSrc || !!node._needsShot || !!node._rasterize;
+    node._elevatable = !node._stack && !paintsItself;
     if (node.children.length > 1) sortByPaintOrder(node.children, mode);
     if (gridAsWrap) node._gridWrap = true;
     fitAutoLayoutToGeometry(node);
@@ -2304,99 +2867,6 @@
       }
       return singleChild;
     }
-    const elClass = typeof element.className === "string" ? element.className : "";
-    if (elClass.includes("sidebar-workspace-text")) {
-      node.layout.mode = "VERTICAL";
-      node.layout.counterAxisAlignItems = "MIN";
-      node.layout.itemSpacing = 4;
-      node.layout.width = 169;
-    }
-    if (elClass.includes("sidebar-workspace-role")) {
-      node.name = "Badge / Polaris Cloud";
-      node.layout.mode = "HORIZONTAL";
-      node.layout.primaryAxisAlignItems = "CENTER";
-      node.layout.counterAxisAlignItems = "CENTER";
-      node.layout.padding = { top: 2, right: 9, bottom: 2, left: 9 };
-      node.layout.width = "HUG";
-      node.layout.height = 19;
-      node.styles.cornerRadius = 999;
-      node.styles.fills = [{ r: 1, g: 1, b: 1, a: 0.14 }];
-      if (node.children && node.children.length > 0 && node.children[0].type === "TEXT") {
-        node.children[0].textData.characters = "POLARIS CLOUD";
-        node.children[0].textData.fontSize = 10;
-        node.children[0].textData.fontWeight = 600;
-        node.children[0].styles.fills = [{ r: 1, g: 0.918, b: 0.118, a: 1 }];
-      }
-    }
-    if (elClass.includes("sidebar-search") && tagName === "div") {
-      node.name = "Sidebar / Search";
-      node.layout.mode = "HORIZONTAL";
-      node.layout.primaryAxisAlignItems = "CENTER";
-      node.layout.counterAxisAlignItems = "CENTER";
-      node.layout.padding = { top: 0, right: 12, bottom: 6, left: 12 };
-      node.layout.width = "FILL";
-      node.layout.height = 40;
-      if (node.children && node.children.length > 0) {
-        node.children[0].layout.width = "FILL";
-      }
-    }
-    if (elClass.includes("sidebar-search-trigger")) {
-      node.name = "Button / Search Trigger";
-      node.layout.mode = "HORIZONTAL";
-      node.layout.primaryAxisAlignItems = "SPACE_BETWEEN";
-      node.layout.counterAxisAlignItems = "CENTER";
-      node.layout.padding = { top: 0, right: 8, bottom: 0, left: 10 };
-      node.layout.width = "FILL";
-      node.layout.height = 34;
-      node.styles.cornerRadius = 9;
-    }
-    if (elClass.includes("sidebar-version")) {
-      node.name = "Sidebar / Version";
-      node.layout.mode = "HORIZONTAL";
-      node.layout.primaryAxisAlignItems = "CENTER";
-      node.layout.counterAxisAlignItems = "CENTER";
-      node.layout.padding = { top: 0, right: 16, bottom: 0, left: 16 };
-      node.layout.width = "FILL";
-      node.layout.height = 36;
-      node.styles.strokes = [{ r: 1, g: 1, b: 1, a: 0.12, width: 1, align: "INSIDE" }];
-      node.styles.borderSides = { top: 1, right: 0, bottom: 0, left: 0 };
-      if (node.children && node.children.length > 0 && node.children[0].type === "TEXT") {
-        node.children[0].styles.fills = [{ r: 0.776, g: 0.816, b: 0.863, a: 1 }];
-        node.children[0].textData.textAlign = "CENTER";
-      }
-    }
-    if (elClass.includes("sidebar-user") && tagName === "div") {
-      node.name = "Sidebar / User";
-      node.layout.mode = "HORIZONTAL";
-      node.layout.primaryAxisAlignItems = "SPACE_BETWEEN";
-      node.layout.counterAxisAlignItems = "CENTER";
-      node.layout.padding = { top: 10, right: 12, bottom: 10, left: 12 };
-      node.layout.width = "FILL";
-      node.layout.height = 63;
-      node.styles.strokes = [{ r: 1, g: 1, b: 1, a: 0.12, width: 1, align: "INSIDE" }];
-      node.styles.borderSides = { top: 1, right: 0, bottom: 0, left: 0 };
-    }
-    if (elClass.includes("sidebar-user-avatar")) {
-      node.name = "Avatar / P";
-      node.layout.mode = "HORIZONTAL";
-      node.layout.primaryAxisAlignItems = "CENTER";
-      node.layout.counterAxisAlignItems = "CENTER";
-      node.layout.width = 30;
-      node.layout.height = 30;
-      node.styles.cornerRadius = 15;
-      node.styles.fills = [{ r: 0, g: 0.129, b: 0.341, a: 1 }];
-      node.styles.strokes = [{ r: 1, g: 1, b: 1, a: 0.2, width: 1, align: "INSIDE" }];
-    }
-    if (elClass.includes("sidebar-user-logout")) {
-      node.name = "Button / Logout";
-      node.layout.mode = "HORIZONTAL";
-      node.layout.primaryAxisAlignItems = "CENTER";
-      node.layout.counterAxisAlignItems = "CENTER";
-      node.layout.width = 34;
-      node.layout.height = 34;
-      node.styles.cornerRadius = 10;
-      node.styles.strokes = [{ r: 1, g: 1, b: 1, a: 0.12, width: 1, align: "INSIDE" }];
-    }
     return node;
   }
   function paintLayerOf(element, style) {
@@ -2409,8 +2879,39 @@
     if (!positioned && !flexItemWithZ) return null;
     return isNaN(z) ? 0 : z;
   }
+  function createsStackingContext(element, style) {
+    const pos = style.position;
+    if (pos === "fixed" || pos === "sticky") return true;
+    if (pos !== "static" && style.zIndex !== "auto") return true;
+    if (parseFloat(style.opacity) < 1) return true;
+    const s = style;
+    for (const prop of ["transform", "filter", "backdropFilter", "clipPath", "maskImage", "webkitMaskImage"]) {
+      if (s[prop] && s[prop] !== "none") return true;
+    }
+    if (style.mixBlendMode && style.mixBlendMode !== "normal") return true;
+    if (style.isolation === "isolate") return true;
+    if (/transform|opacity|filter/.test(style.willChange || "")) return true;
+    if (/paint|layout|strict|content/.test(style.contain || "")) return true;
+    if (style.zIndex !== "auto" && element.parentElement) {
+      return /flex|grid/.test(window.getComputedStyle(element.parentElement).display);
+    }
+    return false;
+  }
+  function escapingZ(node) {
+    if (node._stack) return 0;
+    let max = 0;
+    for (const c of node.children || []) {
+      const own = typeof c._paint === "number" && c._paint > 0 ? c._paint : 0;
+      const inner = !c._stack && typeof c._escZ === "number" ? c._escZ : 0;
+      max = Math.max(max, own, inner);
+    }
+    return max;
+  }
   function paintKey(n) {
-    const z = n._paint;
+    let z = n._paint;
+    if (n._elevatable && typeof n._escZ === "number" && n._escZ > 0 && (z === null || z === void 0 || z <= 0)) {
+      z = n._escZ;
+    }
     if (z === null || z === void 0) return [1, 0];
     if (z < 0) return [0, z];
     if (z === 0) return [2, 0];
@@ -2426,8 +2927,10 @@
     }
     const isAbs = (c) => c.layout?.positioning === "ABSOLUTE";
     const flow = indexed.filter((x) => !isAbs(x.c));
-    const below = indexed.filter((x) => isAbs(x.c) && x.k[0] === 0).sort(byPaint);
-    const above = indexed.filter((x) => isAbs(x.c) && x.k[0] !== 0).sort(byPaint);
+    const keyLt = (a, b) => a[0] < b[0] || a[0] === b[0] && a[1] < b[1];
+    const goesBelow = (x) => x.k[0] === 0 || flow.some((f) => keyLt(x.k, f.k));
+    const below = indexed.filter((x) => isAbs(x.c) && goesBelow(x)).sort(byPaint);
+    const above = indexed.filter((x) => isAbs(x.c) && !goesBelow(x)).sort(byPaint);
     [...below, ...flow, ...above].forEach((x, i) => children[i] = x.c);
   }
 
@@ -2642,6 +3145,9 @@
       delete n._gridWrap;
       delete n._gridWrapOk;
       delete n._paint;
+      delete n._stack;
+      delete n._escZ;
+      delete n._elevatable;
       (n.children || []).forEach(cleanup);
     })(rootNode);
     return rootNode;

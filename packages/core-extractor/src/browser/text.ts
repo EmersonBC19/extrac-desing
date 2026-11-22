@@ -138,9 +138,13 @@ export function scriptPosition(el: Element, root: Element): ScriptBaseline | nul
   return null;
 }
 
-export function applyTextTransform(ch: string, tt: string) {
+export function applyTextTransform(ch: string, tt: string, prevCh?: string) {
   if (tt === 'uppercase') return ch.toUpperCase();
   if (tt === 'lowercase') return ch.toLowerCase();
+  if (tt === 'capitalize') {
+    // Inicio de palabra: nada antes, o algo que no es letra, número ni apóstrofo ("don't" → "Don't")
+    if (!prevCh || !/[\p{L}\p{N}'’]/u.test(prevCh)) return ch.toUpperCase();
+  }
   return ch;
 }
 
@@ -269,7 +273,7 @@ export function buildRichText(root: Element, rootStyle: CSSStyleDeclaration) {
       } else if (measured >= MAX_MEASURE) {
         measureOk = false;
       }
-      let outCh = applyTextTransform(ch, st._tt);
+      let outCh = applyTextTransform(ch, st._tt, out.length > 0 ? out[out.length - 1] : undefined);
       if (st.baseline === 'SUPER' && SUP_MAP[outCh]) outCh = SUP_MAP[outCh];
       else if (st.baseline === 'SUB' && SUB_MAP[outCh]) outCh = SUB_MAP[outCh];
       pushChar(outCh, st);

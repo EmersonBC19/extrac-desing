@@ -7,6 +7,26 @@ import type { VpRect } from './types';
 export const CLIPPING_OVERFLOW = /^(hidden|clip|auto|scroll)$/;
 
 /**
+ * ¿El elemento no genera caja? Con `display: contents` (y los <slot>, que lo son por defecto) el
+ * navegador coloca sus hijos como si fueran del padre: no tiene tamaño (getBoundingClientRect da 0×0
+ * en la esquina de la ventana), ni fondo, ni recorte. Tratarlo como un frame lo dejaba en Figma de
+ * 1 px, fuera de su sitio y recortando a sus hijos (las tarjetas de un visor desaparecían).
+ */
+export function isBoxless(el: Element): boolean {
+  return window.getComputedStyle(el).display === 'contents';
+}
+
+/** Hijos que generan caja: cada hijo sin caja se sustituye por los suyos (recursivo) */
+export function boxChildren(el: Element): Element[] {
+  const out: Element[] = [];
+  for (const c of Array.from(el.children)) {
+    if (isBoxless(c)) out.push(...boxChildren(c));
+    else out.push(c);
+  }
+  return out;
+}
+
+/**
  * ¿El elemento es una slide de carrusel/galería fuera del viewport?
  * Lo es si algún ancestro (que no sea html/body) recorta o hace scroll en X,
  * y no está absurdamente lejos (carruseles "infinitos" con cientos de clones).
@@ -64,12 +84,48 @@ export function extractBgUrl(bgStr: string | null | undefined) {
 }
 
 /**
+ * ¿Algo visible cuelga de este elemento diminuto? Un descendiente (hasta 3 niveles) o un
+ * pseudo-elemento con caja propia, visible y opaco.
+ */
+function hasVisibleOverflow(element: Element): boolean {
+  const visibleBox = (cs: CSSStyleDeclaration, w: number, h: number) =>
+    w > 4 && h > 4 && cs.display !== 'none' && cs.visibility !== 'hidden' && parseFloat(cs.opacity) > 0;
+  for (const p of ['::before', '::after']) {
+    const ps = window.getComputedStyle(element, p);
+    if (ps.content && ps.content !== 'none' && ps.content !== 'normal') {
+      if (visibleBox(ps, parseFloat(ps.width) || 0, parseFloat(ps.height) || 0)) return true;
+    }
+  }
+  let level: Element[] = Array.from(element.children);
+  for (let depth = 0; depth < 3 && level.length; depth++) {
+    const next: Element[] = [];
+    for (const c of level.slice(0, 40)) {
+      const r = c.getBoundingClientRect();
+      if (visibleBox(window.getComputedStyle(c), r.width, r.height)) return true;
+      next.push(...Array.from(c.children));
+    }
+    level = next;
+  }
+  return false;
+}
+
+/**
  * Patrón accesible "visually hidden" / "sr-only": elemento absoluto de ~1px recortado con
  * clip / clip-path. Existe en el DOM para lectores de pantalla pero no se pinta.
  */
-export function isVisuallyHidden(cs: CSSStyleDeclaration, rect: DOMRect) {
+export function isVisuallyHidden(cs: CSSStyleDeclaration, rect: DOMRect, element?: Element) {
   if (cs.position !== 'absolute' && cs.position !== 'fixed') return false;
-  if (rect.width <= 2 && rect.height <= 2) return true;
+  if (rect.width <= 2 && rect.height <= 2) {
+    // Un punto de anclaje de 0×0 (marcadores y hotspots sobre un visor: `left: 42%; top: 55%` con el
+    // círculo como hijo absoluto o pseudo-elemento) no está oculto si lo que cuelga de él se ve.
+    // El sr-only de verdad recorta (overflow hidden / clip): ese sigue fuera.
+    const clips =
+      CLIPPING_OVERFLOW.test(cs.overflowX) ||
+      CLIPPING_OVERFLOW.test(cs.overflowY) ||
+      /rect\(/.test(cs.clip || '') ||
+      (!!cs.clipPath && cs.clipPath !== 'none');
+    return clips || !element || !hasVisibleOverflow(element);
+  }
   // "Saltar al contenido" y similares: escondidos fuera del documento hasta recibir foco
   const sy = cs.position === 'fixed' ? 0 : window.scrollY;
   const sx = cs.position === 'fixed' ? 0 : window.scrollX;

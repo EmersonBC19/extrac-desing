@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>Regresiones de la ronda con Gemini</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        padding: 20px;
+      }
+      .box {
+        width: 200px;
+        height: 80px;
+        margin-bottom: 12px;
+      }
+      /* Patrón de cuadrícula real: trazos de 1 px con corte duro, tesela en px */
+      #grid {
+        background-color: #111;
+        background-image:
+          linear-gradient(to right, rgba(255, 255, 255, 0.2) 1px, transparent 1px),
+          linear-gradient(to bottom, rgba(255, 255, 255, 0.2) 1px, transparent 1px);
+        background-size: 40px 40px;
+      }
+      .gridpseudo {
+        position: relative;
+      }
+      .gridpseudo::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+          radial-gradient(circle, transparent 40%, #0d1117 100%);
+        background-size:
+          40px 40px,
+          40px 40px,
+          100% 100%;
+      }
+      /* Degradado animado (skeleton / shimmer): NO es un patrón */
+      #shimmer {
+        background-image: linear-gradient(90deg, #eee, #ccc, #eee);
+        background-size: 200% 100%;
+      }
+      /* Brillo radial con tamaño en %: NO es un patrón de puntos */
+      #glow {
+        background-image: radial-gradient(circle, rgba(80, 120, 255, 0.6), transparent 70%);
+        background-size: 100% 100%;
+      }
+
+      /* Pseudo-elementos */
+      #ghost::before {
+        content: '';
+        display: block;
+        width: 100px;
+        height: 20px;
+      }
+      #zero::before {
+        content: '';
+        display: block;
+        width: 100px;
+        background: red;
+      }
+      #deco::after {
+        content: '';
+        display: block;
+        width: 50px;
+        height: 4px;
+        background: rgb(255, 0, 0);
+      }
+      #ppwrap {
+        position: relative;
+        padding: 20px;
+      }
+      #pp {
+        padding: 10px;
+      }
+      #pp::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 10px;
+        height: 10px;
+        background: rgb(0, 0, 255);
+      }
+
+      /* Bordes */
+      #accent {
+        border: 1px solid rgb(221, 221, 221);
+        border-left: 4px solid rgb(255, 0, 0);
+      }
+      #single {
+        border-left: 3px solid rgb(0, 0, 255);
+      }
+      #dashedall {
+        border: 2px dashed rgb(0, 0, 0);
+      }
+
+      /* Video dentro de un hijo: el contenedor conserva su Auto Layout */
+      #vidwrap {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        width: 300px;
+      }
+      #vidwrap video {
+        width: 100px;
+        height: 50px;
+        background: #000;
+      }
+
+      #tall {
+        position: relative;
+        height: 600px;
+      }
+      #collapsed {
+        position: relative;
+        background: rgb(255, 0, 0);
+        height: 0;
+      }
+      #collapsed > div {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100px;
+        height: 80px;
+        background: rgb(0, 0, 255);
+      }
+    </style>
+  </head>
+  <body>
+    <svg style="display: none" xmlns="http://www.w3.org/2000/svg">
+      <symbol id="ico" viewBox="0 0 10 10"><path d="M0 0h10v10z" fill="currentColor" /></symbol>
+    </svg>
+
+    <div id="grid" class="box"></div>
+    <div id="shimmer" class="box"></div>
+    <div id="glow" class="box"></div>
+
+    <div id="ghost" class="box"><span>texto</span></div>
+    <div id="zero" class="box"><span>texto</span></div>
+    <div id="deco" class="box"><div>texto</div><div>más</div></div>
+    <div id="ppwrap">
+      <div id="pp"><span>con pseudo</span></div>
+    </div>
+
+    <p id="cap" style="text-transform: capitalize">acción don't último</p>
+
+    <svg id="svgop" width="24" height="24" viewBox="0 0 24 24">
+      <path d="M2 2h20v20H2z" fill="rgb(255, 0, 0)" fill-opacity="0.5" />
+    </svg>
+    <svg id="outline" width="24" height="24" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+      <path d="M2 2L22 22M22 2L2 22" />
+    </svg>
+    <svg id="useicon" width="20" height="20" style="color: rgb(0, 128, 0)"><use href="#ico" /></svg>
+
+    <div id="accent" class="box"><span>acento</span></div>
+    <div id="single" class="box"><span>único</span></div>
+    <div id="dashedall" class="box"><span>discontinuo</span></div>
+
+    <!-- El video está dos niveles más abajo, dentro de una tarjeta: el contenedor exterior no es un escenario -->
+    <div id="vidwrap">
+      <div>Arriba</div>
+      <div class="card">
+        <div>Tarjeta con video</div>
+        <div><video muted></video></div>
+      </div>
+      <div>Abajo</div>
+    </div>
+
+    <!-- Cuadrícula + viñeta radial en el mismo fondo (la viñeta no debe tirar el patrón) -->
+    <div
+      id="gridvignette"
+      class="box"
+      style="
+        background-color: #0d1117;
+        background-image:
+          radial-gradient(circle at 50% 0%, rgba(45, 212, 191, 0.15), transparent 60%),
+          linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+        background-size:
+          100% 100%,
+          32px 32px,
+          32px 32px;
+      "
+    ></div>
+    <!-- Cuadrícula con repeating-linear-gradient (el periodo sale de las paradas) -->
+    <div
+      id="gridrepeat"
+      class="box"
+      style="
+        background-color: #0d1117;
+        background-image:
+          repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.06) 0 1px, transparent 1px 24px),
+          repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.06) 0 1px, transparent 1px 24px);
+      "
+    ></div>
+    <!-- Cuadrícula en un pseudo-elemento que cubre la sección -->
+    <div id="gridpseudo" class="box gridpseudo"><div>contenido</div><div>más</div></div>
+
+    <!-- Líneas de circuito: SVG con stroke-width y tamaño por CSS; y otro estirado sin proporciones -->
+    <svg id="circuit" style="display: block; width: 600px; height: 200px" viewBox="0 0 300 100">
+      <path d="M0 50H250" stroke="#2dd4bf" stroke-width="1" fill="none" />
+      <circle cx="250" cy="50" r="4" fill="none" stroke="#2dd4bf" stroke-width="1" />
+    </svg>
+    <svg id="circuit2" style="display: block; width: 600px; height: 100px" viewBox="0 0 300 100" preserveAspectRatio="none">
+      <path d="M0 50H250" stroke="#2dd4bf" stroke-width="1" fill="none" />
+    </svg>
+
+    <!-- Texto suelto junto a un elemento (título directo en el div + <small> debajo) -->
+    <div id="chiptext" style="width: 420px; font-family: Arial; font-size: 14px">
+      <div style="font-weight: 700">
+        LED + resistencia de 220–330 Ω<small style="display: block; font-family: monospace">se usa en 4 laboratorios</small>
+      </div>
+    </div>
+
+    <!-- Notas al pie (apple.com): párrafos "todo inline" con padding, enlace y espacios del código fuente -->
+    <ul id="footnotes" style="list-style: none; padding: 0; width: 520px; font: 12px/16px Arial; color: rgba(0, 0, 0, 0.56)">
+      <li style="padding-bottom: 10px"><small>◊</small> Sólo para nuevas suscripciones que cumplan con los requisitos.
+						$45.900&nbsp;o
+						$62.900&nbsp;o
+						$86.900&nbsp;al mes al finalizar el periodo de prueba. Sujeto a restricciones y otros&nbsp;<a href="#">términos</a>.</li>
+      <li style="padding-bottom: 10px">Apple&nbsp;TV requiere suscripción. Sujeto a restricciones y otros <a href="#">términos</a>.</li>
+    </ul>
+    <div id="shopline" style="padding-top: 10px; font: 12px Arial"><a href="#">Busca un distribuidor</a> cerca de ti.</div>
+    <!-- Texto suelto junto a un bloque, con saltos y tabulaciones del código fuente -->
+    <div id="mixedws" style="font: 14px Arial; width: 500px">Precio:
+				$45.900&nbsp;o
+				$62.900<div>bloque</div></div>
+
+    <!-- Número en círculo de ancho fijo (tarjetas del visor), pastilla que se ajusta al texto y botón de ancho fijo -->
+    <div id="badges" style="display: flex; gap: 12px; align-items: center; padding: 8px">
+      <span
+        id="numbadge"
+        style="display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: #2dd4bf; color: #0d1117; font: 700 12px/1 monospace"
+        >1</span
+      >
+      <span id="pill" class="badge" style="padding: 2px 10px; border-radius: 999px; background: #eee">Nuevo</span>
+      <button id="widebtn" style="width: 200px; height: 32px; border-radius: 16px">Ir</button>
+    </div>
+
+    <!-- Nombres: CSS Modules de Vite (_local_hash_línea) y clases de alcance de frameworks -->
+    <div id="cssmod" class="_head_pgjsj_6 svelte-1x2y3z"><div>uno</div><div>dos</div></div>
+    <div id="scoped" class="svelte-1x2y3z lab-row"><div>uno</div><div>dos</div></div>
+
+    <div id="tall">
+      <div id="collapsed"><div></div></div>
+    </div>
+  </body>
+</html>

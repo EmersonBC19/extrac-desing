@@ -188,6 +188,13 @@ export function fitWrapToGeometry(node: RawNode, W: number, H: number) {
     return;
   }
 
+  // Para que el wrap en Figma rompa las filas exactamente en los mismos elementos que la web,
+  // el ancho debe ser el medido (W), nunca FILL, ya que si el contenedor se estirase en Figma
+  // subiría elementos de la segunda fila a la primera.
+  if (L.width === 'FILL') {
+    L.width = Math.round(W);
+  }
+
   const gaps: number[] = [];
   for (const r of rows)
     for (let i = 1; i < r.items.length; i++) {
@@ -260,36 +267,71 @@ export function fitWrapToGeometry(node: RawNode, W: number, H: number) {
   }
 }
 
+/** ¿Crea este elemento bloque contenedor para descendientes absolutos (o fijos, si fixedToo)? */
+function isContainingBlock(s: CSSStyleDeclaration, fixedToo: boolean): boolean {
+  const transformed = s.transform !== 'none' || s.filter !== 'none' || /paint|layout|strict|content/.test(s.contain || '');
+  return fixedToo ? transformed : transformed || s.position !== 'static';
+}
+
 /**
- * Posición de un pseudo-elemento absoluto relativa a su elemento (left/top/right/bottom + translate).
- * Solo cuando el elemento es su bloque contenedor (está posicionado); si no, null.
+ * Posición de un pseudo-elemento absoluto/fijo relativa a su elemento anfitrión (left/top/right/bottom
+ * + translate). Los valores se resuelven contra su bloque contenedor REAL (el anfitrión si está
+ * posicionado; si no, el ancestro posicionado más cercano o el viewport) y se pasan a coordenadas del
+ * anfitrión. Con ambos lados en `auto` queda en su posición estática ≈ inicio del contenido del anfitrión.
  */
 export function pseudoPosition(element: Element, ps: CSSStyleDeclaration, w: number, h: number) {
-  const es = window.getComputedStyle(element);
-  if (es.position === 'static') return null;
   const er = element.getBoundingClientRect();
-  const bl = parseFloat(es.borderLeftWidth) || 0,
-    bt = parseFloat(es.borderTopWidth) || 0;
-  const br = parseFloat(es.borderRightWidth) || 0,
-    bb = parseFloat(es.borderBottomWidth) || 0;
-  const px = (v: string) => (v && v.endsWith('px') ? parseFloat(v) : null);
-  let x = null,
-    y = null;
-  const left = px(ps.left),
-    right = px(ps.right),
-    top = px(ps.top),
-    bottom = px(ps.bottom);
-  if (left !== null) x = bl + left;
-  else if (right !== null) x = er.width - br - right - w;
-  if (top !== null) y = bt + top;
-  else if (bottom !== null) y = er.height - bb - bottom - h;
+  const es = window.getComputedStyle(element);
+  const fixed = ps.position === 'fixed';
+
+  // Caja de relleno (padding box) del bloque contenedor, en coordenadas del viewport
+  let cb: { left: number; top: number; width: number; height: number } | null = null;
+  for (let el: Element | null = element; el && el !== document.documentElement; el = el.parentElement) {
+    const s = window.getComputedStyle(el);
+    if (!isContainingBlock(s, fixed)) continue;
+    const r = el.getBoundingClientRect();
+    const bl = parseFloat(s.borderLeftWidth) || 0;
+    const bt = parseFloat(s.borderTopWidth) || 0;
+    const br = parseFloat(s.borderRightWidth) || 0;
+    const bb = parseFloat(s.borderBottomWidth) || 0;
+    cb = { left: r.left + bl, top: r.top + bt, width: r.width - bl - br, height: r.height - bt - bb };
+    break;
+  }
+  if (!cb) {
+    // Viewport (fixed) o bloque contenedor inicial (absolute sin ancestro posicionado)
+    cb = fixed
+      ? { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight }
+      : { left: -window.scrollX, top: -window.scrollY, width: window.innerWidth, height: window.innerHeight };
+  }
+
+  const parseVal = (v: string, dim: number) => {
+    if (!v || v === 'auto') return null;
+    if (v.endsWith('%')) {
+      const pct = parseFloat(v);
+      return !isNaN(pct) ? (pct / 100) * dim : null;
+    }
+    const num = parseFloat(v);
+    return !isNaN(num) ? num : null;
+  };
+  const left = parseVal(ps.left, cb.width),
+    right = parseVal(ps.right, cb.width),
+    top = parseVal(ps.top, cb.height),
+    bottom = parseVal(ps.bottom, cb.height);
+
+  let x: number, y: number;
+  if (left !== null) x = cb.left + left - er.left;
+  else if (right !== null) x = cb.left + cb.width - right - w - er.left;
+  else x = (parseFloat(es.borderLeftWidth) || 0) + (parseFloat(es.paddingLeft) || 0);
+  if (top !== null) y = cb.top + top - er.top;
+  else if (bottom !== null) y = cb.top + cb.height - bottom - h - er.top;
+  else y = (parseFloat(es.borderTopWidth) || 0) + (parseFloat(es.paddingTop) || 0);
+
   // translate de transform: matrix(a, b, c, d, tx, ty)
   const m = (ps.transform || '').match(/^matrix\(([^)]+)\)$/);
   if (m) {
     const k = m[1].split(',').map(parseFloat);
-    if (x !== null) x += k[4] || 0;
-    if (y !== null) y += k[5] || 0;
+    x += k[4] || 0;
+    y += k[5] || 0;
   }
-  if (x === null || y === null) return null;
   return { x: Math.round(x), y: Math.round(y) };
 }

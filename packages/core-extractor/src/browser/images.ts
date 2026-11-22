@@ -181,6 +181,9 @@ export async function resolvePendingImages(rootNode: RawNode) {
     delete n._gridWrap;
     delete n._gridWrapOk;
     delete n._paint;
+    delete n._stack;
+    delete n._escZ;
+    delete n._elevatable;
     (n.children || []).forEach(cleanup);
   })(rootNode);
 

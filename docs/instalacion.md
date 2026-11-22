@@ -1,0 +1,99 @@
+# Guía de Instalación y Uso — Code to Figma
+
+Esta guía explica cómo instalar y utilizar **Code to Figma** sin necesidad de conocimientos técnicos avanzados ni de mantener consolas abiertas.
+
+---
+
+## Requisitos Previos
+
+1. **Navegador web**: Google Chrome, Brave, Microsoft Edge o cualquier navegador basado en Chromium.
+2. **Figma**: Aplicación de escritorio (**Figma Desktop**, recomendada) o Figma en el navegador Web.
+
+---
+
+## Paso 1: Instalar la Extensión de Chrome
+
+1. Abre tu navegador y accede a:
+   ```text
+   chrome://extensions
+   ```
+2. Activa el interruptor **Modo de desarrollador** (esquina superior derecha).
+3. Haz clic en **Cargar descomprimida** (*Load unpacked*).
+4. Selecciona la carpeta:
+   ```text
+   packages/browser-extension
+   ```
+5. *(Recomendado)* Haz clic en el ícono de rompecabezas de la barra de extensiones y **fija** el ícono de Code to Figma.
+
+---
+
+## Paso 2: Abrir el Hub Local Autónomo
+
+El Hub es un programa local ligero que comunica la extensión del navegador con el plugin de Figma. **No envía datos a servidores externos; todo se procesa en tu equipo.**
+
+1. Puedes generar el ejecutable autónomo ejecutando una vez:
+   ```bash
+   npm run build:hub-exe
+   ```
+2. Ejecuta el archivo generado:
+   ```text
+   packages/mcp-server/dist/code-to-figma-hub.exe
+   ```
+3. El programa se mantendrá activo en segundo plano escuchando en `127.0.0.1:8080`.
+   * Si ya hay una instancia abierta, la nueva se cerrará de forma automática y silenciosa.
+   * Su archivo de registro se guarda en `~/.code-to-figma/hub.log`.
+   * El código de vinculación queda guardado en `~/.code-to-figma/pairing-code`.
+
+> **💡 Inicio automático en Windows**: Puedes crear un acceso directo a `code-to-figma-hub.exe` y colocarlo en tu carpeta de Inicio de Windows (`Win + R` → `shell:startup`) para que arranque solo al iniciar sesión.
+
+---
+
+## Paso 3: Cargar y Vincular el Plugin en Figma
+
+1. Abre **Figma** (en la app de escritorio o en el navegador).
+2. Abre cualquier archivo de diseño o lienzo en blanco.
+3. Haz clic derecho en el lienzo → **Plugins** → **Development** → **Import plugin from manifest...**
+4. Selecciona el archivo:
+   ```text
+   packages/figma-plugin/manifest.json
+   ```
+5. Ejecuta el plugin recién importado: **Code to Figma AI Bridge**.
+6. **Vinculación inicial (solo la primera vez)**:
+   * Aparecerá una ventana solicitando el **Código de vinculación**.
+   * Copia el código que aparece en tu archivo `~/.code-to-figma/pairing-code` (formato `XXXX-XXXX`) y pulsa **Vincular**.
+   * Figma lo almacena de forma segura; en las siguientes sesiones conectará automáticamente.
+7. El indicador del plugin mostrará el estado verde: `● En línea`.
+
+---
+
+## Paso 4: ¡A extraer componentes!
+
+1. Navega a cualquier página web (incluyendo plataformas privadas con inicio de sesión o desarrollos locales).
+2. Presiona el atajo:
+   ```text
+   Alt + Shift + F
+   ```
+3. Pasa el cursor sobre la interfaz: verás el recuadro con gradiente detectando contenedores padre inteligentes (tarjetas, menús, secciones).
+   * Usa `↑` (Flecha arriba) para expandir la selección al contenedor padre.
+   * Usa `↓` (Flecha abajo) para descender a un elemento hijo.
+4. Haz **clic** sobre el bloque deseado para elevarlo en **3D Pop-out**.
+5. Presiona **Enter** o pulsa **Enviar a Figma**.
+6. ¡Listo! En segundos aparecerá en tu lienzo de Figma reproducido con **Auto Layout nativo, textos reales, variantes y variables de color**.
+
+---
+
+## Solución de Problemas Frecuentes
+
+### 1. El plugin indica "Desconectado" en Figma Web
+* **Causa**: Desde Chrome 142+, Chrome bloquea por defecto la conexión desde páginas web hacia la red local (`localhost`).
+* **Solución**: En la barra de direcciones de Figma en Chrome, haz clic en el ícono de ajustes del sitio (a la izquierda de la URL) y activa el permiso **"Apps en el dispositivo"** (*Local network access*). Alternativamente, usa la **app de escritorio de Figma**, la cual no tiene esta restricción.
+
+### 2. Las imágenes llegan vacías a Figma
+* **Causa**: La extensión necesita permiso para descargar imágenes alojadas en otros dominios (CDN). Chrome solo deja concederlo con un clic en una página de la propia extensión.
+* **Solución**: Al instalar o recargar la extensión se abre la pestaña **"Code to Figma — Permisos"**: pulsa **Permitir** y acepta el aviso de Chrome. Si la cerraste, se vuelve a abrir sola (en segundo plano) la primera vez que una imagen no se pueda descargar. Luego vuelve a enviar el componente.
+
+### 3. "Hub no detectado en puerto 8080"
+* **Solución**: Comprueba que `code-to-figma-hub.exe` esté abierto. Si lo estás usando en modo desarrollo, puedes iniciarlo con `npm run start:hub`.
+
+### 4. Código de vinculación olvidado o cambiado
+* Si necesitas volver a vincularte, abre el archivo `~/.code-to-figma/pairing-code` con el Bloc de notas para ver tu código actual. Si borras ese archivo, el hub generará uno nuevo en su próximo inicio.

@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>Visor 3D con tarjetas</title>
+    <style>
+      body {
+        margin: 0;
+        background: #0d1117;
+        color: #e6edf3;
+        font-family: Arial, sans-serif;
+      }
+      .spacer {
+        height: 1600px;
+      }
+      .panel {
+        margin: 0 40px;
+        border: 1px solid #30363d;
+        border-radius: 12px;
+        padding: 24px;
+        background: #0f1419;
+      }
+      .panel h2 {
+        margin: 0 0 16px;
+      }
+      /* Escenario: canvas a pantalla completa, líneas SVG, tarjetas y marcadores encima */
+      .stage {
+        position: relative;
+        height: 640px;
+      }
+      .stage canvas {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+      .lines {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+      }
+      /* El envoltorio va en flujo y NO forma contexto: las tarjetas suben con su z-index sobre el canvas */
+      .cards {
+        display: grid;
+        grid-template-columns: 240px 1fr 240px;
+        grid-auto-rows: 160px;
+        row-gap: 24px;
+      }
+      .card {
+        position: relative;
+        z-index: 2;
+        background: #161b22;
+        border: 1px solid #30363d;
+        border-radius: 10px;
+        padding: 14px;
+      }
+      .card.right {
+        grid-column: 3;
+      }
+      /* Marcadores: anclas de 0×0 con el círculo colgando y centrado con transform */
+      .pin {
+        position: absolute;
+        z-index: 3;
+      }
+      .pin span {
+        position: absolute;
+        transform: translate(-50%, -50%);
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        background: #2dd4bf;
+        color: #0d1117;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+      }
+      /* Reveal que se vuelve a ocultar al salir de la vista (IntersectionObserver que alterna la clase) */
+      .reveal {
+        opacity: 0;
+        transform: translateY(16px);
+        transition:
+          opacity 0.3s,
+          transform 0.3s;
+      }
+      .reveal.in {
+        opacity: 1;
+        transform: none;
+      }
+      /* Escenario en rejilla: canvas en el centro y las tarjetas dentro de un contenedor SIN CAJA
+         (display: contents, con overflow para la tira desplazable de móvil). En la web las tarjetas son
+         celdas de la rejilla; el contenedor mide 0×0 en la esquina de la ventana y no recorta nada. */
+      .stage2 {
+        position: relative;
+        display: grid;
+        grid-template-columns: 240px 1fr 240px;
+        grid-template-rows: repeat(3, 170px);
+        gap: 20px;
+      }
+      .stage2 .viewport {
+        grid-column: 2;
+        grid-row: 1 / 4;
+        position: relative;
+      }
+      .stage2 canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      .callouts {
+        display: contents;
+        overflow-x: auto;
+      }
+      .callout {
+        background: #161b22;
+        border: 1px solid #30363d;
+        border-radius: 10px;
+        padding: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="spacer"></div>
+    <section class="panel" id="explorer">
+      <h2>CONOCE LA PLACA</h2>
+      <div class="stage" id="stage">
+        <canvas id="cv" width="1200" height="640"></canvas>
+        <svg class="lines" viewBox="0 0 1200 640" preserveAspectRatio="none">
+          <line x1="250" y1="80" x2="520" y2="280" stroke="#2dd4bf" stroke-dasharray="4 4" />
+        </svg>
+        <div class="cards" id="cards">
+          <div class="card reveal" id="card1"><b>PUERTOS USB-C</b><p>COM flashea la placa</p></div>
+          <div class="card right reveal" id="card4"><b>MÓDULO ESP32-S3</b><p>Dos núcleos a 240 MHz</p></div>
+          <div class="card reveal" id="card2"><b>BOOT Y RST</b><p>RST reinicia tu programa</p></div>
+        </div>
+        <div class="pin reveal" style="left: 44%; top: 43%" id="pin1"><span>1</span></div>
+        <div class="pin reveal" style="left: 60%; top: 52%" id="pin4"><span>4</span></div>
+      </div>
+    </section>
+    <div class="spacer"></div>
+    <section class="panel" id="explorer2">
+      <h2>CONOCE LA PLACA · REJILLA</h2>
+      <div class="stage2" id="stage2">
+        <div class="viewport"><canvas id="cv2" width="600" height="550"></canvas></div>
+        <div class="callouts" id="callouts">
+          <article class="callout" style="grid-column: 1; grid-row: 1"><b>PUERTOS USB-C</b><p>COM flashea</p></article>
+          <article class="callout" style="grid-column: 1; grid-row: 2"><b>BOOT Y RST</b><p>RST reinicia</p></article>
+          <article class="callout" style="grid-column: 1; grid-row: 3"><b>LED RGB</b><p>Un WS2812</p></article>
+          <article class="callout" style="grid-column: 3; grid-row: 1"><b>MÓDULO ESP32-S3</b><p>Dos núcleos</p></article>
+          <article class="callout" style="grid-column: 3; grid-row: 2"><b>ANTENA DE PCB</b><p>Wi-Fi 4</p></article>
+          <article class="callout" style="grid-column: 3; grid-row: 3"><b>TIRAS DE PINES</b><p>44 pines</p></article>
+        </div>
+      </div>
+    </section>
+    <div class="spacer"></div>
+    <script>
+      const ctx2 = document.getElementById('cv2').getContext('2d');
+      ctx2.fillStyle = '#0f1419';
+      ctx2.fillRect(0, 0, 600, 550);
+      ctx2.fillStyle = '#1f6f5c';
+      ctx2.fillRect(150, 200, 300, 150);
+    </script>
+    <script>
+      const ctx = document.getElementById('cv').getContext('2d');
+      ctx.fillStyle = '#0f1419';
+      ctx.fillRect(0, 0, 1200, 640);
+      ctx.fillStyle = '#1f6f5c';
+      ctx.fillRect(450, 240, 300, 160);
+      const io = new IntersectionObserver(
+        entries => entries.forEach(e => e.target.classList.toggle('in', e.isIntersecting)),
+        { threshold: 0.2 },
+      );
+      document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+    </script>
+  </body>
+</html>

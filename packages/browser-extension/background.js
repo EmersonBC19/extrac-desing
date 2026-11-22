@@ -5,16 +5,59 @@
  * - Fetches images as base64 with extension privileges (immune to website CSP & CORS)
  */
 
+/**
+ * Las imágenes de otros dominios (CDN) se descargan desde este service worker, y eso exige permiso de
+ * host. El manifiesto solo trae localhost fijo y deja `<all_urls>` como opcional (fase 7.3, Chrome Web
+ * Store), así que hay que pedirlo. Chrome solo deja pedirlo con un clic real en una página de la
+ * extensión: desde el service worker falla ("must be called during a user gesture"), aunque sea al
+ * pulsar el icono. Por eso permissions.html tiene el botón "Permitir", y se abre:
+ *  - al instalar o recargar la extensión, si el permiso no está concedido;
+ *  - en segundo plano (sin quitar el foco a la pestaña que se captura) la primera vez por sesión que
+ *    una imagen no se puede descargar por falta de permiso.
+ */
+const ALL_SITES = { origins: ['<all_urls>'] };
+const PERMISSIONS_PAGE = 'permissions.html';
+let permissionPageShown = false;
+
+async function hasAllSites() {
+  try {
+    return await chrome.permissions.contains(ALL_SITES);
+  } catch (_e) {
+    return false;
+  }
+}
+
+async function openPermissionPage(active) {
+  if (permissionPageShown) return;
+  permissionPageShown = true;
+  try {
+    await chrome.tabs.create({ url: chrome.runtime.getURL(PERMISSIONS_PAGE), active });
+  } catch (err) {
+    console.warn('[CodeToFigma] No se pudo abrir la página de permisos:', err?.message || err);
+  }
+}
+
+chrome.runtime.onInstalled.addListener(async details => {
+  if ((details.reason === 'install' || details.reason === 'update') && !(await hasAllSites())) {
+    openPermissionPage(true);
+  }
+});
+
+/** Páginas donde Chrome no deja inyectar scripts de extensiones (internas, tienda, visor de PDF…) */
+function isRestrictedUrl(url) {
+  return (
+    /^(chrome|chrome-extension|chrome-search|chrome-untrusted|edge|brave|opera|about|view-source|devtools):/i.test(url) ||
+    /^https:\/\/(chromewebstore\.google\.com|chrome\.google\.com\/webstore)/i.test(url)
+  );
+}
+
 chrome.action.onClicked.addListener(async tab => {
   if (!tab.id || !tab.url) return;
 
-  // Do not inject on restricted Chrome internal URLs
-  if (
-    tab.url.startsWith('chrome://') ||
-    tab.url.startsWith('chrome-extension://') ||
-    tab.url.startsWith('https://chromewebstore.google.com')
-  ) {
-    console.warn('[CodeToFigma] No se puede ejecutar en paginas internas de Chrome.');
+  // Pulsar el icono en una página interna de Chrome (p. ej. chrome://extensions) no es un error de la
+  // extensión: con console.warn aparecía en la lista de "Errores" de chrome://extensions
+  if (isRestrictedUrl(tab.url)) {
+    console.info('[CodeToFigma] Chrome no permite usar extensiones en esta página:', tab.url);
     return;
   }
 
@@ -24,7 +67,13 @@ chrome.action.onClicked.addListener(async tab => {
       files: ['extractor.js', 'content.js'],
     });
   } catch (err) {
-    console.error('[CodeToFigma] Error al inyectar script:', err);
+    const msg = String((err && err.message) || err);
+    // Páginas de error (sin conexión), PDF o archivos locales sin permiso: Chrome no deja inyectar
+    if (/cannot access|cannot be scripted|error page|file:\/\//i.test(msg)) {
+      console.info('[CodeToFigma] Chrome no permite usar la extensión en esta página:', msg);
+    } else {
+      console.error('[CodeToFigma] Error al inyectar script:', err);
+    }
   }
 });
 
@@ -118,7 +167,19 @@ async function fetchImageBase64(url, tabUrl) {
   if (!policy.allowed) throw new Error(`Descarga bloqueada: ${policy.reason}`);
 
   // Cookies solo para imágenes del mismo sitio (plataformas con login, intranets)
-  const res = await fetch(url, { credentials: policy.credentials ? 'include' : 'omit' });
+  let res;
+  try {
+    res = await fetch(url, { credentials: policy.credentials ? 'include' : 'omit' });
+  } catch (netErr) {
+    // Sin permiso de host, el CORS del otro dominio bloquea la descarga: decirlo claro y ofrecer el permiso
+    if (!(await hasAllSites())) {
+      openPermissionPage(false);
+      throw new Error(
+        'Sin permiso para descargar imágenes de otros sitios: en la pestaña "Code to Figma — Permisos" pulsa Permitir y vuelve a enviar',
+      );
+    }
+    throw netErr;
+  }
   if (!res.ok) {
     throw new Error(`HTTP error ${res.status}`);
   }

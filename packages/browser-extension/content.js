@@ -23,6 +23,9 @@
         inst.sendToFigma();
         return;
       }
+      // Sin selección, el icono vuelve a cerrar el inspector (antes se seleccionaba el body siempre y el
+      // inspector ya no se podía cerrar desde el icono). La página completa sigue a un clic con el
+      // botón "Toda la Página" del panel.
       if (inst.destroy) {
         inst.destroy();
       }
@@ -54,6 +57,9 @@
     component: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>`,
     info: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`,
     multi: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>`,
+    sun: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`,
+    image: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>`,
+    sparkle: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ec4899" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`,
   };
 
   /**
@@ -78,7 +84,11 @@
     }
   }
 
-  /** Recorrido previo de páginas largas: pasos de ~0,8 pantallas, 220 ms cada uno (≈ 1 min como máximo) */
+  /**
+   * Recorrido previo de páginas largas: pasos de ~0,8 pantallas, 220 ms cada uno (≈ 1 min como máximo).
+   * El número de pasos sale de la altura de la selección medida ANTES de recorrer, así que el scroll
+   * infinito no lo alarga; con un tope bajo (8) lo de más abajo quedaba sin cargar.
+   */
   const MAX_PRESCROLL_STEPS = 260;
 
   /**
@@ -177,6 +187,8 @@
       this.isElevated = false;
       this.isFrozen = false;
       this.createAsComponent = false;
+      this.extractHover = true;
+      this.includeImages = true;
 
       // Live Figma status tracking
       this.figmaStatus = { hubRunning: false, figmaConnected: false, figmaCount: 0 };
@@ -394,30 +406,33 @@
           display: block;
         }
 
-        /* Action HUD toolbar — fully responsive & draggable */
+        /* Action HUD toolbar — modern floating command island */
         .action-hud {
           position: fixed !important;
           pointer-events: auto !important;
           display: none;
-          background: ${DARK_BG};
-          backdrop-filter: blur(16px);
-          -webkit-backdrop-filter: blur(16px);
-          border: 1px solid rgba(162, 89, 255, 0.55);
-          box-shadow: 0 20px 45px rgba(0, 0, 0, 0.7), 0 0 35px rgba(162, 89, 255, 0.3);
-          border-radius: 12px;
-          padding: 12px 16px;
+          background: #0f121a !important;
+          /* Sin backdrop-filter para evitar el desenfoque y subpixel rasterization de Chromium */
+          border: 1.5px solid rgba(255, 255, 255, 0.22) !important;
+          box-shadow: 0 24px 60px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
+          border-radius: 14px;
+          padding: 13px 18px;
           z-index: 2147483647 !important;
-          animation: hudPop 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+          animation: hudPop 0.16s cubic-bezier(0.16, 1, 0.3, 1) forwards;
           color: #f8fafc;
           width: auto;
-          max-width: min(580px, calc(100vw - 24px));
+          max-width: min(740px, calc(100vw - 24px));
           box-sizing: border-box;
           user-select: none;
+          -webkit-font-smoothing: antialiased !important;
+          -moz-osx-font-smoothing: grayscale !important;
+          text-rendering: geometricPrecision !important;
+          transform: translateZ(0);
         }
 
         @keyframes hudPop {
-          from { opacity: 0; transform: translateY(8px) scale(0.97); }
-          to { opacity: 1; transform: translateY(0) scale(1); }
+          from { opacity: 0; transform: translateY(6px); }
+          to { opacity: 1; transform: translateY(0); }
         }
 
         .hud-header {
@@ -426,11 +441,11 @@
           justify-content: space-between;
           flex-wrap: wrap;
           gap: 10px;
-          margin-bottom: 8px;
+          margin-bottom: 9px;
           cursor: grab;
           user-select: none;
-          padding-bottom: 6px;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+          padding-bottom: 8px;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         }
         .hud-header:active {
           cursor: grabbing;
@@ -444,68 +459,74 @@
         }
 
         .hud-title {
-          font-size: 13px;
+          font-size: 13.5px;
           font-weight: 700;
           color: #fff;
           display: flex;
           align-items: center;
           gap: 6px;
           pointer-events: none;
+          letter-spacing: -0.2px;
         }
 
         .hud-drag-pill {
           display: inline-flex;
           align-items: center;
-          gap: 3px;
-          background: rgba(168, 85, 247, 0.15);
-          border: 1px solid rgba(168, 85, 247, 0.35);
-          padding: 2px 7px;
-          border-radius: 4px;
-          font-size: 10px;
+          gap: 5px;
+          background: rgba(255, 255, 255, 0.08);
+          border: 1px solid rgba(255, 255, 255, 0.15);
+          padding: 3px 8px;
+          border-radius: 6px;
+          font-size: 11px;
           font-weight: 600;
-          color: #c084fc;
+          color: #cbd5e1;
           letter-spacing: 0.2px;
           cursor: grab;
+          transition: all 0.15s ease;
+        }
+        .hud-drag-pill:hover {
+          background: rgba(255, 255, 255, 0.18);
+          color: #fff;
         }
 
         /* Status Pills */
         .hud-status-pill {
           display: inline-flex;
           align-items: center;
-          gap: 5px;
-          font-size: 10.5px;
+          gap: 6px;
+          font-size: 11px;
           font-weight: 600;
-          padding: 2px 8px;
+          padding: 3px 9px;
           border-radius: 12px;
           pointer-events: auto;
           cursor: help;
         }
         .status-dot {
           display: inline-block;
-          width: 6px;
-          height: 6px;
+          width: 7px;
+          height: 7px;
           border-radius: 50%;
         }
         .hud-status-pill.connected {
-          background: rgba(16, 185, 129, 0.15);
+          background: rgba(16, 185, 129, 0.16);
           color: #34d399;
           border: 1px solid rgba(16, 185, 129, 0.35);
         }
         .hud-status-pill.connected .status-dot {
           background: #10b981;
-          box-shadow: 0 0 6px #10b981;
+          box-shadow: 0 0 8px #10b981;
         }
         .hud-status-pill.waiting {
-          background: rgba(245, 158, 11, 0.15);
+          background: rgba(245, 158, 11, 0.16);
           color: #fbbf24;
           border: 1px solid rgba(245, 158, 11, 0.35);
         }
         .hud-status-pill.waiting .status-dot {
           background: #f59e0b;
-          box-shadow: 0 0 6px #f59e0b;
+          box-shadow: 0 0 8px #f59e0b;
         }
         .hud-status-pill.disconnected {
-          background: rgba(239, 68, 68, 0.15);
+          background: rgba(239, 68, 68, 0.16);
           color: #f87171;
           border: 1px solid rgba(239, 68, 68, 0.35);
         }
@@ -514,10 +535,75 @@
         }
 
         .hud-meta {
-          font-size: 11px;
+          font-size: 11.5px;
           color: #94a3b8;
           font-weight: 500;
+          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
           pointer-events: none;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+
+        .hud-radius-badge {
+          background: rgba(168, 85, 247, 0.18) !important;
+          color: #d8b4fe !important;
+          border: 1px solid rgba(168, 85, 247, 0.35) !important;
+          font-weight: 600 !important;
+          display: inline-flex;
+          align-items: center;
+          padding: 1.5px 6px;
+          border-radius: 4px;
+        }
+
+        .hud-breadcrumbs {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          margin-bottom: 8px;
+          padding: 4px 8px;
+          background: rgba(255, 255, 255, 0.04);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 7px;
+          overflow-x: auto;
+          white-space: nowrap;
+          scrollbar-width: none;
+        }
+        .hud-breadcrumbs::-webkit-scrollbar {
+          display: none;
+        }
+
+        .hud-crumb-btn {
+          background: transparent;
+          border: none;
+          color: #94a3b8;
+          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-size: 11px;
+          padding: 2px 6px;
+          border-radius: 4px;
+          cursor: pointer;
+          transition: all 0.15s ease;
+        }
+        .hud-crumb-btn:hover {
+          background: rgba(255, 255, 255, 0.12);
+          color: #38bdf8;
+        }
+
+        .hud-crumb-sep {
+          color: #64748b;
+          font-size: 10px;
+          user-select: none;
+        }
+
+        .hud-crumb-current {
+          color: #38bdf8;
+          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-size: 11px;
+          font-weight: 600;
+          background: rgba(56, 189, 248, 0.14);
+          padding: 2px 6px;
+          border-radius: 4px;
+          border: 1px solid rgba(56, 189, 248, 0.3);
         }
 
         .hud-nav-row {
@@ -525,9 +611,9 @@
           align-items: center;
           justify-content: space-between;
           flex-wrap: wrap;
-          gap: 6px;
-          margin-bottom: 10px;
-          font-size: 11px;
+          gap: 8px;
+          margin-bottom: 9px;
+          font-size: 11.5px;
           color: #94a3b8;
         }
 
@@ -538,50 +624,77 @@
           flex-wrap: wrap;
         }
 
-        .btn-hierarchy {
-          background: rgba(255, 255, 255, 0.08);
-          color: #e2e8f0;
-          border: 1px solid rgba(255, 255, 255, 0.16);
-          font-size: 11px;
-          padding: 4px 9px;
-          border-radius: 5px;
-          cursor: pointer;
-          transition: background 0.15s, color 0.15s;
+        .hud-hierarchy-group {
           display: inline-flex;
           align-items: center;
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 8px;
+          padding: 2.5px;
+          gap: 3px;
+        }
+
+        .btn-hierarchy {
+          background: transparent;
+          color: #cbd5e1;
+          border: 1px solid transparent;
+          font-size: 11.5px;
+          padding: 4.5px 9px;
+          border-radius: 6px;
+          cursor: pointer;
+          transition: all 0.15s ease;
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
           user-select: none;
         }
         .btn-hierarchy:hover {
-          background: rgba(255, 255, 255, 0.2);
+          background: rgba(255, 255, 255, 0.14);
           color: #fff;
         }
         .btn-hierarchy:active {
           transform: translateY(1px);
         }
 
+        .hud-kbd {
+          background: rgba(255, 255, 255, 0.1);
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          padding: 1.5px 5px;
+          border-radius: 4px;
+          font-family: ui-monospace, monospace;
+          font-size: 9.5px;
+          color: #cbd5e1;
+        }
+
         /* Toggle Component Pill */
         .hud-component-toggle {
           display: inline-flex;
           align-items: center;
-          gap: 5px;
-          font-size: 11px;
+          gap: 6px;
+          font-size: 11.5px;
           color: #cbd5e1;
           cursor: pointer;
           user-select: none;
-          background: rgba(168, 85, 247, 0.12);
-          padding: 3px 8px;
-          border-radius: 5px;
-          border: 1px solid rgba(168, 85, 247, 0.25);
+          background: rgba(255, 255, 255, 0.05);
+          padding: 4.5px 10px;
+          border-radius: 7px;
+          border: 1px solid rgba(255, 255, 255, 0.1);
           transition: all 0.15s;
         }
         .hud-component-toggle:hover {
-          background: rgba(168, 85, 247, 0.25);
+          background: rgba(139, 92, 246, 0.18);
+          border-color: rgba(139, 92, 246, 0.4);
+          color: #ddd6fe;
+        }
+        .hud-component-toggle:has(input:checked) {
+          background: rgba(139, 92, 246, 0.24);
+          border-color: #8b5cf6;
           color: #fff;
         }
         .hud-component-toggle input {
           cursor: pointer;
           margin: 0;
-          accent-color: #a855f7;
+          accent-color: #8b5cf6;
         }
 
         .hud-buttons {
@@ -594,23 +707,23 @@
         .btn-figma {
           display: inline-flex;
           align-items: center;
-          gap: 6px;
-          background: linear-gradient(135deg, #a855f7, #3b82f6);
+          gap: 7px;
+          background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
           color: #fff;
-          font-size: 12px;
-          font-weight: 600;
+          font-size: 12.5px;
+          font-weight: 700;
           border: none;
-          padding: 8px 14px;
-          border-radius: 6px;
+          padding: 8px 18px;
+          border-radius: 8px;
           cursor: pointer;
-          transition: transform 0.1s, box-shadow 0.15s, filter 0.15s;
-          box-shadow: 0 2px 10px rgba(168, 85, 247, 0.45);
+          transition: transform 0.12s, box-shadow 0.15s, filter 0.15s;
+          box-shadow: 0 4px 16px rgba(139, 92, 246, 0.45);
           user-select: none;
         }
         .btn-figma:hover {
           transform: translateY(-1px);
-          filter: brightness(1.1);
-          box-shadow: 0 4px 16px rgba(168, 85, 247, 0.65);
+          filter: brightness(1.08);
+          box-shadow: 0 4px 20px rgba(139, 92, 246, 0.65);
         }
         .btn-figma:active {
           transform: translateY(0);
@@ -619,20 +732,21 @@
         .btn-secondary {
           display: inline-flex;
           align-items: center;
-          gap: 4px;
+          gap: 6px;
           background: rgba(255, 255, 255, 0.08);
-          color: #cbd5e1;
+          color: #e2e8f0;
           font-size: 12px;
-          font-weight: 500;
-          border: 1px solid rgba(255, 255, 255, 0.14);
-          padding: 8px 12px;
-          border-radius: 6px;
+          font-weight: 600;
+          border: 1px solid rgba(255, 255, 255, 0.15);
+          padding: 8px 14px;
+          border-radius: 8px;
           cursor: pointer;
-          transition: background 0.15s, color 0.15s;
+          transition: background 0.15s, color 0.15s, border-color 0.15s;
           user-select: none;
         }
         .btn-secondary:hover {
-          background: rgba(255, 255, 255, 0.18);
+          background: rgba(255, 255, 255, 0.16);
+          border-color: rgba(255, 255, 255, 0.25);
           color: #fff;
         }
         .btn-secondary:active {
@@ -877,7 +991,7 @@
       } else {
         pill.className = 'hud-status-pill disconnected';
         pill.innerHTML = `<span class="status-dot"></span> Hub Desconectado`;
-        pill.title = "Ejecuta 'npm run start:hub' en la terminal";
+        pill.title = "Abre o instala Code to Figma Hub (o ejecuta 'npm run start:hub')";
       }
     }
 
@@ -1319,18 +1433,68 @@
       const isMulti = this.selectedElements.length > 1;
       let titleHtml = '';
       let metaHtml = '';
+      let crumbsHtml = '';
+      const crumbs = [];
 
       if (isMulti) {
-        titleHtml = `${ICONS.multi} Multi-selección (${this.selectedElements.length} componentes)`;
-        metaHtml = `${/Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '') ? '⌘' : 'Ctrl'}+Clic para sumar/quitar componentes`;
+        titleHtml = `<span style="color:#38bdf8;">${ICONS.multi}</span> Multi-selección (${this.selectedElements.length})`;
+        metaHtml = `<span class="hud-meta-badge">${/Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '') ? '⌘' : 'Ctrl'}+Clic añadir</span>`;
       } else {
         const el = this.selectedElements[0];
         const rect = el.getBoundingClientRect();
         const tag = el.tagName.toLowerCase();
         const dims = `${Math.round(rect.width)} × ${Math.round(rect.height)} px`;
         const childCount = el.querySelectorAll('*').length;
-        titleHtml = `${ICONS.layers} Componente Seleccionado`;
-        metaHtml = `&lt;${tag}&gt; · ${dims} · ${childCount} capas`;
+        const idStr = el.id ? `#${el.id}` : '';
+
+        // Detectar border-radius del elemento
+        const cs = window.getComputedStyle(el);
+        const rtl = Math.round(parseFloat(cs.borderTopLeftRadius) || 0);
+        const rtr = Math.round(parseFloat(cs.borderTopRightRadius) || 0);
+        const rbr = Math.round(parseFloat(cs.borderBottomRightRadius) || 0);
+        const rbl = Math.round(parseFloat(cs.borderBottomLeftRadius) || 0);
+        let radiusBadge = '';
+        if (rtl > 0 || rtr > 0 || rbr > 0 || rbl > 0) {
+          let rText = '';
+          if (rtl === rtr && rtr === rbr && rbr === rbl) {
+            const minDim = Math.min(rect.width, rect.height);
+            if (minDim > 0 && rtl >= Math.floor(minDim / 2) - 2) {
+              rText = 'rounded-full (pill)';
+            } else {
+              rText = `rounded-${rtl}px`;
+            }
+          } else {
+            rText = `rounded [${rtl}, ${rtr}, ${rbr}, ${rbl}]px`;
+          }
+          radiusBadge = `<span class="hud-radius-badge" title="Border Radius detectado: ${rText}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:-1px;margin-right:3px;display:inline-block;"><path d="M4 20V10a6 6 0 0 1 6-6h10"/></svg>${rText}</span>`;
+        }
+
+        titleHtml = `<span class="hud-tag-pill">&lt;${tag}&gt;</span> ${idStr ? `<span style="color:#e2e8f0;font-size:11px;">${escapeHtml(idStr)}</span>` : '<span style="color:#cbd5e1;font-size:11px;">Elemento</span>'}`;
+        metaHtml = `<span class="hud-meta-badge">${dims}</span>${radiusBadge}<span class="hud-meta-badge">${childCount} capas</span>`;
+
+        // Generar miga de pan jerárquica (DOM Breadcrumbs)
+        let p = el.parentElement;
+        while (p && p !== document.documentElement && crumbs.length < 4) {
+          crumbs.unshift(p);
+          p = p.parentElement;
+        }
+        if (crumbs.length > 0) {
+          crumbsHtml =
+            `<div class="hud-breadcrumbs" title="Miga de pan del DOM: haz clic en cualquier contenedor para seleccionarlo directamente">` +
+            crumbs
+              .map((c, i) => {
+                const cTag = c.tagName.toLowerCase();
+                const cId = c.id ? `#${c.id}` : '';
+                const cCls =
+                  c.className && typeof c.className === 'string'
+                    ? `.${c.className.trim().split(/\s+/)[0]}`
+                    : '';
+                const label = `${cTag}${cId || (cCls !== '.' ? cCls : '')}`;
+                return `<button class="hud-crumb-btn" data-crumb-idx="${i}">&lt;${escapeHtml(label)}&gt;</button><span class="hud-crumb-sep">›</span>`;
+              })
+              .join('') +
+            `<span class="hud-crumb-current">&lt;${tag}&gt;</span></div>`;
+        }
       }
 
       this.hud.innerHTML = `
@@ -1339,7 +1503,7 @@
             <span class="hud-drag-pill">${ICONS.drag} Mover</span>
             <div class="hud-title">${titleHtml}</div>
           </div>
-          <div style="display:flex;align-items:center;gap:8px;">
+          <div style="display:flex;align-items:center;gap:7px;">
             <span id="__hud_figma_status" class="hud-status-pill waiting" title="Verificando conexión con Figma...">
               <span class="status-dot"></span> Verificando...
             </span>
@@ -1347,54 +1511,71 @@
           </div>
         </div>
 
+        ${crumbsHtml}
+
         <div class="hud-nav-row">
           <div class="hud-nav-left">
             ${
               !isMulti
                 ? `
-              <span>Ajustar contenedor:</span>
-              <button class="btn-hierarchy" id="__btn_hud_parent">${ICONS.arrowUp} Subir a Padre <span style="opacity:0.6;font-size:10px">[↑]</span></button>
-              <button class="btn-hierarchy" id="__btn_hud_child">${ICONS.arrowDown} Bajar a Hijo <span style="opacity:0.6;font-size:10px">[↓]</span></button>
+              <div class="hud-hierarchy-group">
+                <button class="btn-hierarchy" id="__btn_hud_parent" title="Seleccionar contenedor padre (Flecha arriba)">${ICONS.arrowUp} Padre <span class="hud-kbd">↑</span></button>
+                <button class="btn-hierarchy" id="__btn_hud_child" title="Seleccionar elemento hijo (Flecha abajo)">${ICONS.arrowDown} Hijo <span class="hud-kbd">↓</span></button>
+                <button class="btn-hierarchy" id="__btn_hud_body" title="Seleccionar la página completa (${document.body ? 'body' : 'html'})">${ICONS.layers} Toda la Página</button>
+                <button class="btn-hierarchy" id="__btn_hud_theme" title="Alternar Modo Claro / Oscuro en la página">${ICONS.sun} Tema</button>
+              </div>
             `
                 : `
-              <span style="color:#38bdf8;">${ICONS.multi} ${this.selectedElements.length} elementos agrupados listos para Figma</span>
+              <span style="color:#38bdf8;font-weight:600;">${ICONS.multi} ${this.selectedElements.length} elementos agrupados listos para Figma</span>
             `
             }
           </div>
 
-          <label class="hud-component-toggle" title="Crear en Figma como Componente reutilizable oficial (figma.createComponent)">
-            <input type="checkbox" id="__chk_component" ${this.createAsComponent ? 'checked' : ''} />
-            <span>${ICONS.component} Crear Componente</span>
-          </label>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <label class="hud-component-toggle" title="Extraer también la variante interactiva :hover si está definida en el CSS">
+              <input type="checkbox" id="__chk_hover" ${this.extractHover ? 'checked' : ''} />
+              <span>${ICONS.sparkle} Hover</span>
+            </label>
+
+            <label class="hud-component-toggle" title="Incluir imágenes rasterizadas y avatares en la extracción">
+              <input type="checkbox" id="__chk_images" ${this.includeImages ? 'checked' : ''} />
+              <span>${ICONS.image} Imágenes</span>
+            </label>
+
+            <label class="hud-component-toggle" title="Crear en Figma como Componente reutilizable oficial (figma.createComponent)">
+              <input type="checkbox" id="__chk_component" ${this.createAsComponent ? 'checked' : ''} />
+              <span>${ICONS.component} Componente</span>
+            </label>
+          </div>
         </div>
 
         <div class="hud-buttons">
-          <button class="btn-figma" id="__btn_send_figma">${ICONS.figma} Enviar a Figma <span style="opacity:0.75;font-size:10px">[Enter]</span></button>
-          <button class="btn-secondary" id="__btn_freeze">${ICONS.snowflake} ${this.isFrozen ? 'Descongelar' : 'Congelar'} <span style="opacity:0.75;font-size:10px">[F]</span></button>
-          <button class="btn-secondary" id="__btn_copy_json">${ICONS.copy} Copiar JSON</button>
-          <button class="btn-secondary" id="__btn_cancel">${ICONS.close} Cancelar <span style="opacity:0.75;font-size:10px">[Esc]</span></button>
+          <button class="btn-figma" id="__btn_send_figma" title="Extraer y enviar este diseño directamente a Figma">${ICONS.figma} Enviar a Figma <span class="hud-kbd" style="color:#fff;background:rgba(255,255,255,0.2);border-color:transparent;">↵</span></button>
+          <button class="btn-secondary" id="__btn_freeze" title="Pausa animaciones y menús desplegables para inspeccionarlos">${ICONS.snowflake} ${this.isFrozen ? 'Descongelar' : 'Congelar'} <span class="hud-kbd">F</span></button>
+          <button class="btn-secondary" id="__btn_copy_json" title="Copiar el JSON exportado al portapapeles">${ICONS.copy} Copiar JSON</button>
+          <button class="btn-secondary" id="__btn_cancel" title="Cancelar selección (Esc)">${ICONS.close} Cancelar <span class="hud-kbd">Esc</span></button>
         </div>
       `;
 
-      // Fluid Viewport Positioning: adapts flawlessly to 100%, 125%, 150% scales
+      // Fluid Viewport Positioning: centered and fully visible within viewport
       const vpW = window.innerWidth || document.documentElement.clientWidth || 1280;
       const vpH = window.innerHeight || document.documentElement.clientHeight || 800;
-      const hudEstWidth = Math.min(560, vpW - 24);
-      const hudEstHeight = 135;
+      const hudEstWidth = Math.min(620, vpW - 24);
+      const hudEstHeight = 145;
 
       let hudTop;
       let hudLeft;
 
       if (this.userCustomPos) {
-        hudLeft = Math.max(10, Math.min(vpW - hudEstWidth - 10, this.userCustomPos.left));
-        hudTop = Math.max(10, Math.min(vpH - hudEstHeight - 10, this.userCustomPos.top));
+        hudLeft = Math.max(12, Math.min(vpW - hudEstWidth - 12, this.userCustomPos.left));
+        hudTop = Math.max(12, Math.min(vpH - hudEstHeight - 12, this.userCustomPos.top));
       } else {
         hudTop = vpH - hudEstHeight - 24;
         hudLeft = (vpW - hudEstWidth) / 2;
       }
 
-      hudTop = Math.max(10, Math.min(vpH - hudEstHeight - 10, hudTop));
-      hudLeft = Math.max(10, Math.min(vpW - hudEstWidth - 10, hudLeft));
+      hudTop = Math.max(12, Math.min(vpH - hudEstHeight - 12, hudTop));
+      hudLeft = Math.max(12, Math.min(vpW - hudEstWidth - 12, hudLeft));
 
       this.hud.style.top = `${Math.round(hudTop)}px`;
       this.hud.style.left = `${Math.round(hudLeft)}px`;
@@ -1412,8 +1593,12 @@
       const btnCopy = this.hud.querySelector('#__btn_copy_json');
       const btnCancel = this.hud.querySelector('#__btn_cancel');
       const chkComponent = this.hud.querySelector('#__chk_component');
+      const chkHover = this.hud.querySelector('#__chk_hover');
+      const chkImages = this.hud.querySelector('#__chk_images');
+      const btnTheme = this.hud.querySelector('#__btn_hud_theme');
       const btnParent = this.hud.querySelector('#__btn_hud_parent');
       const btnChild = this.hud.querySelector('#__btn_hud_child');
+      const btnBody = this.hud.querySelector('#__btn_hud_body');
 
       if (btnSend) btnSend.addEventListener('click', () => this.sendToFigma());
       if (btnFreeze)
@@ -1430,10 +1615,82 @@
         });
       }
 
+      if (chkHover) {
+        chkHover.addEventListener('change', e => {
+          this.extractHover = e.target.checked;
+        });
+      }
+
+      if (chkImages) {
+        chkImages.addEventListener('change', e => {
+          this.includeImages = e.target.checked;
+        });
+      }
+
+      if (btnTheme) {
+        btnTheme.addEventListener('click', () => this.toggleTheme());
+      }
+
       if (btnParent) btnParent.addEventListener('click', () => this.elevateParent());
       if (btnChild) btnChild.addEventListener('click', () => this.elevateChild());
+      if (btnBody) {
+        btnBody.addEventListener('click', () => {
+          const body = document.body || document.documentElement;
+          if (body) {
+            this.selectedElements = [body];
+            this.elevateElements(this.selectedElements);
+          }
+        });
+      }
+
+      const crumbBtns = this.hud.querySelectorAll('.hud-crumb-btn');
+      crumbBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = parseInt(btn.getAttribute('data-crumb-idx'), 10);
+          if (!isNaN(idx) && crumbs[idx]) {
+            this.selectedElements = [crumbs[idx]];
+            this.elevateElements(this.selectedElements);
+          }
+        });
+      });
 
       this.updateFigmaStatusUI();
+    }
+
+    toggleTheme() {
+      const root = document.documentElement;
+      const body = document.body;
+      const isDark =
+        root.classList.contains('dark') ||
+        root.classList.contains('dark-theme') ||
+        root.classList.contains('dark-mode') ||
+        root.getAttribute('data-theme') === 'dark' ||
+        root.getAttribute('data-bs-theme') === 'dark' ||
+        root.getAttribute('data-color-mode') === 'dark' ||
+        (body && (body.classList.contains('dark') || body.classList.contains('dark-theme')));
+
+      if (isDark) {
+        root.classList.remove('dark', 'dark-theme', 'dark-mode');
+        if (body) body.classList.remove('dark', 'dark-theme', 'dark-mode');
+        root.setAttribute('data-theme', 'light');
+        root.setAttribute('data-bs-theme', 'light');
+        root.setAttribute('data-color-mode', 'light');
+        this.showToast('☀️ Modo Claro activado', 'Se cambió la página a tema claro.', 2500);
+      } else {
+        root.classList.add('dark');
+        if (body) body.classList.add('dark');
+        root.setAttribute('data-theme', 'dark');
+        root.setAttribute('data-bs-theme', 'dark');
+        root.setAttribute('data-color-mode', 'dark');
+        this.showToast('🌙 Modo Oscuro activado', 'Se cambió la página a tema oscuro.', 2500);
+      }
+
+      if (this.isElevated && this.selectedElements.length > 0) {
+        setTimeout(() => {
+          this.renderSpotlights(this.selectedElements);
+          this.renderHUD();
+        }, 50);
+      }
     }
 
     cancelElevation() {
@@ -1492,7 +1749,7 @@
             // tamaño razonable; si el hover no cambia nada visible, se descarta.
             const el = this.selectedElements[0];
             const er = el.getBoundingClientRect();
-            if (!wantsBoard && window.__codeToFigmaExtractState && er.width * er.height <= innerWidth * innerHeight) {
+            if (!wantsBoard && this.extractHover && window.__codeToFigmaExtractState && er.width * er.height <= innerWidth * innerHeight) {
               try {
                 const hover = await window.__codeToFigmaExtractState(el, 'hover');
                 if (hover && hover.rootNode && JSON.stringify(hover.rootNode) !== JSON.stringify(rootNode)) {
@@ -1561,13 +1818,19 @@
             };
           }
         } finally {
-          // Medición terminada: devolver la elevación (sin re-animar el reflejo)
+          // Medición terminada: quitar los estados "reveal" forzados y devolver la elevación
+          this.restoreReveals();
           if (this.isElevated) relift();
         }
 
         // Peso de la extracción: avisar antes de enviar algo que Figma puede tardar en dibujar
         const payloadApi = window.__codeToFigmaPayload;
         let stats = null;
+
+        // Si el usuario desmarcó "Imágenes" en el HUD, eliminarlas del payload para extracción ultraligera
+        if (!this.includeImages && payloadApi?.withoutImages && rootNode) {
+          rootNode = payloadApi.withoutImages(rootNode);
+        }
         if (payloadApi) {
           stats = payloadApi.measurePayload(rootNode);
           const reasons = payloadApi.heavyPayloadReasons(stats);
@@ -1641,7 +1904,7 @@
         if (msg.includes('Hub') || msg.includes('WebSocket') || msg.includes('8080') || msg.includes('conect')) {
           this.showToast(
             `${ICONS.warning} Hub no detectado en puerto 8080`,
-            "Asegúrate de ejecutar 'npm run start:hub'. Puedes usar 'Copiar JSON' para pegar en Figma.",
+            "Asegúrate de que Code to Figma Hub esté abierto (o ejecuta 'npm run start:hub'). También puedes usar 'Copiar JSON' para pegar en Figma.",
             5500,
           );
         } else {
@@ -1730,7 +1993,17 @@
             dataToCopy = await Promise.all(this.selectedElements.map(el => window.__codeToFigmaExtract(el)));
           }
         } finally {
+          this.restoreReveals();
           if (this.isElevated) relift();
+        }
+        if (!this.includeImages && window.__codeToFigmaPayload?.withoutImages && dataToCopy) {
+          if (dataToCopy.rootNode) {
+            dataToCopy.rootNode = window.__codeToFigmaPayload.withoutImages(dataToCopy.rootNode);
+          } else if (Array.isArray(dataToCopy)) {
+            dataToCopy = dataToCopy.map(d =>
+              d && d.rootNode ? { ...d, rootNode: window.__codeToFigmaPayload.withoutImages(d.rootNode) } : d,
+            );
+          }
         }
         const json = JSON.stringify(dataToCopy, null, 2);
         navigator.clipboard.writeText(json).then(() => {
@@ -1873,6 +2146,8 @@
      */
     async prepareForExtraction(elements, onProgress) {
       const sleep = ms => new Promise(r => setTimeout(r, ms));
+      const seenVisible = new Map();
+      this.restoreReveals();
       const imgs = [];
       let top = Infinity;
       let bottom = -Infinity;
@@ -1901,6 +2176,7 @@
             window.scrollTo({ left: startX, top: top + i * step, behavior: 'instant' });
             if (onProgress) onProgress(Math.round(((i + 1) / steps) * 100));
             await sleep(220);
+            this.sampleReveals(elements, seenVisible);
           }
         } finally {
           window.scrollTo({ left: startX, top: startY, behavior: 'instant' });
@@ -1908,6 +2184,8 @@
           if (this.host) this.host.style.visibility = prevVisibility;
           if (this.selectedElements.length) this.renderSpotlights(this.selectedElements);
         }
+        const restored = this.applyReveals(seenVisible);
+        if (restored) console.info(`[CodeToFigma] ${restored} elemento(s) "reveal on scroll" restaurados para extraer`);
       }
 
       const pending = imgs.filter(img => !img.complete);
@@ -1925,6 +2203,106 @@
           sleep(3000),
         ]);
       }
+    }
+
+    /**
+     * Contenido "reveal on scroll" que se vuelve a ocultar al salir de la vista (IntersectionObserver
+     * que alterna una clase, whileInView…). Al volver arriba para extraer, lo de más abajo estaba otra
+     * vez transparente y se perdía: p. ej. las tarjetas y los marcadores alrededor de un visor 3D.
+     * Durante el recorrido se anota cómo se ve cada elemento EN PANTALLA (si hay una transición en
+     * curso, su estado final); applyReveals se lo devuelve al extraer y restoreReveals lo quita.
+     */
+    sampleReveals(elements, seen) {
+      const vh = window.innerHeight;
+      const vw = window.innerWidth;
+      for (const root of elements) {
+        if (!root || !root.querySelectorAll) continue;
+        const all = root.querySelectorAll('*');
+        const n = Math.min(all.length, 8000);
+        for (let i = 0; i < n; i++) {
+          const el = all[i];
+          if (this.host && (el === this.host || this.host.contains(el))) continue;
+          // Sin filtro de tamaño: las anclas de 0×0 de los marcadores también llevan el reveal
+          const r = el.getBoundingClientRect();
+          if (r.bottom < 0 || r.top > vh || r.right < 0 || r.left > vw) continue;
+          const cs = window.getComputedStyle(el);
+          if (cs.display === 'none') continue;
+          // Fijos (volver arriba, cabeceras "al hacer scroll") y lo que está bajo el ratón (hover) no
+          // son reveals: su estado visible depende del scroll o del puntero, no de estar a la vista
+          if (cs.position === 'fixed' || cs.position === 'sticky' || el.matches(':hover')) continue;
+          let opacity = parseFloat(cs.opacity);
+          let transform = cs.transform;
+          if (typeof el.getAnimations === 'function') {
+            for (const a of el.getAnimations()) {
+              const kf = a.effect && typeof a.effect.getKeyframes === 'function' ? a.effect.getKeyframes() : [];
+              const last = kf[kf.length - 1];
+              if (!last) continue;
+              if (last.opacity !== undefined && parseFloat(last.opacity) > opacity) opacity = parseFloat(last.opacity);
+              if (last.transform !== undefined) transform = last.transform;
+            }
+          }
+          if (!(opacity > 0.05) || cs.visibility === 'hidden') continue;
+          const prev = seen.get(el);
+          if (!prev || opacity > prev.opacity) {
+            seen.set(el, { opacity, transform, visibility: cs.visibility, filter: cs.filter });
+          }
+        }
+      }
+    }
+
+    applyReveals(seen) {
+      const vh = window.innerHeight;
+      const vw = window.innerWidth;
+      const overrides = [];
+      for (const [el, rec] of seen) {
+        if (!el.isConnected) continue;
+        const cs = window.getComputedStyle(el);
+        const hiddenNow =
+          parseFloat(cs.opacity) + 0.05 < rec.opacity || (cs.visibility === 'hidden' && rec.visibility !== 'hidden');
+        if (!hiddenNow) continue;
+        const r = el.getBoundingClientRect();
+        // A la vista y oculto: ese es su estado real (slide inactiva, menú cerrado). No se toca.
+        if (r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw) continue;
+        // Fundido entre hermanos superpuestos (carrusel): si otro visible ocupa su caja, no se toca
+        if (this.hasVisibleTwin(el, r)) continue;
+        const props = ['opacity', 'visibility', 'transform', 'filter', 'transition', 'animation'];
+        const saved = props.map(p => [p, el.style.getPropertyValue(p), el.style.getPropertyPriority(p)]);
+        el.style.setProperty('transition', 'none', 'important');
+        el.style.setProperty('animation', 'none', 'important');
+        el.style.setProperty('opacity', String(rec.opacity), 'important');
+        if (rec.visibility !== cs.visibility) el.style.setProperty('visibility', rec.visibility, 'important');
+        if (rec.transform && rec.transform !== cs.transform) el.style.setProperty('transform', rec.transform, 'important');
+        if (rec.filter && rec.filter !== cs.filter) el.style.setProperty('filter', rec.filter, 'important');
+        overrides.push({ el, saved });
+      }
+      this.revealOverrides = overrides;
+      return overrides.length;
+    }
+
+    restoreReveals() {
+      for (const { el, saved } of this.revealOverrides || []) {
+        for (const [p, v, prio] of saved) {
+          if (v) el.style.setProperty(p, v, prio);
+          else el.style.removeProperty(p);
+        }
+      }
+      this.revealOverrides = [];
+    }
+
+    hasVisibleTwin(el, r) {
+      const parent = el.parentElement;
+      if (!parent) return false;
+      const area = Math.max(1, r.width * r.height);
+      for (const sib of Array.from(parent.children).slice(0, 24)) {
+        if (sib === el) continue;
+        const s = sib.getBoundingClientRect();
+        const ox = Math.max(0, Math.min(r.right, s.right) - Math.max(r.left, s.left));
+        const oy = Math.max(0, Math.min(r.bottom, s.bottom) - Math.max(r.top, s.top));
+        if ((ox * oy) / area < 0.8) continue;
+        const scs = window.getComputedStyle(sib);
+        if (parseFloat(scs.opacity) > 0.05 && scs.visibility !== 'hidden' && scs.display !== 'none') return true;
+      }
+      return false;
     }
 
     /**

@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Code to Figma — Permisos</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0f121a;
+        --card: #161b26;
+        --border: rgba(255, 255, 255, 0.12);
+        --text: #e6e9ef;
+        --muted: #9aa3b2;
+        --accent: #a259ff;
+        --ok: #10b981;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: var(--bg);
+        color: var(--text);
+        font: 15px/1.55 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      }
+      main {
+        max-width: 520px;
+        margin: 24px 16px;
+        padding: 28px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+      }
+      h1 {
+        margin: 0 0 12px;
+        font-size: 20px;
+      }
+      p {
+        margin: 0 0 12px;
+        color: var(--muted);
+      }
+      button {
+        margin-top: 8px;
+        padding: 10px 18px;
+        border: 0;
+        border-radius: 10px;
+        background: var(--accent);
+        color: #fff;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+      #status {
+        margin-top: 14px;
+        min-height: 1.5em;
+        color: var(--muted);
+      }
+      #status.ok {
+        color: var(--ok);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Permitir que Code to Figma descargue imágenes</h1>
+      <p>
+        Para copiar a Figma las imágenes de una página (fotos, logos, iconos alojados en otros dominios),
+        la extensión necesita permiso para descargarlas. Sin él, esas imágenes llegan vacías.
+      </p>
+      <p>
+        Solo se descargan las imágenes del componente que envías, cuando lo envías. No se lee ni se envía
+        nada más.
+      </p>
+      <button id="allow" type="button">Permitir</button>
+      <div id="status" role="status"></div>
+    </main>
+    <script src="permissions.js"></script>
+  </body>
+</html>

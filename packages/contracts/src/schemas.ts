@@ -135,6 +135,26 @@ export const WSRenderPayloadSchema = z
       .array(z.object({ name: z.string().min(1).max(40), rootNode: z.unknown() }).passthrough())
       .max(4)
       .optional(),
+    /** Breakpoints y claro/oscuro (Función A): variantes Breakpoint=… y Variables Light/Dark */
+    responsive: z
+      .object({
+        variants: z
+          .array(
+            z
+              .object({
+                name: z.string().min(1).max(40),
+                width: z.number().positive().max(10000),
+                rootNode: z.unknown(),
+                dark: z.unknown().optional(),
+              })
+              .passthrough(),
+          )
+          .min(1)
+          .max(6),
+        themeSource: z.enum(['media', 'class']).nullable().optional(),
+      })
+      .passthrough()
+      .optional(),
     /** Equivalencias de fuentes de los ajustes del plugin (fase 5.3) */
     fontMap: z.record(z.string().max(200), z.string().max(200)).optional(),
     clearPage: z.boolean().optional(),
@@ -162,9 +182,15 @@ export function validateRenderPayload(payload: unknown): ValidationResult {
   // Cada estado es otro árbol completo: mismas reglas y mismo tope total de nodos
   let nodeCount = main.nodeCount;
   let maxDepth = main.maxDepth;
-  for (const [i, st] of (env.data.states || []).entries()) {
-    const r = validateUINodeTree(st.rootNode);
-    if (!r.ok) return { ok: false, error: `states[${i}]: ${r.error}` };
+  const extra: Array<[string, unknown]> = [];
+  for (const [i, st] of (env.data.states || []).entries()) extra.push([`states[${i}]`, st.rootNode]);
+  for (const [i, v] of (env.data.responsive?.variants || []).entries()) {
+    extra.push([`responsive.variants[${i}]`, v.rootNode]);
+    if (v.dark !== undefined) extra.push([`responsive.variants[${i}].dark`, v.dark]);
+  }
+  for (const [where, tree] of extra) {
+    const r = validateUINodeTree(tree);
+    if (!r.ok) return { ok: false, error: `${where}: ${r.error}` };
     nodeCount += r.nodeCount;
     maxDepth = Math.max(maxDepth, r.maxDepth);
     if (nodeCount > PAYLOAD_LIMITS.maxNodes)

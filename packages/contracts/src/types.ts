@@ -86,7 +86,12 @@ export interface UIStyles {
   fills: (RGBAColor | GradientPaint)[];
   strokes?: StrokeStyle[];
   borderSides?: BorderSides;
-  accentBorder?: { side: 'TOP' | 'RIGHT' | 'BOTTOM' | 'LEFT'; color: RGBAColor; width: number; style?: 'SOLID' | 'DASHED' | 'DOTTED' };
+  accentBorder?: {
+    side: 'TOP' | 'RIGHT' | 'BOTTOM' | 'LEFT';
+    color: RGBAColor;
+    width: number;
+    style?: 'SOLID' | 'DASHED' | 'DOTTED';
+  };
   cornerRadius?: number | [number, number, number, number];
   opacity?: number;
   boxShadow?: BoxShadow[];
@@ -167,6 +172,24 @@ export interface WSRenderPayload {
   groupName?: string;
   sectionTitle?: string;
   tokens?: DesignTokens;
+  /** Breakpoints y claro/oscuro: variantes Breakpoint=… y Variables con modos Light/Dark */
+  responsive?: ResponsivePayload;
+}
+
+export interface ResponsiveVariant {
+  /** Mobile, Tablet, Desktop… (valor de la propiedad Breakpoint) */
+  name: string;
+  /** Ancho de ventana al que se capturó, en px */
+  width: number;
+  rootNode: UINode;
+  /** El mismo bloque en tema oscuro: Figma empareja sus colores nodo a nodo con rootNode */
+  dark?: UINode;
+}
+
+export interface ResponsivePayload {
+  variants: ResponsiveVariant[];
+  /** Cómo se obtuvo el tema oscuro: prefers-color-scheme del CSS o clase/atributo del sitio */
+  themeSource?: 'media' | 'class' | null;
 }
 
 export interface WSMessage<T = unknown> {

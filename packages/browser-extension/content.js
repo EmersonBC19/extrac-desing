@@ -46,6 +46,8 @@
     zap: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`,
     layers: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`,
     copy: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`,
+    devices: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><rect x="2" y="4" width="14" height="11" rx="1.5"/><rect x="17" y="8" width="5" height="12" rx="1"/><line x1="6" y1="19" x2="12" y2="19"/></svg>`,
+    moon: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`,
     code: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`,
     close: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
     arrowUp: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><polyline points="18 15 12 9 6 15"/></svg>`,
@@ -190,6 +192,9 @@
       this.createAsComponent = false;
       this.extractHover = true;
       this.includeImages = true;
+      // Breakpoints y claro/oscuro (Función A): apagados por defecto, multiplican el tiempo de envío
+      this.extractBreakpoints = false;
+      this.extractThemes = false;
 
       // Live Figma status tracking
       this.figmaStatus = { hubRunning: false, figmaConnected: false, figmaCount: 0 };
@@ -1551,6 +1556,16 @@
               <span>${ICONS.image} Imágenes</span>
             </label>
 
+            <label class="hud-component-toggle" title="Enviar también a 375 y 768 px como variantes Breakpoint=… (con los @media de la página)">
+              <input type="checkbox" id="__chk_breakpoints" ${this.extractBreakpoints ? 'checked' : ''} />
+              <span>${ICONS.devices} Breakpoints</span>
+            </label>
+
+            <label class="hud-component-toggle" title="Capturar también el tema oscuro: los colores llegan como Variables con modos Light y Dark">
+              <input type="checkbox" id="__chk_themes" ${this.extractThemes ? 'checked' : ''} />
+              <span>${ICONS.moon} Claro/Oscuro</span>
+            </label>
+
             <label class="hud-component-toggle" title="Crear en Figma como Componente reutilizable oficial (figma.createComponent)">
               <input type="checkbox" id="__chk_component" ${this.createAsComponent ? 'checked' : ''} />
               <span>${ICONS.component} Componente</span>
@@ -1618,6 +1633,10 @@
       const chkComponent = this.hud.querySelector('#__chk_component');
       const chkHover = this.hud.querySelector('#__chk_hover');
       const chkImages = this.hud.querySelector('#__chk_images');
+      const chkBreakpoints = this.hud.querySelector('#__chk_breakpoints');
+      const chkThemes = this.hud.querySelector('#__chk_themes');
+      if (chkBreakpoints) chkBreakpoints.addEventListener('change', e => (this.extractBreakpoints = e.target.checked));
+      if (chkThemes) chkThemes.addEventListener('change', e => (this.extractThemes = e.target.checked));
       const btnTheme = this.hud.querySelector('#__btn_hud_theme');
       const btnParent = this.hud.querySelector('#__btn_hud_parent');
       const btnChild = this.hud.querySelector('#__btn_hud_child');
@@ -1752,6 +1771,8 @@
         let rootNode;
         let tokens;
         let states;
+        let responsive;
+        let captureNotes = [];
         const wantsBoard = this.shouldBuildBoard(this.selectedElements);
 
         // La elevación altera posiciones y tamaños: quitarla mientras se mide
@@ -1773,7 +1794,30 @@
             // tamaño razonable; si el hover no cambia nada visible, se descarta.
             const el = this.selectedElements[0];
             const er = el.getBoundingClientRect();
-            if (!wantsBoard && this.extractHover && window.__codeToFigmaExtractState && er.width * er.height <= innerWidth * innerHeight) {
+
+            // Breakpoints y claro/oscuro (Función A): el bloque a otros anchos y en el otro tema
+            if (!wantsBoard && (this.extractBreakpoints || this.extractThemes) && window.__codeToFigmaCaptureVariants) {
+              if (btn) btn.innerHTML = `${ICONS.spinner} Capturando breakpoints y tema…`;
+              try {
+                const cap = await window.__codeToFigmaCaptureVariants(el, {
+                  breakpoints: this.extractBreakpoints,
+                  themes: this.extractThemes,
+                  frameUrl: chrome.runtime.getURL('render-frame.html'),
+                  getToken: () => this.renderFrameToken(),
+                  liveRootNode: rootNode,
+                });
+                if (cap && cap.variants && cap.variants.length) {
+                  responsive = { variants: cap.variants, themeSource: cap.themeSource || null };
+                  // El bloque principal: la variante más ancha en tema claro
+                  rootNode = cap.variants[cap.variants.length - 1].rootNode;
+                  captureNotes = cap.warnings || [];
+                }
+              } catch (capErr) {
+                console.warn('[CodeToFigma] Breakpoints/tema no capturados:', capErr);
+                captureNotes = [`Breakpoints y tema no capturados (${capErr?.message || capErr}); se envía el bloque normal.`];
+              }
+            }
+            if (!responsive && !wantsBoard && this.extractHover && window.__codeToFigmaExtractState && er.width * er.height <= innerWidth * innerHeight) {
               try {
                 const hover = await window.__codeToFigmaExtractState(el, 'hover');
                 if (hover && hover.rootNode && JSON.stringify(hover.rootNode) !== JSON.stringify(rootNode)) {
@@ -1851,12 +1895,30 @@
         const payloadApi = window.__codeToFigmaPayload;
         let stats = null;
 
+        // Breakpoints y tema: el resto de árboles viaja con el principal (mismas reglas de imágenes y peso)
+        const stripResponsive = () => {
+          if (!responsive || !payloadApi?.withoutImages) return;
+          responsive.variants = responsive.variants.map(v => ({
+            ...v,
+            rootNode: payloadApi.withoutImages(v.rootNode),
+            dark: v.dark ? payloadApi.withoutImages(v.dark) : undefined,
+          }));
+          rootNode = responsive.variants[responsive.variants.length - 1].rootNode;
+        };
+        const measureAll = () =>
+          responsive
+            ? payloadApi.measurePayload({
+                children: responsive.variants.flatMap(v => (v.dark ? [v.rootNode, v.dark] : [v.rootNode])),
+              })
+            : payloadApi.measurePayload(rootNode);
+
         // Si el usuario desmarcó "Imágenes" en el HUD, eliminarlas del payload para extracción ultraligera
         if (!this.includeImages && payloadApi?.withoutImages && rootNode) {
           rootNode = payloadApi.withoutImages(rootNode);
+          stripResponsive();
         }
         if (payloadApi) {
-          stats = payloadApi.measurePayload(rootNode);
+          stats = measureAll();
           const reasons = payloadApi.heavyPayloadReasons(stats);
           if (reasons.length) {
             const choice = await this.askHeavyPayload(stats, reasons);
@@ -1873,7 +1935,8 @@
             }
             if (choice === 'noimages') {
               rootNode = payloadApi.withoutImages(rootNode);
-              stats = payloadApi.measurePayload(rootNode);
+              stripResponsive();
+              stats = measureAll();
             }
           }
         }
@@ -1886,7 +1949,8 @@
           createAsComponent: this.createAsComponent,
           // Landing completa o varios componentes → Figma lo organiza como design system
           board: wantsBoard,
-          states,
+          states: responsive ? undefined : states,
+          responsive,
           source: { url: location.href, title: document.title },
         });
 
@@ -1900,7 +1964,12 @@
           btn.style.borderColor = '#059669';
         }
 
-        const stateNote = states ? ' con estado Hover' : '';
+        const stateNote = responsive
+          ? ` (${responsive.variants.map(v => v.name).join(', ')}${responsive.variants.some(v => v.dark) ? ' · claro y oscuro' : ''})`
+          : states
+            ? ' con estado Hover'
+            : '';
+        for (const note of captureNotes) this.showToast(`${ICONS.info} Breakpoints y tema`, note, 6000);
         const sizeNote =
           stats && payloadApi
             ? ` (${payloadApi.formatBytes(stats.bytes)}, ${stats.nodes.toLocaleString('es')} capas)`
@@ -2165,6 +2234,16 @@
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 60000);
+    }
+
+    /** Token de un solo uso para la página de render (breakpoints y tema) */
+    renderFrameToken() {
+      return new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({ type: 'RENDER_FRAME_TOKEN' }, res => {
+          if (chrome.runtime.lastError || !res || !res.success) reject(new Error('El service worker no dio token de render'));
+          else resolve(res.token);
+        });
+      });
     }
 
     /** Texto de una hoja de estilo de otro dominio, descargada por el service worker (o null) */

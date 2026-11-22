@@ -293,6 +293,18 @@ export declare const MESSAGE_CATALOG: {
         readonly route: "content → service worker";
         readonly description: "Texto de una hoja de estilo de otro dominio (\"Exportar HTML\")";
     };
+    readonly RENDER_FRAME_TOKEN: {
+        readonly channel: "extension";
+        readonly kind: "command";
+        readonly route: "content → service worker";
+        readonly description: "Token de un solo uso para la página de render (breakpoints y tema)";
+    };
+    readonly CLAIM_RENDER_TOKEN: {
+        readonly channel: "extension";
+        readonly kind: "command";
+        readonly route: "página de render → service worker";
+        readonly description: "La página de render canjea su token antes de dibujar";
+    };
     readonly CHECK_FIGMA_STATUS: {
         readonly channel: "extension";
         readonly kind: "query";

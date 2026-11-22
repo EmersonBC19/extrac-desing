@@ -731,8 +731,8 @@
   function uint8ArrayToBase64url(bytes) {
     return uint8ArrayToBase64(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
   }
-  function hexToUint8Array(hex) {
-    const cleanHex = hex.replace(/^0x/, "");
+  function hexToUint8Array(hex2) {
+    const cleanHex = hex2.replace(/^0x/, "");
     if (cleanHex.length % 2 !== 0) {
       throw new Error("Invalid hex string length");
     }
@@ -6393,6 +6393,18 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     board: boolean2().optional(),
     /** Estados extra del mismo componente (fase 6.1): Hover, Focus… → variantes State=… */
     states: array(object({ name: string2().min(1).max(40), rootNode: unknown() }).passthrough()).max(4).optional(),
+    /** Breakpoints y claro/oscuro (Función A): variantes Breakpoint=… y Variables Light/Dark */
+    responsive: object({
+      variants: array(
+        object({
+          name: string2().min(1).max(40),
+          width: number2().positive().max(1e4),
+          rootNode: unknown(),
+          dark: unknown().optional()
+        }).passthrough()
+      ).min(1).max(6),
+      themeSource: _enum(["media", "class"]).nullable().optional()
+    }).passthrough().optional(),
     /** Equivalencias de fuentes de los ajustes del plugin (fase 5.3) */
     fontMap: record(string2().max(200), string2().max(200)).optional(),
     clearPage: boolean2().optional(),
@@ -6413,9 +6425,15 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     if (!main.ok) return main;
     let nodeCount = main.nodeCount;
     let maxDepth = main.maxDepth;
-    for (const [i, st] of (env.data.states || []).entries()) {
-      const r = validateUINodeTree(st.rootNode);
-      if (!r.ok) return { ok: false, error: `states[${i}]: ${r.error}` };
+    const extra = [];
+    for (const [i, st] of (env.data.states || []).entries()) extra.push([`states[${i}]`, st.rootNode]);
+    for (const [i, v] of (env.data.responsive?.variants || []).entries()) {
+      extra.push([`responsive.variants[${i}]`, v.rootNode]);
+      if (v.dark !== void 0) extra.push([`responsive.variants[${i}].dark`, v.dark]);
+    }
+    for (const [where, tree] of extra) {
+      const r = validateUINodeTree(tree);
+      if (!r.ok) return { ok: false, error: `${where}: ${r.error}` };
       nodeCount += r.nodeCount;
       maxDepth = Math.max(maxDepth, r.maxDepth);
       if (nodeCount > PAYLOAD_LIMITS.maxNodes)
@@ -7607,19 +7625,19 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     let col = 0;
     for (const g of palette) {
       try {
-        const hex = boardColorKey({ ...g.color, a: g.alpha });
+        const hex2 = boardColorKey({ ...g.color, a: g.alpha });
         const base = { type: "SOLID", color: g.color, opacity: g.alpha };
         let paint = base;
         let bindNode;
         if (vars) {
-          const variable = colorVariable(vars.collection, vars.modeId, `Color/${hex.replace("#", "")}`, g.color);
+          const variable = colorVariable(vars.collection, vars.modeId, `Color/${hex2.replace("#", "")}`, g.color);
           paint = boundSolidPaint(base, variable);
           bindNode = async (n) => {
             n.fills = [paint];
           };
         } else {
           const st = figma.createPaintStyle();
-          st.name = `${prefix}/Color/${hex}`;
+          st.name = `${prefix}/Color/${hex2}`;
           st.paints = [base];
           bindNode = async (n) => {
             if (typeof n.setFillStyleIdAsync === "function") {
@@ -7644,7 +7662,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         stylesSec.appendChild(sw);
         sw.x = x;
         sw.y = yy;
-        const lbl = await boardLabel(`${hex}
+        const lbl = await boardLabel(`${hex2}
 ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
         stylesSec.appendChild(lbl);
         lbl.x = x;
@@ -8026,6 +8044,10 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
   // packages/figma-plugin/src/render.ts
   var _renderedNodeCount = 0;
   var _totalBatchNodes = 0;
+  var _colorBinder = null;
+  function setColorBinder(fn) {
+    _colorBinder = fn;
+  }
   function setRenderBatchContext(total) {
     _renderedNodeCount = 0;
     _totalBatchNodes = total;
@@ -8632,6 +8654,12 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
       }
       if (createdNode) {
         createdNode.name = nodeData.name || createdNode.name;
+        if (_colorBinder) {
+          try {
+            _colorBinder(createdNode, nodeData);
+          } catch (_e) {
+          }
+        }
       }
     } catch (error2) {
       log.error("Error creando nodo Figma", { error: errText(error2) });
@@ -8672,6 +8700,220 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
   function guardRenderPayload(payload) {
     const result = validateRenderPayload(payload);
     return result.ok ? null : result.error;
+  }
+
+  // packages/figma-plugin/src/theme-variants.ts
+  var isSolid = (f) => !!f && (!f.type || f.type === "SOLID") && typeof f.r === "number";
+  var rgba = (f) => ({ r: f.r, g: f.g, b: f.b, a: f.a !== void 0 ? f.a : 1 });
+  var sameColor = (x, y) => Math.abs(x.r - y.r) < 4e-3 && Math.abs(x.g - y.g) < 4e-3 && Math.abs(x.b - y.b) < 4e-3 && Math.abs(x.a - y.a) < 0.01;
+  var hex = (c) => [c.r, c.g, c.b].map(
+    (x) => Math.round(x * 255).toString(16).padStart(2, "0")
+  ).join("") + (c.a < 0.995 ? `-${Math.round(c.a * 100)}` : "");
+  function pairTrees(light, dark, out = /* @__PURE__ */ new Map()) {
+    if (!light || !dark || light.type !== dark.type) return out;
+    out.set(light, dark);
+    const lc = light.children || [];
+    const dc = dark.children || [];
+    if (lc.length === dc.length) {
+      lc.forEach((c, i) => pairTrees(c, dc[i], out));
+      return out;
+    }
+    let j = 0;
+    for (const c of lc) {
+      while (j < dc.length && (dc[j].type !== c.type || dc[j].name !== c.name)) j++;
+      if (j >= dc.length) break;
+      pairTrees(c, dc[j++], out);
+    }
+    return out;
+  }
+  var ROLE_SCOPES = {
+    fondo: ["FRAME_FILL", "SHAPE_FILL"],
+    texto: ["TEXT_FILL"],
+    borde: ["STROKE_COLOR"]
+  };
+  var ThemeVariables = class {
+    constructor(collection, lightId, darkId) {
+      this.collection = collection;
+      this.lightId = lightId;
+      this.darkId = darkId;
+      this.vars = /* @__PURE__ */ new Map();
+    }
+    get size() {
+      return this.vars.size;
+    }
+    get(role, light, dark) {
+      const key = `${role}|${hex(light)}|${hex(dark)}`;
+      const hit = this.vars.get(key);
+      if (hit) return hit;
+      const sameAlpha = Math.abs(light.a - dark.a) < 0.01;
+      const value = (c) => ({ r: c.r, g: c.g, b: c.b, a: sameAlpha ? 1 : c.a });
+      const variable = figma.variables.createVariable(
+        safeVarName(`${role}/${hex(light)} · ${hex(dark)}`),
+        this.collection,
+        "COLOR"
+      );
+      variable.setValueForMode(this.lightId, value(light));
+      if (this.darkId) variable.setValueForMode(this.darkId, value(dark));
+      try {
+        variable.scopes = ROLE_SCOPES[role];
+      } catch (_e) {
+      }
+      const entry = { variable, sameAlpha };
+      this.vars.set(key, entry);
+      return entry;
+    }
+  };
+  function makeBinder(pairs, theme) {
+    const bind = (paints, lightList, darkList, role) => {
+      const ls = (lightList || []).filter(isSolid);
+      const ds = (darkList || []).filter(isSolid);
+      if (!ls.length || ls.length !== ds.length) return null;
+      const out = paints.slice();
+      let k = 0;
+      let changed = false;
+      for (let i = 0; i < out.length && k < ls.length; i++) {
+        const p = out[i];
+        if (p.type !== "SOLID") continue;
+        const l = rgba(ls[k]);
+        const d = rgba(ds[k]);
+        k++;
+        if (sameColor(l, d)) continue;
+        const { variable, sameAlpha } = theme.get(role, l, d);
+        const base = { ...p, opacity: sameAlpha ? l.a : 1 };
+        out[i] = figma.variables.setBoundVariableForPaint(base, "color", variable);
+        changed = true;
+      }
+      return changed ? out : null;
+    };
+    return (node2, data) => {
+      const dark = pairs.get(data);
+      if (!dark) return;
+      const n = node2;
+      if (Array.isArray(n.fills) && n.fills.length) {
+        const r = bind(
+          n.fills,
+          data.styles?.fills,
+          dark.styles?.fills,
+          node2.type === "TEXT" ? "texto" : "fondo"
+        );
+        if (r) n.fills = r;
+      }
+      if (Array.isArray(n.strokes) && n.strokes.length) {
+        const r = bind(
+          n.strokes,
+          data.styles?.strokes?.slice(0, 1),
+          dark.styles?.strokes?.slice(0, 1),
+          "borde"
+        );
+        if (r) n.strokes = r;
+      }
+    };
+  }
+  async function buildResponsiveVariants(payload, log2, post2) {
+    const variants = Array.isArray(payload?.responsive?.variants) ? payload.responsive.variants : [];
+    if (!variants.length) return null;
+    const baseName = String(payload.rootNode?.name || variants[0].rootNode?.name || "Componente");
+    const multi = variants.length > 1;
+    if (multi && typeof figma.combineAsVariants !== "function") return null;
+    let theme = null;
+    const warnings = [];
+    if (variants.some((v) => v.dark)) {
+      if (!variablesAvailable()) {
+        warnings.push("Este archivo no admite Variables: el bloque llega solo con el tema claro");
+      } else {
+        const { collection, modeId } = await newCollection(`Tema · ${baseName}`.slice(0, 80));
+        try {
+          collection.renameMode(modeId, "Light");
+        } catch (_e) {
+        }
+        let darkId = null;
+        try {
+          darkId = collection.addMode("Dark");
+        } catch (_e) {
+          warnings.push(
+            "Tu plan de Figma no permite varios modos por colección: las Variables quedan solo con el tema claro"
+          );
+        }
+        theme = new ThemeVariables(collection, modeId, darkId);
+      }
+    }
+    const pairs = /* @__PURE__ */ new Map();
+    if (theme) {
+      for (const v of variants) if (v.dark) pairTrees(v.rootNode, v.dark, pairs);
+    }
+    const built = [];
+    setColorBinder(theme ? makeBinder(pairs, theme) : null);
+    try {
+      for (const v of variants) {
+        const data = { ...v.rootNode, layout: { ...v.rootNode.layout, positioning: "AUTO", x: 0, y: 0 } };
+        if (multi) {
+          data.type = "COMPONENT";
+          data.name = `Breakpoint=${String(v.name).replace(/[=,]/g, " ").trim() || v.width}`;
+        }
+        if (pairs.has(v.rootNode)) pairs.set(data, pairs.get(v.rootNode));
+        const node2 = await buildFigmaNode(data);
+        if (!node2) throw new Error(`la variante ${v.name} no se pudo dibujar`);
+        built.push(node2);
+      }
+    } catch (err) {
+      setColorBinder(null);
+      log2.warn("No se pudieron dibujar los breakpoints", { error: String(err?.message || err) });
+      for (const n of built) {
+        try {
+          n.remove();
+        } catch (_e) {
+        }
+      }
+      return null;
+    }
+    setColorBinder(null);
+    let root = built[0];
+    if (multi) {
+      try {
+        const set = figma.combineAsVariants(built, figma.currentPage);
+        set.name = baseName;
+        set.layoutMode = "HORIZONTAL";
+        set.primaryAxisSizingMode = "AUTO";
+        set.counterAxisSizingMode = "AUTO";
+        set.counterAxisAlignItems = "MIN";
+        set.itemSpacing = 80;
+        set.paddingTop = set.paddingBottom = set.paddingLeft = set.paddingRight = 40;
+        root = set;
+      } catch (err) {
+        log2.warn("No se pudieron unir los breakpoints como variantes", { error: String(err?.message || err) });
+        for (const n of built) {
+          try {
+            n.remove();
+          } catch (_e) {
+          }
+        }
+        return null;
+      }
+    }
+    for (const w of warnings) post2({ type: "LOG", level: "warn", message: w });
+    post2({
+      type: "LOG",
+      level: "success",
+      message: (multi ? `Breakpoints: ${variants.map((v) => `${v.name} ${v.width}px`).join(" · ")}` : `"${baseName}"`) + (theme && theme.darkId ? ` · ${theme.size} colores como Variables con modos Light y Dark` : "")
+    });
+    const afterPlace = () => {
+      if (!theme || !theme.darkId || !theme.size) return [];
+      try {
+        const source = built[built.length - 1];
+        const preview = source.type === "COMPONENT" ? source.createInstance() : source.clone();
+        preview.name = `${baseName} · Dark`;
+        preview.setExplicitVariableModeForCollection(theme.collection, theme.darkId);
+        const parent = root.parent || figma.currentPage;
+        parent.appendChild(preview);
+        preview.x = Math.round(root.x + root.width + 120);
+        preview.y = Math.round(root.y);
+        return [preview];
+      } catch (err) {
+        log2.warn("No se pudo crear la vista Dark", { error: String(err?.message || err) });
+        return [];
+      }
+    };
+    return { root, afterPlace };
   }
 
   // packages/figma-plugin/src/render-command.ts
@@ -8788,7 +9030,7 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     }
     if (payload.tokens?.colors && !createdTokensCount && typeof figma.createPaintStyle === "function") {
       const localStyles = typeof figma.getLocalPaintStylesAsync === "function" ? await figma.getLocalPaintStylesAsync() : figma.getLocalPaintStyles();
-      for (const [tokenName, rgba] of Object.entries(payload.tokens.colors)) {
+      for (const [tokenName, rgba2] of Object.entries(payload.tokens.colors)) {
         try {
           const cleanName = "Token / " + tokenName.replace(/^--/, "");
           const existing = localStyles.find((s) => s.name === cleanName);
@@ -8797,8 +9039,8 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
           style.paints = [
             {
               type: "SOLID",
-              color: { r: rgba.r, g: rgba.g, b: rgba.b },
-              opacity: rgba.a !== void 0 ? rgba.a : 1
+              color: { r: rgba2.r, g: rgba2.g, b: rgba2.b },
+              opacity: rgba2.a !== void 0 ? rgba2.a : 1
             }
           ];
           createdTokensCount++;
@@ -8811,8 +9053,10 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     } catch (_e) {
     }
     await prewarmFonts(payload.rootNode);
+    const responsiveVariants = Array.isArray(payload.responsive?.variants) ? payload.responsive.variants : [];
+    for (const v of responsiveVariants) await prewarmFonts(v.rootNode);
     const fontsMs = Date.now() - t0;
-    const totalNodes = countNodes(payload.rootNode);
+    const totalNodes = responsiveVariants.length ? responsiveVariants.reduce((n, v) => n + countNodes(v.rootNode), 0) : countNodes(payload.rootNode);
     setRenderBatchContext(totalNodes);
     if (payload.board) {
       const boardStart = Date.now();
@@ -8886,7 +9130,8 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     }
     const totalNodeCount = countNodes(payload.rootNode);
     const renderStartTime = Date.now();
-    const rootFigmaNode = await buildStateVariants(payload, log2) || await buildFigmaNode(payload.rootNode);
+    const responsive = await buildResponsiveVariants(payload, log2, post2);
+    const rootFigmaNode = responsive?.root || await buildStateVariants(payload, log2) || await buildFigmaNode(payload.rootNode);
     const extraNodeIds = [];
     const buildMs = Date.now() - renderStartTime;
     if (rootFigmaNode) {
@@ -8955,7 +9200,9 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
           }
         }
       }
-      figma.viewport.scrollAndZoomIntoView([rootFigmaNode]);
+      const companions = responsive ? responsive.afterPlace() : [];
+      extraNodeIds.push(...companions.map((n) => n.id));
+      figma.viewport.scrollAndZoomIntoView([rootFigmaNode, ...companions]);
       targetPage.selection = [rootFigmaNode];
       const totalMs = Date.now() - t0;
       post2({

@@ -126,6 +126,18 @@ export declare const WSRenderPayloadSchema: z.ZodObject<{
         name: z.ZodString;
         rootNode: z.ZodUnknown;
     }, z.core.$loose>>>;
+    responsive: z.ZodOptional<z.ZodObject<{
+        variants: z.ZodArray<z.ZodObject<{
+            name: z.ZodString;
+            width: z.ZodNumber;
+            rootNode: z.ZodUnknown;
+            dark: z.ZodOptional<z.ZodUnknown>;
+        }, z.core.$loose>>;
+        themeSource: z.ZodOptional<z.ZodNullable<z.ZodEnum<{
+            media: "media";
+            class: "class";
+        }>>>;
+    }, z.core.$loose>>;
     fontMap: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
     clearPage: z.ZodOptional<z.ZodBoolean>;
     pageName: z.ZodOptional<z.ZodString>;

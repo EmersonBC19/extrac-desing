@@ -1,0 +1,17 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Code to Figma — render</title>
+    <!--
+      Página de render (breakpoints y tema): la extensión la incrusta con el ancho de pantalla a capturar,
+      le pasa el bloque exportado (HTML + CSS) por un MessageChannel y devuelve su extracción.
+      Al ser una página de la extensión, la CSP del sitio no le afecta.
+    -->
+  </head>
+  <body>
+    <script src="extractor.js"></script>
+    <script src="render-frame.js"></script>
+  </body>
+</html>

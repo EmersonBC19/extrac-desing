@@ -108,7 +108,23 @@ npm run crawl -- --url http://localhost:4200 --routes /dashboard,/clientes --pag
 
 ---
 
-### 5. 🧩 Exportar un bloque como HTML + CSS + JS
+### 5. 📱 Breakpoints y claro/oscuro
+
+En el HUD de la extensión, **Breakpoints** y **Claro/Oscuro** envían el bloque como un set de variantes
+`Breakpoint=Mobile|Tablet|Desktop` (375, 768 y el ancho actual de escritorio) y con sus colores como **Variables
+con modos `Light` y `Dark`** (colección "Tema · …"), más una vista en modo Dark al lado.
+
+- Otros anchos sin redimensionar la ventana: el bloque exportado (sus reglas reales, con `@media`) se dibuja en
+  `render-frame.html`, una página de la extensión incrustada con ese ancho, y se extrae ahí dentro.
+- Tema oscuro: si el CSS usa `prefers-color-scheme` o `light-dark()`, se fuerza el otro tema; si no, se prueba el
+  tema por clase del sitio (`html.dark`, `data-theme`, `data-bs-theme`…) y la página queda como estaba.
+- Los dos temas salen del mismo DOM, así que los colores se emparejan nodo a nodo; solo los que cambian pasan a
+  Variables. Con un plan de Figma de un solo modo por colección, el set llega igual y con aviso.
+- Seguridad: `render-frame.html` solo dibuja con un token de un solo uso que el service worker da al content
+  script; una web que la incruste no puede usarla para descargar imágenes de otros dominios.
+- Límite: lo que cambia por JavaScript al redimensionar (no por CSS) no aparece en los otros anchos.
+
+### 6. 🧩 Exportar un bloque como HTML + CSS + JS
 
 En la extensión, con un bloque seleccionado, **Exportar HTML** genera una copia que funciona fuera de la página
 (`packages/core-extractor/src/browser/export-html.ts`):

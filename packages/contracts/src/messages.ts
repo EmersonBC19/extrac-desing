@@ -262,6 +262,18 @@ export const MESSAGE_CATALOG = {
     route: 'content → service worker',
     description: 'Texto de una hoja de estilo de otro dominio ("Exportar HTML")',
   },
+  RENDER_FRAME_TOKEN: {
+    channel: 'extension',
+    kind: 'command',
+    route: 'content → service worker',
+    description: 'Token de un solo uso para la página de render (breakpoints y tema)',
+  },
+  CLAIM_RENDER_TOKEN: {
+    channel: 'extension',
+    kind: 'command',
+    route: 'página de render → service worker',
+    description: 'La página de render canjea su token antes de dibujar',
+  },
   CHECK_FIGMA_STATUS: {
     channel: 'extension',
     kind: 'query',

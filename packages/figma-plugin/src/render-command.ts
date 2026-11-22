@@ -13,6 +13,7 @@ import { buildDesignBoard } from './board/board';
 import { setBoardCtx } from './board/context';
 import { guardRenderPayload } from './validation';
 import { cssTokensToVariables, variablesAvailable } from './board/variables';
+import { buildResponsiveVariants } from './theme-variants';
 
 /**
  * Diagnóstico de textos tras dibujar: cuántos venían en el payload, cuántos se crearon y, de los
@@ -193,10 +194,14 @@ export async function renderNodesCommand(
     await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
   } catch (_e) {}
   await prewarmFonts(payload.rootNode);
+  const responsiveVariants: any[] = Array.isArray(payload.responsive?.variants) ? payload.responsive.variants : [];
+  for (const v of responsiveVariants) await prewarmFonts(v.rootNode);
   const fontsMs = Date.now() - t0;
 
   // Registrar total de nodos y habilitar medición de progreso reactivo en Figma
-  const totalNodes = countNodes(payload.rootNode);
+  const totalNodes = responsiveVariants.length
+    ? responsiveVariants.reduce((n, v) => n + countNodes(v.rootNode), 0)
+    : countNodes(payload.rootNode);
   setRenderBatchContext(totalNodes);
 
   // 🗂️ Landing completa / multi-selección → tablero tipo design system
@@ -272,8 +277,11 @@ export async function renderNodesCommand(
   const totalNodeCount = countNodes(payload.rootNode);
 
   const renderStartTime = Date.now();
-  // Estados (fase 6.1): Default + Hover… → set de variantes State=…; si falla, solo el normal
-  const rootFigmaNode = (await buildStateVariants(payload, log)) || (await buildFigmaNode(payload.rootNode));
+  // Breakpoints y tema (Función A): Breakpoint=… con Variables Light/Dark; si no, estados (fase 6.1):
+  // Default + Hover… → State=…; si nada de eso aplica o falla, el bloque normal
+  const responsive = await buildResponsiveVariants(payload, log, post);
+  const rootFigmaNode =
+    responsive?.root || (await buildStateVariants(payload, log)) || (await buildFigmaNode(payload.rootNode));
   const extraNodeIds: string[] = []; // capas sueltas que acompañan al render (título de sección)
   const buildMs = Date.now() - renderStartTime;
 
@@ -356,8 +364,12 @@ export async function renderNodesCommand(
       }
     }
 
+    // Vista Dark al lado del set de breakpoints (se coloca después del set)
+    const companions = responsive ? responsive.afterPlace() : [];
+    extraNodeIds.push(...companions.map(n => n.id));
+
     // Enfocar vista en el nuevo componente
-    figma.viewport.scrollAndZoomIntoView([rootFigmaNode]);
+    figma.viewport.scrollAndZoomIntoView([rootFigmaNode, ...companions]);
     targetPage.selection = [rootFigmaNode];
 
     const totalMs = Date.now() - t0; // un solo instante: duración y suma de etapas coinciden

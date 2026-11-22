@@ -145,6 +145,14 @@ function createFigma(opts = {}) {
       this.boundVariables = { ...(this.boundVariables || {}), [field]: { type: 'VARIABLE_ALIAS', id: variable.id } };
       this[field] = variable._values[Object.keys(variable._values)[0]];
     }
+    // Modo de una colección de Variables fijado en este nodo (vista Dark de los breakpoints)
+    setExplicitVariableModeForCollection(collection, modeId) {
+      const id = typeof collection === 'string' ? collection : collection && collection.id;
+      if (!id) throw new Error('setExplicitVariableModeForCollection: colección inválida');
+      const col = collection && collection.modes ? collection : null;
+      if (col && !col.modes.some(m => m.modeId === modeId)) throw new Error('modo inexistente ' + modeId);
+      this.explicitVariableModes = { ...(this.explicitVariableModes || {}), [id]: modeId };
+    }
     createInstance() {
       if (this.type !== 'COMPONENT') throw new Error('createInstance en ' + this.type);
       const c = this.clone();
@@ -388,6 +396,18 @@ function createFigma(opts = {}) {
                 modes: [{ modeId: 'm1', name: 'Mode 1' }],
                 defaultModeId: 'm1',
                 variableIds: [],
+                renameMode(modeId, newName) {
+                  const m = this.modes.find(x => x.modeId === modeId);
+                  if (!m) throw new Error('renameMode: modo inexistente');
+                  m.name = newName;
+                },
+                // opts.maxModes: límite del plan (Starter: 1 modo por colección)
+                addMode(modeName) {
+                  if (this.modes.length >= (opts.maxModes || 4)) throw new Error('Limited to ' + this.modes.length + ' modes');
+                  const id = 'm' + (this.modes.length + 1);
+                  this.modes.push({ modeId: id, name: modeName });
+                  return id;
+                },
               };
               collections.push(c);
               return c;

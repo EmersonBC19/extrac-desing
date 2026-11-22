@@ -80,6 +80,15 @@ El Hub es un programa local ligero que comunica la extensión del navegador con 
 5. Presiona **Enter** o pulsa **Enviar a Figma**.
 6. ¡Listo! En segundos aparecerá en tu lienzo de Figma reproducido con **Auto Layout nativo, textos reales, variantes y variables de color**.
 
+### Móvil, tablet y modo oscuro en un solo envío
+
+Antes de enviar, marca en el panel:
+
+* **Breakpoints**: además del tamaño de escritorio, el bloque llega como se ve en móvil (375 px) y tablet (768 px), como variantes `Breakpoint=…` de un mismo componente.
+* **Claro/Oscuro**: los colores llegan como Variables con modos `Light` y `Dark`. En Figma, cambia el modo del frame (panel derecho → Variables) y todo el componente cambia de tema. Al lado aparece una copia ya en modo Dark.
+
+Si la página no tiene modo oscuro, se avisa y se envía solo el tema actual.
+
 ### Exportar como HTML + CSS + JS
 
 Con el bloque seleccionado, pulsa **Exportar HTML**. La extensión copia las reglas CSS reales de la página que usa ese bloque (incluidas las de móvil y los efectos al pasar el ratón), comprueba que la copia se vea igual y te deja elegir:

@@ -7,6 +7,7 @@
  *  - window.__codeToFigmaPayload: medir el peso de una extracción y quitarle las imágenes (fase 5.1)
  *  - window.__codeToFigmaExportHtml(element) → HTML + CSS + JS del bloque (export-html.ts)
  *  - window.__codeToFigmaZip(files) → bytes de un .zip con esos archivos
+ *  - window.__codeToFigmaCaptureVariants(element, opts) → el bloque a varios anchos y temas (responsive.ts)
  *  En la extensión corre en el mundo aislado del content script: la página no lo ve.
  */
 import { extractNodeTree } from './extract-node';
@@ -14,6 +15,7 @@ import { resolvePendingImages } from './images';
 import { extractDesignTokens } from './tokens';
 import { emulateState, type InteractionState } from './states';
 import { buildZip, exportBlock, exportFiles, type ExportOptions } from './export-html';
+import { captureVariants, type CaptureOptions } from './responsive';
 // Desde la fuente (no desde el paquete): solo funciones puras, sin arrastrar Zod al bundle
 import { formatBytes, heavyPayloadReasons, measurePayload, withoutImages } from '../../../contracts/src/payload-stats';
 
@@ -60,6 +62,12 @@ window.__codeToFigmaExportHtml = async function (rootElement: Element, opts: Exp
 };
 
 window.__codeToFigmaZip = buildZip;
+
+/** Breakpoints y claro/oscuro: variantes del bloque para Figma (Función A) */
+window.__codeToFigmaCaptureVariants = async function (rootElement: Element, opts: CaptureOptions) {
+  if (!rootElement || rootElement.nodeType !== Node.ELEMENT_NODE) return null;
+  return captureVariants(rootElement, { fetchCss: window.__codeToFigmaFetchCss, ...opts });
+};
 
 // Cada clic en el ícono vuelve a cargar este archivo: el aviso solo la primera vez (QA-6)
 if (!(window as any).__codeToFigmaReadyLogged) {

@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>Breakpoints y tema</title>
+    <!-- Breakpoints y claro/oscuro (tests/integration/responsive.test.ts) -->
+    <style>
+      :root {
+        --bg: rgb(255, 255, 255);
+        --fg: rgb(20, 20, 20);
+        --accent: rgb(0, 102, 255);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: rgb(13, 17, 23);
+          --fg: rgb(230, 237, 243);
+          --accent: rgb(88, 166, 255);
+        }
+      }
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+      }
+      .pricing {
+        display: flex;
+        gap: 24px;
+        padding: 24px;
+        background: var(--bg);
+        color: var(--fg);
+      }
+      .plan {
+        flex: 1;
+        border: 1px solid var(--accent);
+        border-radius: 12px;
+        padding: 16px;
+      }
+      .plan h3 {
+        margin: 0;
+        font-size: 20px;
+      }
+      .plan .cta {
+        display: inline-block;
+        background: var(--accent);
+        color: rgb(255, 255, 255);
+        padding: 8px 12px;
+        border-radius: 6px;
+      }
+      @media (max-width: 600px) {
+        .pricing {
+          flex-direction: column;
+        }
+      }
+      @media (min-width: 601px) and (max-width: 1023px) {
+        .plan.extra {
+          display: none;
+        }
+      }
+
+      .themed {
+        padding: 16px;
+        background: rgb(250, 250, 250);
+        color: rgb(17, 17, 17);
+        transition: background-color 0.4s;
+      }
+      html.dark .themed {
+        background: rgb(17, 17, 17);
+        color: rgb(250, 250, 250);
+      }
+    </style>
+  </head>
+  <body>
+    <section id="pricing" class="pricing">
+      <div class="plan">
+        <h3>Básico</h3>
+        <p>Para empezar</p>
+        <span class="cta">Elegir</span>
+      </div>
+      <div class="plan">
+        <h3>Pro</h3>
+        <p>Para equipos</p>
+        <span class="cta">Elegir</span>
+      </div>
+      <div class="plan extra">
+        <h3>Empresa</h3>
+        <p>A medida</p>
+        <span class="cta">Hablar</span>
+      </div>
+    </section>
+    <div id="themed" class="themed"><p>Tema por clase</p></div>
+    <div id="plain" style="padding: 10px; background: rgb(238, 238, 238)">Sin tema</div>
+  </body>
+</html>

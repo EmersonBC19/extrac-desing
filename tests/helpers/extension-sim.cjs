@@ -132,6 +132,23 @@ async function exportHtml(page, selectorJs, opts = {}) {
   );
 }
 
+/**
+ * Breakpoints y tema (Función A): `frameUrl` es render-frame.html servido por http (en la extensión,
+ * chrome.runtime.getURL). El bloque en vivo se extrae antes, como hace content.js.
+ */
+async function captureVariants(page, selectorJs, opts) {
+  await injectExtension(page);
+  return page.evaluate(
+    async ({ selectorJs, opts }) => {
+      const el = (0, eval)(selectorJs);
+      if (!el) throw new Error('Selector sin resultado: ' + selectorJs);
+      const live = (await window.__codeToFigmaExtract(el)).rootNode;
+      return window.__codeToFigmaCaptureVariants(el, { ...opts, liveRootNode: live });
+    },
+    { selectorJs, opts },
+  );
+}
+
 /** Lista plana de nodos (para buscar y contar en las aserciones) */
 function flatten(root) {
   const out = [];
@@ -166,4 +183,4 @@ async function imageDimensions(page, root) {
   );
 }
 
-module.exports = { ROOT, read, injectExtension, extract, exportHtml, flatten, imageDimensions, prepareExtensionSim };
+module.exports = { ROOT, read, injectExtension, extract, exportHtml, captureVariants, flatten, imageDimensions, prepareExtensionSim };

@@ -476,6 +476,38 @@ function checkHubStatus() {
   });
 }
 
+// ── Página de render (breakpoints y tema) ──
+// render-frame.html es accesible desde la web: cualquier sitio podría incrustarla. Solo dibuja con un
+// token de un solo uso que pide nuestro content script, y una página de render que no lo canjeó no
+// puede descargar imágenes con los permisos de la extensión (sería un proxy para saltarse CORS).
+const RENDER_TOKEN_TTL_MS = 60000;
+const renderTokens = new Map(); // token → caducidad
+const claimedRenderFrames = new Set();
+
+function isRenderFrame(sender) {
+  return !!(sender && typeof sender.url === 'string' && /^chrome-extension:\/\/[^/]+\/render-frame\.html(?:[?#]|$)/.test(sender.url));
+}
+
+function renderFrameKey(sender) {
+  return sender.documentId || `${sender.tab ? sender.tab.id : '-'}:${sender.frameId}:${sender.url}`;
+}
+
+function issueRenderToken() {
+  const now = Date.now();
+  for (const [t, exp] of renderTokens) if (exp < now) renderTokens.delete(t);
+  const token = crypto.randomUUID();
+  renderTokens.set(token, now + RENDER_TOKEN_TTL_MS);
+  return token;
+}
+
+function claimRenderToken(token, sender) {
+  const exp = renderTokens.get(token);
+  renderTokens.delete(token);
+  if (!isRenderFrame(sender) || !exp || exp < Date.now()) throw new Error('Petición de render no autorizada');
+  if (claimedRenderFrames.size > 500) claimedRenderFrames.clear();
+  claimedRenderFrames.add(renderFrameKey(sender));
+}
+
 // Mensajes del content script (catálogo: packages/contracts/src/messages.ts, canal "extension").
 // Cada manejador devuelve una promesa; su resultado se fusiona en { success: true, ... }.
 const MESSAGE_HANDLERS = {
@@ -490,8 +522,22 @@ const MESSAGE_HANDLERS = {
 
   // La pestaña que pide la imagen la da Chrome (no el mensaje): la página no puede falsearla
   FETCH_IMAGE_AS_BASE64: (message, sender) => {
+    if (isRenderFrame(sender) && !claimedRenderFrames.has(renderFrameKey(sender))) {
+      return Promise.reject(new Error('Página de render no autorizada'));
+    }
     const tabUrl = sender && sender.tab ? sender.tab.url : undefined;
     return fetchImageBase64(message.url, tabUrl).then(base64 => ({ base64 }));
+  },
+
+  // Breakpoints y tema: el content script pide un token por captura; la página de render lo canjea
+  RENDER_FRAME_TOKEN: (_message, sender) => {
+    if (isRenderFrame(sender) || !sender || !sender.tab) return Promise.reject(new Error('Solo desde la pestaña'));
+    return Promise.resolve({ token: issueRenderToken() });
+  },
+
+  CLAIM_RENDER_TOKEN: (message, sender) => {
+    claimRenderToken(String(message.token || ''), sender);
+    return Promise.resolve({});
   },
 
   FETCH_STYLESHEET: (message, sender) => {

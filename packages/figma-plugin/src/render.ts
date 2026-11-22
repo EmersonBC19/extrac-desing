@@ -13,6 +13,16 @@ import { errText, log } from './log';
 let _renderedNodeCount = 0;
 let _totalBatchNodes = 0;
 
+/**
+ * Breakpoints y tema (theme-variants.ts): tras crear cada nodo se le pasa a este enlazador, que
+ * vincula sus colores a Variables de modos Light/Dark. null fuera de ese modo.
+ */
+export type ColorBinder = (node: SceneNode, data: UINode) => void;
+let _colorBinder: ColorBinder | null = null;
+export function setColorBinder(fn: ColorBinder | null): void {
+  _colorBinder = fn;
+}
+
 export function setRenderBatchContext(total: number): void {
   _renderedNodeCount = 0;
   _totalBatchNodes = total;
@@ -753,6 +763,11 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
 
     if (createdNode) {
       createdNode.name = nodeData.name || createdNode.name;
+      if (_colorBinder) {
+        try {
+          _colorBinder(createdNode, nodeData);
+        } catch (_e) {}
+      }
     }
   } catch (error: any) {
     log.error('Error creando nodo Figma', { error: errText(error) });

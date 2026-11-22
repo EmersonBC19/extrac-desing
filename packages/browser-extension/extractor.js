@@ -4527,6 +4527,188 @@ ${js.replace(/<\/script/gi, "<\\/script")}<\/script>
     return files;
   }
 
+  // packages/core-extractor/src/browser/responsive.ts
+  var DEFAULT_WIDTHS = [375, 768, 1440];
+  function breakpointName(width) {
+    if (width < 600) return "Mobile";
+    if (width < 1024) return "Tablet";
+    return "Desktop";
+  }
+  function captureDoc(html) {
+    return html.replace(/<link rel="stylesheet" href="styles\.css">/, "").replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
+  }
+  async function extractInFrame(frameUrl, html, css, width, timeoutMs = 2e4, token = "") {
+    const frame = document.createElement("iframe");
+    frame.setAttribute("aria-hidden", "true");
+    frame.setAttribute("tabindex", "-1");
+    const h = Math.max(600, innerHeight);
+    frame.style.cssText = `position:fixed!important;left:-${width + 400}px!important;top:0!important;width:${width}px!important;height:${h}px!important;border:0!important;opacity:0!important;pointer-events:none!important;display:block!important;visibility:visible!important`;
+    const loaded = new Promise((resolve, reject) => {
+      frame.addEventListener("load", () => resolve(), { once: true });
+      frame.addEventListener("error", () => reject(new Error("No se pudo abrir la página de render")), { once: true });
+    });
+    frame.src = frameUrl;
+    document.documentElement.appendChild(frame);
+    try {
+      await withTimeout(loaded, timeoutMs, "La página de render no cargó");
+      const channel = new MessageChannel();
+      const reply = new Promise((resolve, reject) => {
+        channel.port1.onmessage = (e) => {
+          const d = e.data || {};
+          if (d.ok) resolve(d.rootNode);
+          else reject(new Error(d.error || "Error en la página de render"));
+        };
+      });
+      frame.contentWindow.postMessage({ type: "CTF_RENDER", html, css, token }, "*", [channel.port2]);
+      return await withTimeout(reply, timeoutMs, `Tiempo agotado capturando a ${width}px`);
+    } finally {
+      frame.remove();
+    }
+  }
+  function withTimeout(p, ms, msg) {
+    return new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error(msg)), ms);
+      p.then(
+        (v) => {
+          clearTimeout(t);
+          resolve(v);
+        },
+        (e) => {
+          clearTimeout(t);
+          reject(e);
+        }
+      );
+    });
+  }
+  function usesColorScheme(css) {
+    return /prefers-color-scheme|light-dark\(/i.test(css);
+  }
+  function forceColorScheme(css, scheme) {
+    return css.replace(
+      /\(\s*prefers-color-scheme\s*:\s*(dark|light)\s*\)/gi,
+      (_m, v) => v.toLowerCase() === scheme ? "(min-width: 0px)" : "(max-width: 0.001px)"
+    ).replace(/(^|[;{\s])color-scheme\s*:\s*[^;}]+/gi, `$1color-scheme: ${scheme}`).concat(`
+:root { color-scheme: ${scheme}; }
+`);
+  }
+  var THEME_ATTRS = ["data-theme", "data-bs-theme", "data-color-mode", "data-mode"];
+  var DARK_CLASSES = ["dark", "dark-theme", "dark-mode", "theme-dark"];
+  function pageLooksDark() {
+    const root = document.documentElement;
+    const body = document.body;
+    return DARK_CLASSES.some((c) => root.classList.contains(c) || body && body.classList.contains(c)) || THEME_ATTRS.some((a) => root.getAttribute(a) === "dark");
+  }
+  function toggleClassTheme() {
+    const els = [document.documentElement, document.body].filter(Boolean);
+    const saved = els.map((el) => ({
+      el,
+      cls: el.getAttribute("class"),
+      attrs: THEME_ATTRS.map((a) => [a, el.getAttribute(a)])
+    }));
+    const dark = pageLooksDark();
+    const root = document.documentElement;
+    for (const el of els) {
+      if (dark) DARK_CLASSES.forEach((c) => el.classList.remove(c));
+      else el.classList.add("dark");
+    }
+    for (const a of THEME_ATTRS.slice(0, 3)) root.setAttribute(a, dark ? "light" : "dark");
+    return () => {
+      for (const s of saved) {
+        if (s.cls == null) s.el.removeAttribute("class");
+        else s.el.setAttribute("class", s.cls);
+        for (const [a, v] of s.attrs) {
+          if (v == null) s.el.removeAttribute(a);
+          else s.el.setAttribute(a, v);
+        }
+      }
+    };
+  }
+  function colorSignature(root) {
+    const els = [root, ...Array.from(root.querySelectorAll("*")).slice(0, 400)];
+    return els.map((el) => {
+      const cs = getComputedStyle(el);
+      return `${cs.color}|${cs.backgroundColor}|${cs.borderTopColor}`;
+    }).join(";");
+  }
+  function freezeTransitions() {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync("*, *::before, *::after { transition: none !important; }");
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+    return () => {
+      document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== sheet);
+    };
+  }
+  async function captureVariants(el, opts) {
+    const warnings = [];
+    const timeout = opts.timeoutMs ?? 2e4;
+    const current = Math.round(innerWidth);
+    const inFrame = async (doc2, css, w) => extractInFrame(opts.frameUrl, doc2, css, w, timeout, opts.getToken ? await opts.getToken() : "");
+    const extractLive = async () => {
+      const res = await window.__codeToFigmaExtract(el);
+      if (!res) throw new Error("No se pudo extraer el bloque");
+      return res.rootNode;
+    };
+    let widths = opts.breakpoints === false ? [current] : opts.widths && opts.widths.length ? opts.widths : DEFAULT_WIDTHS;
+    widths = Array.from(new Set(widths.map((w) => Math.round(w)))).sort((a, b) => a - b);
+    const liveIdx = current >= 1024 ? widths.findIndex((w) => w >= 1024) : widths.findIndex((w) => Math.abs(w - current) <= 2);
+    if (liveIdx >= 0) widths[liveIdx] = current;
+    else if (opts.breakpoints === false) widths = [current];
+    const exp = await exportBlock(el, { verify: false, fetchCss: opts.fetchCss });
+    const doc = captureDoc(exp.html);
+    const variants = [];
+    for (const w of widths) {
+      const rootNode = w === current && liveIdx >= 0 ? opts.liveRootNode || await extractLive() : await inFrame(doc, exp.css, w);
+      variants.push({ name: breakpointName(w), width: w, rootNode });
+    }
+    const seen = /* @__PURE__ */ new Map();
+    for (const v of variants) seen.set(v.name, (seen.get(v.name) || 0) + 1);
+    for (const v of variants) if ((seen.get(v.name) || 0) > 1) v.name = `${v.name} ${v.width}`;
+    let themeSource = null;
+    if (opts.themes) {
+      if (usesColorScheme(exp.css)) {
+        themeSource = "media";
+        const isDark = matchMedia("(prefers-color-scheme: dark)").matches;
+        const otherCss = forceColorScheme(exp.css, isDark ? "light" : "dark");
+        for (const v of variants) {
+          const other = await inFrame(doc, otherCss, v.width);
+          if (isDark) {
+            v.dark = v.rootNode;
+            v.rootNode = other;
+          } else v.dark = other;
+        }
+      } else {
+        const before = colorSignature(el);
+        const unfreeze = freezeTransitions();
+        const isDark = pageLooksDark();
+        const undo = toggleClassTheme();
+        try {
+          void getComputedStyle(el).color;
+          if (colorSignature(el) !== before) {
+            themeSource = "class";
+            const expOther = await exportBlock(el, { verify: false, fetchCss: opts.fetchCss });
+            const docOther = captureDoc(expOther.html);
+            for (const v of variants) {
+              const other = v.width === current && liveIdx >= 0 ? await extractLive() : await inFrame(docOther, expOther.css, v.width);
+              if (isDark) {
+                v.dark = v.rootNode;
+                v.rootNode = other;
+              } else v.dark = other;
+            }
+          } else {
+            warnings.push(
+              "Este bloque no cambia de colores con el tema oscuro de la página: se envía solo el tema actual"
+            );
+          }
+        } finally {
+          undo();
+          void getComputedStyle(el).color;
+          unfreeze();
+        }
+      }
+    }
+    return { variants, themeSource, warnings: [...warnings, ...exp.stats.warnings.filter((w) => /hoja/.test(w))] };
+  }
+
   // packages/contracts/src/payload-stats.ts
   var HEAVY_PAYLOAD = {
     /** Más de esto: aviso antes de enviar */
@@ -4621,6 +4803,10 @@ ${js.replace(/<\/script/gi, "<\\/script")}<\/script>
     return { ...res, files: exportFiles(res) };
   };
   window.__codeToFigmaZip = buildZip;
+  window.__codeToFigmaCaptureVariants = async function(rootElement, opts) {
+    if (!rootElement || rootElement.nodeType !== Node.ELEMENT_NODE) return null;
+    return captureVariants(rootElement, { fetchCss: window.__codeToFigmaFetchCss, ...opts });
+  };
   if (!window.__codeToFigmaReadyLogged) {
     window.__codeToFigmaReadyLogged = true;
     console.log("[CodeToFigma] Extractor Engine v2.1 (Geometric Direction & Centered Stacking) ready.");

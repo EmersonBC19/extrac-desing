@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="es" class="theme-dark">
+  <head>
+    <meta charset="utf-8" />
+    <title>Exportar HTML</title>
+    <!-- Exportar un bloque como HTML + CSS + JS (tests/integration/export-html.test.ts) -->
+    <link rel="stylesheet" href="export.css" />
+    <style>
+      :root { --accent: rgb(255, 85, 0); --radius: 12px; }
+      html.theme-dark { --card-bg: rgb(20, 30, 40); }
+      body { margin: 0; font-family: Arial, sans-serif; color: rgb(10, 10, 10); }
+      .layout { display: grid; grid-template-columns: 300px 1fr; gap: 20px; padding: 24px; background: rgb(240, 240, 240); }
+      .unrelated-widget { color: red; }
+      main { background: rgb(230, 230, 250); }
+      .theme-dark .card { background: var(--card-bg); color: rgb(250, 250, 250); border-radius: var(--radius); padding: 16px; }
+      .layout > main > .card { border: 1px solid rgb(90, 90, 90); }
+      .card h2 { font-size: 22px; margin: 0 0 8px; }
+      .card .btn { background: var(--accent); color: white; padding: 8px 14px; border: 0; border-radius: 6px; transition: color 0.3s, background-color 0.3s; }
+      /* Atajo con var() sobrescrito en parte: Chrome lo serializa sin el "solid" (se recupera del texto fuente) */
+      .card .bordered { --bw: 1px; --bc: rgb(0, 200, 0); border: var(--bw) solid var(--bc); border-width: 2px 0; }
+      .card .btn:hover { background: rgb(0, 0, 255); }
+      .card .badge::before { content: '★'; color: gold; }
+      @media (max-width: 600px) { .theme-dark .card { padding: 4px; } }
+      @keyframes pulse { from { opacity: 0.5; } to { opacity: 1; } }
+      @keyframes unused-anim { from { opacity: 0; } }
+      .card .pulse { animation: pulse 2s infinite alternate; }
+      .tabs [role='tab'].is-on { font-weight: 700; }
+      .panel.is-on { border-left: 2px solid red; }
+      #extra { padding: 6px; }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="unrelated-widget">nada</aside>
+      <main>
+        <article id="card" class="card">
+          <h2>Plan Pro</h2>
+          <p class="price">$20</p>
+          <p class="remote">Remoto</p>
+          <div class="bordered">Con borde</div>
+          <img id="logo" src="img/slide1.png" alt="" width="40" height="20" />
+          <span class="badge">Nuevo</span>
+          <canvas id="cv" width="40" height="20"></canvas>
+          <button class="btn" onclick="alert(1)">Comprar</button>
+          <div class="tabs" role="tablist">
+            <button id="t1" role="tab" aria-selected="true" aria-controls="p1" class="is-on">Uno</button>
+            <button id="t2" role="tab" aria-selected="false" aria-controls="p2">Dos</button>
+          </div>
+          <div id="p1" role="tabpanel" class="panel is-on">Panel uno</div>
+          <div id="p2" role="tabpanel" class="panel" hidden>Panel dos</div>
+          <button id="more" aria-expanded="false" aria-controls="extra">Más</button>
+          <div id="extra" hidden>Detalle</div>
+          <svg id="icon" width="16" height="16"><use href="#ico"></use></svg>
+          <span class="pulse">•</span>
+          <input id="name" value="" />
+          <script>window.__inside = 1;</script>
+        </article>
+      </main>
+    </div>
+    <svg style="display: none"><symbol id="ico" viewBox="0 0 10 10"><circle cx="5" cy="5" r="5" /></symbol></svg>
+    <script>
+      const ctx = document.getElementById('cv').getContext('2d');
+      ctx.fillStyle = 'red';
+      ctx.fillRect(0, 0, 40, 20);
+      document.getElementById('name').value = 'Ana';
+    </script>
+  </body>
+</html>

@@ -1,0 +1,3 @@
+@import url("export-import.css");
+.card .price { color: rgb(0, 128, 0); font-size: 30px; }
+.never-used { color: blue; }

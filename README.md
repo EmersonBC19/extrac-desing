@@ -108,6 +108,24 @@ npm run crawl -- --url http://localhost:4200 --routes /dashboard,/clientes --pag
 
 ---
 
+### 5. 🧩 Exportar un bloque como HTML + CSS + JS
+
+En la extensión, con un bloque seleccionado, **Exportar HTML** genera una copia que funciona fuera de la página
+(`packages/core-extractor/src/browser/export-html.ts`):
+
+- **CSS real de la página**, no estilos calculados en línea: solo las reglas que tocan al bloque, con sus `@media`
+  (sigue siendo responsive), `:hover`, `@keyframes` y `@font-face`. Las hojas de otros dominios se descargan con
+  los permisos de la extensión; las variables CSS que el bloque no usa se quitan.
+- **Contexto de la página**: los ancestros del bloque viajan como cajas vacías con `display: contents`, así que los
+  selectores que dependen de ellos (`.tema-oscuro .card`), la herencia y las variables siguen funcionando.
+- **Verificado**: el resultado se dibuja en un iframe oculto y se compara con el original elemento por elemento; lo
+  que no coincide se corrige con un ajuste medido, y el diálogo muestra la fidelidad obtenida.
+- **JS** para los widgets estándar: pestañas ARIA, botones `aria-expanded`/`aria-controls` y collapse, dropdown y
+  tab de Bootstrap. El JavaScript propio del sitio no se copia.
+- Formatos: **ZIP** (`index.html`, `styles.css`, `script.js`), **HTML único** o **copiar al portapapeles**.
+
+---
+
 ## 🛠️ Herramientas MCP Disponibles
 
 El servidor MCP (`packages/mcp-server/src/index.ts`) expone las siguientes herramientas para el agente:

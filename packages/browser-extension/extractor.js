@@ -1739,7 +1739,7 @@
           cv.setAttribute("stroke-dashoffset", offset);
         }
       }
-      const SVG_NS = "http://www.w3.org/2000/svg";
+      const SVG_NS2 = "http://www.w3.org/2000/svg";
       const origUses = element.querySelectorAll("use");
       const cloneUses = svgClone.querySelectorAll("use");
       for (let ui = 0; ui < cloneUses.length; ui++) {
@@ -1753,7 +1753,7 @@
         const y = u.getAttribute("y") || "0";
         let replacement;
         if (targetEl.tagName.toLowerCase() === "symbol") {
-          replacement = document.createElementNS(SVG_NS, "svg");
+          replacement = document.createElementNS(SVG_NS2, "svg");
           for (const attr of ["viewBox", "preserveAspectRatio"]) {
             const v = targetEl.getAttribute(attr);
             if (v) replacement.setAttribute(attr, v);
@@ -1764,7 +1764,7 @@
           replacement.setAttribute("height", u.getAttribute("height") || "100%");
           for (const ch of Array.from(targetEl.childNodes)) replacement.appendChild(ch.cloneNode(true));
         } else {
-          replacement = document.createElementNS(SVG_NS, "g");
+          replacement = document.createElementNS(SVG_NS2, "g");
           const copy = targetEl.cloneNode(true);
           copy.removeAttribute("id");
           replacement.appendChild(copy);
@@ -1785,7 +1785,7 @@
         let finalNode = replacement;
         const useTransform = u.getAttribute("transform");
         if (useTransform) {
-          finalNode = document.createElementNS(SVG_NS, "g");
+          finalNode = document.createElementNS(SVG_NS2, "g");
           finalNode.setAttribute("transform", useTransform);
           finalNode.appendChild(replacement);
         }
@@ -1809,7 +1809,7 @@
           const sx = w / vb[2];
           const sy = h / vb[3];
           if (Math.abs(sx - sy) > 1e-3) {
-            const g = document.createElementNS(SVG_NS, "g");
+            const g = document.createElementNS(SVG_NS2, "g");
             g.setAttribute("transform", `matrix(${sx} 0 0 ${sy} ${-vb[0] * sx} ${-vb[1] * sy})`);
             for (const ch of Array.from(svgClone.childNodes)) {
               if (!(ch.nodeType === Node.ELEMENT_NODE && ch.localName === "defs")) g.appendChild(ch);
@@ -3310,6 +3310,1223 @@
     }
   }
 
+  // packages/core-extractor/src/browser/export-html.ts
+  var SVG_NS = "http://www.w3.org/2000/svg";
+  var IDX = "data-ctf-i";
+  var IMPORT_RE = /@import\s+(?:url\(\s*)?(['"]?)([^'")\s;]+)\1\s*\)?([^;]*);/gi;
+  async function parseCssText(text, base, fetchCss, depth, out, unreadable, media = "") {
+    const imports = [];
+    const body = text.replace(IMPORT_RE, (_m, _q, url, cond) => {
+      imports.push({ url: absUrl(url, base), media: (cond || "").trim() });
+      return "";
+    });
+    for (const imp of imports) {
+      if (depth > 3 || !fetchCss) {
+        unreadable.push(imp.url);
+        continue;
+      }
+      const sub = await safeFetch(fetchCss, imp.url);
+      if (sub == null) unreadable.push(imp.url);
+      else await parseCssText(sub, imp.url, fetchCss, depth + 1, out, unreadable, imp.media || media);
+    }
+    try {
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(body);
+      out.push({ rules: Array.from(sheet.cssRules), base, media, loadText: async () => body });
+    } catch (_e) {
+      unreadable.push(base);
+    }
+  }
+  async function safeFetch(fetchCss, url) {
+    try {
+      const t = await fetchCss(url);
+      return typeof t === "string" ? t : null;
+    } catch (_e) {
+      return null;
+    }
+  }
+  async function addSheet2(sheet, fetchCss, out, unreadable, depth) {
+    if (sheet.disabled) return;
+    const base = sheet.href || document.baseURI;
+    const media = sheet.media && sheet.media.mediaText && sheet.media.mediaText !== "all" ? sheet.media.mediaText : "";
+    let rules = null;
+    try {
+      rules = Array.from(sheet.cssRules);
+    } catch (_e) {
+      rules = null;
+    }
+    if (!rules) {
+      const text = sheet.href && fetchCss ? await safeFetch(fetchCss, sheet.href) : null;
+      if (text == null) {
+        unreadable.push(sheet.href || "(hoja sin URL)");
+        return;
+      }
+      await parseCssText(text, sheet.href, fetchCss, depth + 1, out, unreadable, media);
+      return;
+    }
+    const own = [];
+    for (const rule of rules) {
+      if (rule instanceof CSSImportRule) {
+        if (rule.styleSheet && depth < 4) await addSheet2(rule.styleSheet, fetchCss, out, unreadable, depth + 1);
+        else if (rule.href) unreadable.push(absUrl(rule.href, base));
+      } else own.push(rule);
+    }
+    const owner = sheet.ownerNode;
+    const loadText = async () => {
+      if (owner && owner.tagName && owner.tagName.toLowerCase() === "style") return owner.textContent;
+      if (!sheet.href) return null;
+      if (fetchCss) return safeFetch(fetchCss, sheet.href);
+      try {
+        const r = await fetch(sheet.href);
+        return r.ok ? await r.text() : null;
+      } catch (_e) {
+        return null;
+      }
+    };
+    out.push({ rules: own, base, media, loadText });
+  }
+  function losesDeclarations(rule) {
+    return /(?:^|[;\s])(?!--)[a-z-]+:\s*(?:;|$)/.test(rule.style.cssText);
+  }
+  function needsRecovery(rules) {
+    for (const r of rules) {
+      if (r instanceof CSSStyleRule) {
+        if (losesDeclarations(r)) return true;
+      } else if (!(r instanceof CSSKeyframesRule) && r.cssRules) {
+        if (needsRecovery(Array.from(r.cssRules))) return true;
+      }
+    }
+    return false;
+  }
+  function normSelector(s) {
+    return s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/::?(before|after|first-line|first-letter)\b/gi, "::$1").replace(/["']/g, "").replace(/\s*([>+~,()])\s*/g, "$1").replace(/\s+/g, " ").trim();
+  }
+  function scanStyleRules(text) {
+    const out = [];
+    const n = text.length;
+    const skipString = (j) => {
+      const q = text[j];
+      for (let k = j + 1; k < n; k++) {
+        if (text[k] === "\\") k++;
+        else if (text[k] === q) return k;
+      }
+      return n;
+    };
+    const skipComment = (j) => {
+      const e = text.indexOf("*/", j + 2);
+      return e < 0 ? n : e + 1;
+    };
+    const blockEnd = (start) => {
+      let depth = 0;
+      for (let j = start; j < n; j++) {
+        const ch = text[j];
+        if (ch === "/" && text[j + 1] === "*") j = skipComment(j);
+        else if (ch === '"' || ch === "'") j = skipString(j);
+        else if (ch === "{") depth++;
+        else if (ch === "}" && --depth === 0) return j + 1;
+      }
+      return n;
+    };
+    const walk = (from, to) => {
+      let preludeStart = from;
+      for (let j = from; j < to; j++) {
+        const ch = text[j];
+        if (ch === "/" && text[j + 1] === "*") j = skipComment(j);
+        else if (ch === '"' || ch === "'") j = skipString(j);
+        else if (ch === ";" || ch === "}") preludeStart = j + 1;
+        else if (ch === "{") {
+          const prelude = text.slice(preludeStart, j).replace(/\/\*[\s\S]*?\*\//g, "").trim();
+          const end = blockEnd(j);
+          if (!prelude.startsWith("@")) out.push([prelude, text.slice(j + 1, end - 1)]);
+          else if (/^@(?:media|supports|layer|container|scope|document|starting-style)\b/i.test(prelude))
+            walk(j + 1, end - 1);
+          j = end - 1;
+          preludeStart = end;
+        }
+      }
+    };
+    walk(0, n);
+    return out;
+  }
+  function buildRecovery(text, rules) {
+    const bySelector = /* @__PURE__ */ new Map();
+    for (const [sel, body] of scanStyleRules(text)) {
+      const k = normSelector(sel);
+      const list = bySelector.get(k) || [];
+      list.push(body);
+      bySelector.set(k, list);
+    }
+    const seen = /* @__PURE__ */ new Map();
+    const out = /* @__PURE__ */ new Map();
+    const walk = (list) => {
+      for (const r of list) {
+        if (r instanceof CSSStyleRule) {
+          const k = normSelector(r.selectorText || "");
+          const nth = seen.get(k) || 0;
+          seen.set(k, nth + 1);
+          if (!losesDeclarations(r)) continue;
+          const body = (bySelector.get(k) || [])[nth];
+          if (body != null && /var\(/.test(body)) out.set(r, body.trim().replace(/;?\s*$/, ";"));
+        } else if (!(r instanceof CSSKeyframesRule) && r.cssRules) {
+          walk(Array.from(r.cssRules));
+        }
+      }
+    };
+    walk(rules);
+    return out;
+  }
+  async function gatherSheets(fetchCss) {
+    const sources = [];
+    const unreadable = [];
+    for (const sheet of Array.from(document.styleSheets)) {
+      await addSheet2(sheet, fetchCss, sources, unreadable, 0);
+    }
+    for (const sheet of Array.from(document.adoptedStyleSheets || [])) {
+      await addSheet2(sheet, fetchCss, sources, unreadable, 0);
+    }
+    return { sources, unreadable };
+  }
+  function absUrl(u, base) {
+    const s = (u || "").trim();
+    if (!s || /^(?:data|blob|javascript|mailto|tel|about):|^#/i.test(s)) return s;
+    try {
+      return new URL(s, base).href;
+    } catch (_e) {
+      return s;
+    }
+  }
+  function absolutizeCss(css, base) {
+    return css.replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi, (m, q, u) => {
+      const abs = absUrl(u, base);
+      return abs === u ? m : `url(${q || '"'}${abs}${q || '"'})`;
+    });
+  }
+  function absolutizeSrcset(v, base) {
+    if (/data:/i.test(v)) return v;
+    return v.split(",").map((part) => {
+      const bits = part.trim().split(/\s+/);
+      if (!bits[0]) return part.trim();
+      bits[0] = absUrl(bits[0], base);
+      return bits.join(" ");
+    }).join(", ");
+  }
+  var NON_STRUCTURAL = /::?(?:hover|active|focus-visible|focus-within|focus|visited|target|before|after|placeholder|marker|selection|first-line|first-letter|backdrop|file-selector-button|-webkit-[\w-]+|-moz-[\w-]+)(?![\w-])|::(?:part|slotted|highlight|cue)\([^)]*\)/gi;
+  function splitSelectors(sel) {
+    const out = [];
+    let depth = 0;
+    let quote = "";
+    let cur = "";
+    for (const ch of sel) {
+      if (quote) {
+        if (ch === quote) quote = "";
+      } else if (ch === '"' || ch === "'") quote = ch;
+      else if (ch === "(" || ch === "[") depth++;
+      else if (ch === ")" || ch === "]") depth--;
+      else if (ch === "," && depth === 0) {
+        out.push(cur.trim());
+        cur = "";
+        continue;
+      }
+      cur += ch;
+    }
+    if (cur.trim()) out.push(cur.trim());
+    return out;
+  }
+  function selectorTouches(part, ctx) {
+    const hit = ctx.cache.get(part);
+    if (hit !== void 0) return hit;
+    let s = part.replace(NON_STRUCTURAL, "").trim();
+    s = s.replace(/[>+~]\s*$/, "").trim();
+    if (!s || /^[>+~]/.test(s)) s = s ? `* ${s}` : "*";
+    let res;
+    try {
+      res = ctx.scope.some((el) => el.matches(s)) || ctx.root.querySelector(s) !== null;
+    } catch (_e) {
+      res = true;
+    }
+    ctx.cache.set(part, res);
+    return res;
+  }
+  function filterRules(rules, base, ctx) {
+    const out = [];
+    for (const rule of rules) {
+      if (rule instanceof CSSStyleRule) {
+        ctx.total++;
+        const parts = splitSelectors(rule.selectorText || "");
+        const kept = parts.filter((p) => selectorTouches(p, ctx));
+        if (!kept.length) continue;
+        ctx.kept++;
+        const nested = rule.cssRules && rule.cssRules.length > 0;
+        const recovered = ctx.recover && ctx.recover.get(rule);
+        const text = recovered ? `${kept.join(", ")} { ${recovered} }` : nested || kept.length === parts.length ? rule.cssText : `${kept.join(", ")} { ${rule.style.cssText} }`;
+        out.push(absolutizeCss(text, base));
+      } else if (rule instanceof CSSKeyframesRule) {
+        ctx.keyframes.push({ name: rule.name, text: absolutizeCss(rule.cssText, base) });
+      } else if (rule instanceof CSSFontFaceRule) {
+        const family = (rule.style.getPropertyValue("font-family") || "").replace(/^['"]|['"]$/g, "").trim();
+        ctx.fontFaces.push({ family, text: absolutizeCss(rule.cssText, base) });
+      } else if (typeof CSSPropertyRule !== "undefined" && rule instanceof CSSPropertyRule) {
+        ctx.properties.push({ name: rule.name, text: rule.cssText });
+      } else if (typeof CSSLayerStatementRule !== "undefined" && rule instanceof CSSLayerStatementRule) {
+        out.push(rule.cssText);
+      } else if (rule instanceof CSSImportRule || rule instanceof CSSNamespaceRule || rule instanceof CSSPageRule) {
+        continue;
+      } else if (rule.cssRules) {
+        const inner = filterRules(Array.from(rule.cssRules), base, ctx);
+        if (inner.length) {
+          const header = rule.cssText.slice(0, rule.cssText.indexOf("{")).trim();
+          out.push(`${header} {
+${inner.map((r) => "  " + r).join("\n")}
+}`);
+        }
+      } else if (rule.cssText) {
+        out.push(rule.cssText);
+      }
+    }
+    return out;
+  }
+  function dedupeKeepLast(rules) {
+    const last = /* @__PURE__ */ new Map();
+    rules.forEach((r, i) => last.set(r, i));
+    return rules.filter((r, i) => last.get(r) === i);
+  }
+  var DECL_VALUE = String.raw`((?:[^;"'(){}]|"[^"]*"|'[^']*'|\((?:[^()"']|"[^"]*"|'[^']*'|\((?:[^()]|\([^()]*\))*\))*\))*)`;
+  var VAR_REF = /var\(\s*(--[\w-]+)/g;
+  function pruneCustomProperties(css, html) {
+    const declRe = new RegExp(String.raw`(--[\w-]+)\s*:\s*${DECL_VALUE}\s*(?:;|(?=\}))`, "g");
+    const values = /* @__PURE__ */ new Map();
+    const withoutCustom = css.replace(declRe, (_m, name, value) => {
+      const list = values.get(name) || [];
+      list.push(value);
+      values.set(name, list);
+      return "";
+    });
+    if (!values.size) return css;
+    const used = /* @__PURE__ */ new Set();
+    const queue = [];
+    const scan = (text) => {
+      for (const m of text.matchAll(VAR_REF)) {
+        if (!used.has(m[1])) {
+          used.add(m[1]);
+          queue.push(m[1]);
+        }
+      }
+    };
+    scan(withoutCustom);
+    scan(html);
+    while (queue.length) for (const v of values.get(queue.pop()) || []) scan(v);
+    let out = css.replace(declRe, (m, name) => used.has(name) ? m : "");
+    for (let i = 0; i < 4; i++) {
+      const next = out.replace(/(^|[;}\n])\s*[^{}@;]+\{\s*\}/g, "$1").replace(/@(?:media|supports|container|layer)[^{}]*\{\s*\}/g, "");
+      if (next === out) break;
+      out = next;
+    }
+    return out;
+  }
+  function escapeRe(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+  var URL_ATTRS = ["src", "href", "poster", "action", "formaction", "data", "background", "xlink:href"];
+  function cleanAttributes(o, c, base) {
+    for (const attr of Array.from(c.attributes)) {
+      const n = attr.name.toLowerCase();
+      if (n.startsWith("on") || n === "nonce" || n === "integrity" || n.startsWith("data-ctf") && n !== IDX) {
+        c.removeAttribute(attr.name);
+      }
+    }
+    for (const n of URL_ATTRS) {
+      const v = c.getAttribute(n);
+      if (v == null) continue;
+      if (/^\s*javascript:/i.test(v)) c.setAttribute(n, "#");
+      else c.setAttribute(n, absUrl(v, base));
+    }
+    for (const n of ["srcset", "imagesrcset"]) {
+      const v = c.getAttribute(n);
+      if (v) c.setAttribute(n, absolutizeSrcset(v, base));
+    }
+    const style = c.getAttribute("style");
+    if (style && /url\(/i.test(style)) c.setAttribute("style", absolutizeCss(style, base));
+    const tag = o.tagName.toLowerCase();
+    if (tag === "img") {
+      const img = o;
+      if (img.currentSrc && !/^data:image\/gif/i.test(img.currentSrc)) {
+        const src = c.getAttribute("src") || "";
+        if (!src || /^data:image\/(gif|svg)/i.test(src)) c.setAttribute("src", img.currentSrc);
+      }
+    } else if (tag === "input") {
+      const inp = o;
+      if (inp.type === "checkbox" || inp.type === "radio") {
+        if (inp.checked) c.setAttribute("checked", "");
+        else c.removeAttribute("checked");
+      } else if (inp.type !== "password" && inp.type !== "file" && inp.value) {
+        c.setAttribute("value", inp.value);
+      }
+    } else if (tag === "textarea") {
+      c.textContent = o.value;
+    } else if (tag === "select") {
+      const opts = o.options;
+      const copts = c.querySelectorAll("option");
+      for (let i = 0; i < opts.length && i < copts.length; i++) {
+        if (opts[i].selected) copts[i].setAttribute("selected", "");
+        else copts[i].removeAttribute("selected");
+      }
+    }
+  }
+  function classDiff(active, inactive) {
+    if (!active || !inactive.length) return "";
+    const common = (el) => new Set(Array.from(el.classList));
+    const others = inactive.map(common);
+    return Array.from(active.classList).filter((c) => others.every((s) => !s.has(c))).join(" ");
+  }
+  function annotateWidgets(root, origToClone, widgets) {
+    const cloneOf = (el) => el ? origToClone.get(el) || null : null;
+    const byId = (id) => {
+      if (!id) return null;
+      const el = root.ownerDocument.getElementById(id);
+      return el && (el === root || root.contains(el)) ? el : null;
+    };
+    const visibleDisplay = (el) => {
+      const d = getComputedStyle(el).display;
+      return d && d !== "none" ? d : "";
+    };
+    for (const list of Array.from(root.querySelectorAll('[role="tablist"]'))) {
+      const tabs = Array.from(list.querySelectorAll('[role="tab"]'));
+      if (tabs.length < 2) continue;
+      const active = tabs.find((t) => t.getAttribute("aria-selected") === "true") || null;
+      const inactive = tabs.filter((t) => t !== active);
+      const cl = cloneOf(list);
+      if (!cl) continue;
+      widgets.add("tabs");
+      cl.setAttribute("data-ctf-w", "tabs");
+      const tabClass = classDiff(active, inactive);
+      if (tabClass) cl.setAttribute("data-ctf-on", tabClass);
+      const panels = tabs.map((t) => byId(t.getAttribute("aria-controls")));
+      const activePanel = active ? byId(active.getAttribute("aria-controls")) : null;
+      const panelClass = classDiff(
+        activePanel,
+        panels.filter((p) => !!p && p !== activePanel)
+      );
+      if (panelClass) cl.setAttribute("data-ctf-panel-on", panelClass);
+      if (activePanel) {
+        const d = visibleDisplay(activePanel);
+        if (d) cl.setAttribute("data-ctf-display", d);
+      }
+    }
+    for (const btn of Array.from(root.querySelectorAll("[aria-expanded][aria-controls]"))) {
+      if (btn.getAttribute("role") === "tab") continue;
+      const target = byId(btn.getAttribute("aria-controls"));
+      const cb = cloneOf(btn);
+      if (!target || !cb) continue;
+      widgets.add("disclosure");
+      cb.setAttribute("data-ctf-w", "disclosure");
+      const ct = cloneOf(target);
+      const d = visibleDisplay(target);
+      if (ct && d && btn.getAttribute("aria-expanded") === "true") ct.setAttribute("data-ctf-display", d);
+    }
+    for (const btn of Array.from(root.querySelectorAll("[data-bs-toggle], [data-toggle]"))) {
+      const kind = btn.getAttribute("data-bs-toggle") || btn.getAttribute("data-toggle") || "";
+      if (!["collapse", "dropdown", "tab", "pill"].includes(kind)) continue;
+      const cb = cloneOf(btn);
+      if (!cb) continue;
+      widgets.add(`bootstrap-${kind}`);
+      cb.setAttribute("data-ctf-w", `bs-${kind}`);
+    }
+  }
+  function externalRefs(clone, root) {
+    const ids = /* @__PURE__ */ new Set();
+    const html = clone.outerHTML;
+    for (const m of html.matchAll(/(?:xlink:)?href="#([^"]+)"/g)) ids.add(m[1]);
+    for (const m of html.matchAll(/url\(\s*['"]?#([^'")]+)['"]?\s*\)/g)) ids.add(m[1]);
+    const out = [];
+    for (const id of ids) {
+      const el = root.ownerDocument.getElementById(id);
+      if (!el || el === root || root.contains(el)) continue;
+      if (el.namespaceURI === SVG_NS) out.push(el);
+    }
+    return out;
+  }
+  function cloneBlock(root) {
+    const base = document.baseURI;
+    const clone = root.cloneNode(true);
+    const origs = [];
+    const origToClone = /* @__PURE__ */ new Map();
+    const warnings = [];
+    const pending = [];
+    const walk = (o, c) => {
+      if (o.nodeType !== Node.ELEMENT_NODE) return;
+      const oe = o;
+      const ce = c;
+      ce.setAttribute(IDX, String(origs.length));
+      origs.push(oe);
+      origToClone.set(oe, ce);
+      cleanAttributes(oe, ce, base);
+      const tag = oe.tagName.toLowerCase();
+      if (tag === "script" || tag === "noscript" || tag === "base" || tag === "meta" || oe.id === "__code_to_figma_root") {
+        pending.push(() => ce.remove());
+        return;
+      }
+      if (tag === "style" || tag === "link" && /stylesheet/i.test(oe.getAttribute("rel") || "")) {
+        pending.push(() => ce.remove());
+        return;
+      }
+      if (tag === "canvas") {
+        try {
+          const data = oe.toDataURL("image/png");
+          pending.push(() => {
+            const img = document.createElement("img");
+            for (const a of Array.from(ce.attributes)) img.setAttribute(a.name, a.value);
+            img.setAttribute("src", data);
+            img.setAttribute("alt", "");
+            ce.replaceWith(img);
+          });
+        } catch (_e) {
+          warnings.push("Un lienzo (canvas) de otro dominio no se pudo copiar: queda vacío");
+        }
+      }
+      const sr = oe.shadowRoot;
+      if (sr) {
+        pending.push(() => {
+          const tpl = document.createElement("template");
+          tpl.setAttribute("shadowrootmode", "open");
+          let styles = "";
+          for (const s of Array.from(sr.adoptedStyleSheets || [])) {
+            try {
+              styles += Array.from(s.cssRules).map((r) => r.cssText).join("\n");
+            } catch (_e) {
+            }
+          }
+          tpl.innerHTML = (styles ? `<style>${styles}</style>` : "") + sr.innerHTML;
+          ce.insertBefore(tpl, ce.firstChild);
+        });
+      }
+      const oc = o.childNodes;
+      const cc = c.childNodes;
+      for (let i = 0; i < oc.length && i < cc.length; i++) walk(oc[i], cc[i]);
+    };
+    walk(root, clone);
+    const widgets = /* @__PURE__ */ new Set();
+    annotateWidgets(root, origToClone, widgets);
+    for (const fn of pending) fn();
+    return { clone, origs, widgets, warnings };
+  }
+  function ancestorChain(root) {
+    const chain = [];
+    for (let p = root.parentElement; p && p !== document.body && p !== document.documentElement; p = p.parentElement) {
+      chain.unshift(p);
+    }
+    return chain;
+  }
+  function escapeAttr(v) {
+    return v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+  }
+  function attrsOf(el, extra = {}, base = document.baseURI) {
+    const out = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const a of Array.from(el.attributes)) {
+      const n = a.name.toLowerCase();
+      if (n.startsWith("on") || n === "nonce" || n.startsWith("data-ctf")) continue;
+      let v = a.value;
+      if (n === "style" && extra.style) v = `${v.replace(/;?\s*$/, ";")} ${extra.style}`;
+      else if (URL_ATTRS.includes(n)) v = /^\s*javascript:/i.test(v) ? "#" : absUrl(v, base);
+      if (n === "style" && /url\(/i.test(v)) v = absolutizeCss(v, base);
+      seen.add(n);
+      out.push(`${a.name}="${escapeAttr(v)}"`);
+    }
+    for (const [k, v] of Object.entries(extra)) if (!seen.has(k)) out.push(`${k}="${escapeAttr(v)}"`);
+    return out.length ? " " + out.join(" ") : "";
+  }
+  function isTransparent(color) {
+    if (!color || color === "transparent") return true;
+    const m = color.match(/rgba?\(([^)]+)\)/);
+    if (!m) return false;
+    const parts = m[1].split(/[\s,/]+/).filter(Boolean);
+    return parts.length >= 4 && parseFloat(parts[3]) === 0;
+  }
+  function backdropColor(root) {
+    for (let p = root.parentElement; p; p = p.parentElement) {
+      if (p === document.body || p === document.documentElement) return null;
+      const bg = getComputedStyle(p).backgroundColor;
+      if (!isTransparent(bg)) return bg;
+    }
+    return null;
+  }
+  function containerWidth(root) {
+    const p = root.parentElement;
+    if (!p) return Math.round(root.getBoundingClientRect().width);
+    const cs = getComputedStyle(p);
+    const w = p.getBoundingClientRect().width - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0) - (parseFloat(cs.borderLeftWidth) || 0) - (parseFloat(cs.borderRightWidth) || 0);
+    const own = root.getBoundingClientRect().width;
+    return Math.round(Math.max(w, own));
+  }
+  var COMPARE_PROPS = [
+    "display",
+    "position",
+    "top",
+    "right",
+    "bottom",
+    "left",
+    "float",
+    "box-sizing",
+    "flex-direction",
+    "flex-wrap",
+    "justify-content",
+    "align-items",
+    "align-content",
+    "align-self",
+    "justify-items",
+    "justify-self",
+    "flex-grow",
+    "flex-shrink",
+    "flex-basis",
+    "order",
+    "grid-template-columns",
+    "grid-template-rows",
+    "grid-column-start",
+    "grid-column-end",
+    "grid-row-start",
+    "grid-row-end",
+    "grid-auto-flow",
+    "row-gap",
+    "column-gap",
+    "min-width",
+    "max-width",
+    "min-height",
+    "max-height",
+    "padding-top",
+    "padding-right",
+    "padding-bottom",
+    "padding-left",
+    "margin-top",
+    "margin-right",
+    "margin-bottom",
+    "margin-left",
+    "border-top-width",
+    "border-right-width",
+    "border-bottom-width",
+    "border-left-width",
+    "border-top-style",
+    "border-right-style",
+    "border-bottom-style",
+    "border-left-style",
+    "border-top-color",
+    "border-right-color",
+    "border-bottom-color",
+    "border-left-color",
+    "border-top-left-radius",
+    "border-top-right-radius",
+    "border-bottom-right-radius",
+    "border-bottom-left-radius",
+    "background-color",
+    "background-image",
+    "background-size",
+    "background-position",
+    "background-repeat",
+    "box-shadow",
+    "opacity",
+    "transform",
+    "filter",
+    "backdrop-filter",
+    "mix-blend-mode",
+    "z-index",
+    "overflow-x",
+    "overflow-y",
+    "visibility",
+    "color",
+    "font-family",
+    "font-size",
+    "font-weight",
+    "font-style",
+    "line-height",
+    "letter-spacing",
+    "text-align",
+    "text-transform",
+    "text-decoration-line",
+    "text-decoration-color",
+    "white-space",
+    "text-overflow",
+    "vertical-align",
+    "list-style-type",
+    "object-fit",
+    "object-position",
+    "clip-path",
+    "mask-image"
+  ];
+  var PSEUDO_PROPS = [
+    "content",
+    "display",
+    "position",
+    "top",
+    "right",
+    "bottom",
+    "left",
+    "width",
+    "height",
+    "background-color",
+    "background-image",
+    "border-top-width",
+    "border-top-style",
+    "border-top-color",
+    "border-top-left-radius",
+    "color",
+    "font-size",
+    "opacity",
+    "transform"
+  ];
+  function animatedProps(el) {
+    const out = /* @__PURE__ */ new Set();
+    try {
+      for (const a of el.getAnimations ? el.getAnimations() : []) {
+        const eff = a.effect;
+        if (a.transitionProperty) out.add(a.transitionProperty);
+        for (const kf of eff && eff.getKeyframes ? eff.getKeyframes() : []) {
+          for (const k of Object.keys(kf)) {
+            if (["offset", "easing", "composite", "computedOffset"].includes(k)) continue;
+            out.add(k.replace(/[A-Z]/g, (m) => "-" + m.toLowerCase()));
+          }
+        }
+      }
+    } catch (_e) {
+    }
+    if (out.has("inset")) ["top", "right", "bottom", "left"].forEach((p) => out.add(p));
+    return out;
+  }
+  function waitFor(p, ms, fallback) {
+    return new Promise((resolve) => {
+      const t = setTimeout(() => resolve(fallback), ms);
+      p.then(
+        (v) => {
+          clearTimeout(t);
+          resolve(v);
+        },
+        () => {
+          clearTimeout(t);
+          resolve(fallback);
+        }
+      );
+    });
+  }
+  async function renderInFrame(docHtml, css, timeoutMs) {
+    const frame = document.createElement("iframe");
+    frame.setAttribute("aria-hidden", "true");
+    frame.setAttribute("tabindex", "-1");
+    frame.style.cssText = `position:fixed!important;left:-${innerWidth + 200}px!important;top:0!important;width:${innerWidth}px!important;height:${innerHeight}px!important;border:0!important;opacity:0!important;pointer-events:none!important;visibility:visible!important;display:block!important`;
+    const loaded = new Promise((resolve) => frame.addEventListener("load", () => resolve(), { once: true }));
+    frame.srcdoc = docHtml;
+    document.documentElement.appendChild(frame);
+    await waitFor(loaded, timeoutMs, void 0);
+    const doc = frame.contentDocument;
+    const win = frame.contentWindow;
+    if (!doc || !win) {
+      frame.remove();
+      return null;
+    }
+    try {
+      const sheet = new win.CSSStyleSheet();
+      sheet.replaceSync(`${css}
+*, *::before, *::after { transition: none !important; }`);
+      doc.adoptedStyleSheets = [sheet];
+    } catch (_e) {
+      frame.remove();
+      return null;
+    }
+    const imgs = Array.from(doc.images).map((im) => im.complete ? Promise.resolve() : im.decode().catch(() => {
+    }));
+    await waitFor(
+      Promise.all([doc.fonts ? doc.fonts.ready : Promise.resolve(), ...imgs]),
+      Math.min(4e3, timeoutMs),
+      void 0
+    );
+    return frame;
+  }
+  var LAYOUT_RESOLVED = /* @__PURE__ */ new Set([
+    "margin-top",
+    "margin-right",
+    "margin-bottom",
+    "margin-left",
+    "top",
+    "right",
+    "bottom",
+    "left",
+    "grid-template-columns",
+    "grid-template-rows"
+  ]);
+  function sizeDiffers(o, c) {
+    const a = o.getBoundingClientRect();
+    const b = c.getBoundingClientRect();
+    if (Math.abs(a.width - b.width) > 1) return true;
+    const op = o.parentElement;
+    const cp = c.parentElement;
+    if (!op || !cp) return false;
+    return Math.abs(op.getBoundingClientRect().width - cp.getBoundingClientRect().width) > 1;
+  }
+  function diffElement(o, c, cwin, pseudo) {
+    const os = getComputedStyle(o, pseudo || null);
+    const cs = cwin.getComputedStyle(c, pseudo || null);
+    const out = {};
+    if (pseudo) {
+      const oc = os.getPropertyValue("content");
+      const cc = cs.getPropertyValue("content");
+      if ((oc === "none" || oc === "normal") && (cc === "none" || cc === "normal")) return out;
+    }
+    const skip = pseudo ? /* @__PURE__ */ new Set() : animatedProps(o);
+    if (!pseudo && sizeDiffers(o, c)) LAYOUT_RESOLVED.forEach((p) => skip.add(p));
+    for (const p of pseudo ? PSEUDO_PROPS : COMPARE_PROPS) {
+      if (skip.has(p)) continue;
+      const ov = os.getPropertyValue(p);
+      const cv = cs.getPropertyValue(p);
+      if (ov !== cv) out[p] = ov;
+    }
+    return out;
+  }
+  function geometryMatches(origs, cdoc) {
+    const oRoot = origs[0].getBoundingClientRect();
+    const cRootEl = cdoc.querySelector(`[${IDX}="0"]`);
+    if (!cRootEl) return 0;
+    const cRoot = cRootEl.getBoundingClientRect();
+    let total = 0;
+    let ok = 0;
+    origs.forEach((o, i) => {
+      const r = o.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) return;
+      const c = cdoc.querySelector(`[${IDX}="${i}"]`);
+      if (!c) return;
+      total++;
+      const k = c.getBoundingClientRect();
+      if (Math.abs(r.left - oRoot.left - (k.left - cRoot.left)) <= 2 && Math.abs(r.top - oRoot.top - (k.top - cRoot.top)) <= 2 && Math.abs(r.width - k.width) <= 2 && Math.abs(r.height - k.height) <= 2)
+        ok++;
+    });
+    return total ? Math.round(ok / total * 1e3) / 10 : 100;
+  }
+  function patchCss(patches, important) {
+    return patches.map((p) => {
+      const decl = Object.entries(p.props).map(([k, v]) => `${k}: ${v}${important.has(`${p.idx}${p.pseudo}|${k}`) ? " !important" : ""};`).join(" ");
+      return `[data-ctf="${p.idx}"]:is(#_, *)${p.pseudo} { ${decl} }`;
+    }).join("\n");
+  }
+  async function verify(origs, buildDoc, baseCss, timeoutMs, rootSkip) {
+    const deadline = Date.now() + timeoutMs;
+    const patches = /* @__PURE__ */ new Map();
+    const important = /* @__PURE__ */ new Set();
+    const pass = async (round) => {
+      const css = baseCss + "\n" + patchCss(Array.from(patches.values()), important);
+      const frame = await renderInFrame(buildDoc(css, true), css, Math.max(1500, deadline - Date.now()));
+      if (!frame) return null;
+      try {
+        const cdoc = frame.contentDocument;
+        const cwin = frame.contentWindow;
+        const sentinel = cdoc.querySelector(`[${IDX}="0"]`);
+        if (!sentinel) return null;
+        origs.forEach((o, i) => {
+          const c = cdoc.querySelector(`[${IDX}="${i}"]`);
+          if (!c) return;
+          for (const pseudo of ["", "::before", "::after"]) {
+            if (pseudo && o.namespaceURI === SVG_NS) continue;
+            const diff = diffElement(o, c, cwin, pseudo);
+            if (i === 0 && !pseudo) for (const k of rootSkip) delete diff[k];
+            const keys = Object.keys(diff);
+            if (!keys.length) continue;
+            const key = `${i}${pseudo}`;
+            const patch = patches.get(key) || { idx: i, pseudo, props: {} };
+            for (const k of keys) {
+              if (round > 0 && k in patch.props) important.add(`${key}|${k}`);
+              patch.props[k] = diff[k];
+            }
+            patches.set(key, patch);
+          }
+        });
+        return geometryMatches(origs, cdoc);
+      } finally {
+        frame.remove();
+      }
+    };
+    let fidelity = await pass(0);
+    if (fidelity == null) return null;
+    if (patches.size && Date.now() < deadline) {
+      const again = await pass(1);
+      if (again != null) fidelity = again;
+      if (important.size && Date.now() < deadline) {
+        const last = await pass(2);
+        if (last != null) fidelity = last;
+      }
+    }
+    return { patches: Array.from(patches.values()), important, fidelity };
+  }
+  var WIDGETS_JS = `/* Code to Figma — interacción de los widgets estándar del bloque exportado.
+ * Pestañas ARIA (role=tab), botones aria-expanded/aria-controls y collapse/dropdown/tab de Bootstrap.
+ * El JavaScript propio del sitio no se copia. */
+(function () {
+  'use strict';
+  var byId = function (id) { return id ? document.getElementById(id) : null; };
+  var show = function (el, display) {
+    if (!el) return;
+    el.removeAttribute('hidden');
+    el.style.display = '';
+    if (getComputedStyle(el).display === 'none') el.style.display = el.getAttribute('data-ctf-display') || display || 'block';
+  };
+  var hide = function (el) {
+    if (!el) return;
+    el.setAttribute('hidden', '');
+    if (getComputedStyle(el).display !== 'none') el.style.display = 'none';
+  };
+  var toggleClasses = function (el, classes, on) {
+    if (!el || !classes) return;
+    classes.split(/\\s+/).forEach(function (c) { if (c) el.classList.toggle(c, on); });
+  };
+
+  document.querySelectorAll('[data-ctf-w="tabs"]').forEach(function (list) {
+    var tabs = Array.prototype.slice.call(list.querySelectorAll('[role="tab"]'));
+    var select = function (tab) {
+      tabs.forEach(function (t) {
+        var on = t === tab;
+        t.setAttribute('aria-selected', on ? 'true' : 'false');
+        t.setAttribute('tabindex', on ? '0' : '-1');
+        toggleClasses(t, list.getAttribute('data-ctf-on'), on);
+        var panel = byId(t.getAttribute('aria-controls'));
+        toggleClasses(panel, list.getAttribute('data-ctf-panel-on'), on);
+        if (on) show(panel, list.getAttribute('data-ctf-display')); else hide(panel);
+      });
+    };
+    tabs.forEach(function (t, i) {
+      t.addEventListener('click', function (e) { e.preventDefault(); select(t); });
+      t.addEventListener('keydown', function (e) {
+        var d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+        if (!d) return;
+        var next = tabs[(i + d + tabs.length) % tabs.length];
+        select(next); next.focus();
+      });
+    });
+  });
+
+  document.querySelectorAll('[data-ctf-w="disclosure"]').forEach(function (btn) {
+    btn.addEventListener('click', function (e) {
+      if (btn.tagName === 'A') e.preventDefault();
+      var open = btn.getAttribute('aria-expanded') !== 'true';
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      var target = byId(btn.getAttribute('aria-controls'));
+      if (open) show(target); else hide(target);
+    });
+  });
+
+  var bsTarget = function (btn) {
+    var sel = btn.getAttribute('data-bs-target') || btn.getAttribute('data-target') || btn.getAttribute('href');
+    if (!sel || sel.charAt(0) !== '#') return null;
+    try { return document.querySelector(sel); } catch (e) { return null; }
+  };
+  document.querySelectorAll('[data-ctf-w="bs-collapse"]').forEach(function (btn) {
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      var t = bsTarget(btn);
+      if (!t) return;
+      var open = !t.classList.contains('show');
+      t.classList.toggle('show', open);
+      btn.classList.toggle('collapsed', !open);
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+  });
+  document.querySelectorAll('[data-ctf-w="bs-dropdown"]').forEach(function (btn) {
+    var menu = btn.parentElement && btn.parentElement.querySelector('.dropdown-menu');
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      if (!menu) return;
+      var open = !menu.classList.contains('show');
+      menu.classList.toggle('show', open);
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    document.addEventListener('click', function (e) {
+      if (menu && !btn.contains(e.target) && !menu.contains(e.target)) menu.classList.remove('show');
+    });
+  });
+  document.querySelectorAll('[data-ctf-w="bs-tab"], [data-ctf-w="bs-pill"]').forEach(function (btn) {
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      var pane = bsTarget(btn);
+      var nav = btn.closest('.nav, [role="tablist"]');
+      if (nav) nav.querySelectorAll('[data-ctf-w="bs-tab"], [data-ctf-w="bs-pill"]').forEach(function (b) {
+        b.classList.remove('active');
+        b.setAttribute('aria-selected', 'false');
+        var p = bsTarget(b);
+        if (p) p.classList.remove('active', 'show');
+      });
+      btn.classList.add('active');
+      btn.setAttribute('aria-selected', 'true');
+      if (pane) pane.classList.add('active', 'show');
+    });
+  });
+})();
+`;
+  function slug(s) {
+    return (s || "componente").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "componente";
+  }
+  function blockName(root) {
+    const heading = root.querySelector("h1, h2, h3, h4");
+    const label = root.getAttribute("aria-label") || heading && heading.textContent || "";
+    if (label.trim()) return label.trim();
+    const cls = (root.getAttribute("class") || "").split(/\s+/).find((c) => c && !/^_|[0-9]{3,}/.test(c));
+    return root.id || cls || root.tagName.toLowerCase();
+  }
+  async function exportBlock(input, opts = {}) {
+    let root = input;
+    if (root.namespaceURI === SVG_NS && root.tagName.toLowerCase() !== "svg") {
+      root = root.ownerSVGElement || root;
+    }
+    const pageMode = root === document.body || root === document.documentElement;
+    if (root === document.documentElement) root = document.body;
+    const warnings = [];
+    const chain = pageMode ? [] : ancestorChain(root);
+    const scope = [root, ...chain, document.body, document.documentElement];
+    const { sources, unreadable } = await gatherSheets(opts.fetchCss);
+    const ctx = {
+      root,
+      scope,
+      kept: 0,
+      total: 0,
+      keyframes: [],
+      fontFaces: [],
+      properties: [],
+      cache: /* @__PURE__ */ new Map()
+    };
+    const ruleBlocks = [];
+    for (const src of sources) {
+      ctx.recover = void 0;
+      if (src.loadText && needsRecovery(src.rules)) {
+        const text = await src.loadText().catch(() => null);
+        if (text) ctx.recover = buildRecovery(text, src.rules);
+      }
+      for (const r of filterRules(src.rules, src.base, ctx)) {
+        ruleBlocks.push(src.media ? `@media ${src.media} {
+${r}
+}` : r);
+      }
+    }
+    const { clone, origs, widgets, warnings: cloneWarnings } = cloneBlock(root);
+    warnings.push(...cloneWarnings);
+    clone.setAttribute("data-ctf-root", "");
+    const defs = externalRefs(clone, root);
+    const rulesText = pruneCustomProperties(dedupeKeepLast(ruleBlocks).join("\n"), clone.outerHTML);
+    const usageText = rulesText + "\n" + clone.outerHTML;
+    const keyframes = ctx.keyframes.filter(
+      (k) => new RegExp(`(?:^|[\\s,:])${escapeRe(k.name)}(?:$|[\\s,;!])`, "m").test(usageText)
+    );
+    const lowerUsage = usageText.toLowerCase();
+    const fontFaces = ctx.fontFaces.filter((f) => f.family && lowerUsage.includes(f.family.toLowerCase()));
+    const properties = ctx.properties.filter((p) => usageText.includes(p.name));
+    const overrides = [];
+    if (!pageMode) {
+      const bg = backdropColor(root);
+      const width = containerWidth(root);
+      overrides.push(
+        "[data-ctf-chain] { display: contents !important; }",
+        `body { display: block !important; box-sizing: border-box !important; width: ${width}px !important; max-width: 100% !important; margin: 0 auto !important; padding: 0 !important; min-height: 0 !important; height: auto !important; overflow: visible !important; }`
+      );
+      if (bg) overrides.push(`html { background: ${bg} !important; }`, "body { background: transparent !important; }");
+      const pos = getComputedStyle(root).position;
+      if (pos === "absolute" || pos === "fixed" || pos === "sticky") {
+        overrides.push("[data-ctf-root] { position: relative !important; inset: auto !important; }");
+      }
+    }
+    const source = `${location.href}`;
+    const header = `/* Exportado con Code to Figma desde ${source.replace(/\*\//g, "* /")}
+ * ${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)} · ${ctx.kept} de ${ctx.total} reglas de la página */`;
+    const baseCss = [
+      header,
+      ...fontFaces.map((f) => f.text),
+      ...properties.map((p) => p.text),
+      rulesText,
+      ...keyframes.map((k) => k.text),
+      overrides.length ? "/* El bloque fuera de su página */\n" + overrides.join("\n") : ""
+    ].filter(Boolean).join("\n\n");
+    const defsHtml = defs.length ? `<svg aria-hidden="true" width="0" height="0" style="position:absolute;width:0;height:0;overflow:hidden"><defs>${defs.map((d) => absolutizeCss(d.outerHTML, document.baseURI)).join("")}</defs></svg>` : "";
+    const htmlAttrs = attrsOf(document.documentElement);
+    const bodyAttrs = attrsOf(document.body);
+    const title = `${blockName(root)} — ${document.title || location.hostname}`.slice(0, 120);
+    const wrapChain = (cloneHtml) => {
+      const open = chain.map((a) => `<${a.tagName.toLowerCase()}${attrsOf(a, { "data-ctf-chain": "" })}>`).join("");
+      const close = chain.slice().reverse().map((a) => `</${a.tagName.toLowerCase()}>`).join("");
+      return open + cloneHtml + close;
+    };
+    const buildDoc = (cloneHtml, head, tail) => {
+      const body = pageMode ? cloneHtml.replace(/<\/body>\s*$/i, `
+${defsHtml}
+${tail}</body>`) : `<body${bodyAttrs}>
+${wrapChain(cloneHtml)}
+${defsHtml}
+${tail}</body>`;
+      return `<!doctype html>
+<html${htmlAttrs}>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeAttr(
+        title
+      )}</title>
+${head}
+</head>
+${body}
+</html>
+`;
+    };
+    let patches = [];
+    let important = /* @__PURE__ */ new Set();
+    let fidelity = null;
+    let verified = false;
+    if (opts.verify !== false) {
+      const indexed = clone.outerHTML;
+      const rootSkip = new Set(
+        overrides.some((o) => o.startsWith("[data-ctf-root]")) ? ["position", "top", "right", "bottom", "left"] : []
+      );
+      const res = await verify(
+        origs,
+        () => buildDoc(indexed, "", ""),
+        baseCss,
+        opts.verifyTimeoutMs ?? 15e3,
+        rootSkip
+      ).catch(() => null);
+      if (res) {
+        verified = true;
+        patches = res.patches;
+        important = res.important;
+        fidelity = res.fidelity;
+      } else {
+        warnings.push("No se pudo verificar el resultado en esta página");
+      }
+    }
+    const patched = new Set(patches.map((p) => p.idx));
+    for (const el of [clone, ...Array.from(clone.querySelectorAll(`[${IDX}]`))]) {
+      const i = el.getAttribute(IDX);
+      el.removeAttribute(IDX);
+      if (i != null && patched.has(Number(i))) el.setAttribute("data-ctf", i);
+    }
+    const css = baseCss + (patches.length ? `
+
+/* Ajustes medidos en la página: estilos que las reglas copiadas no reproducen (hojas que no se
+ * pudieron leer, estilos puestos por JavaScript o que dependían de elementos que no se exportan) */
+${patchCss(patches, important)}` : "") + "\n";
+    const js = widgets.size ? WIDGETS_JS : "";
+    const finalHtml = clone.outerHTML;
+    const html = buildDoc(
+      finalHtml,
+      '<link rel="stylesheet" href="styles.css">',
+      js ? '<script src="script.js"><\/script>\n' : ""
+    );
+    const singleFile = buildDoc(
+      finalHtml,
+      `<style>
+${css.replace(/<\/style/gi, "<\\/style")}</style>`,
+      js ? `<script>
+${js.replace(/<\/script/gi, "<\\/script")}<\/script>
+` : ""
+    );
+    if (unreadable.length) {
+      warnings.push(
+        `${unreadable.length} hoja(s) de estilo no se pudieron leer; sus estilos llegan como ajustes medidos (sin @media ni :hover)`
+      );
+    }
+    return {
+      html,
+      css,
+      js,
+      singleFile,
+      baseName: slug(blockName(root)),
+      stats: {
+        elements: origs.length,
+        rules: ctx.kept,
+        totalRules: ctx.total,
+        sheets: sources.length,
+        unreadableSheets: unreadable,
+        verified,
+        patchedElements: patched.size,
+        patchedProps: patches.reduce((n, p) => n + Object.keys(p.props).length, 0),
+        fidelity,
+        widgets: Array.from(widgets),
+        warnings
+      }
+    };
+  }
+  var crcTable = null;
+  function crc32(bytes) {
+    if (!crcTable) {
+      crcTable = new Uint32Array(256);
+      for (let n = 0; n < 256; n++) {
+        let c = n;
+        for (let k = 0; k < 8; k++) c = c & 1 ? 3988292384 ^ c >>> 1 : c >>> 1;
+        crcTable[n] = c >>> 0;
+      }
+    }
+    let crc = 4294967295;
+    for (let i = 0; i < bytes.length; i++) crc = crcTable[(crc ^ bytes[i]) & 255] ^ crc >>> 8;
+    return (crc ^ 4294967295) >>> 0;
+  }
+  function buildZip(files) {
+    const enc = new TextEncoder();
+    const now = /* @__PURE__ */ new Date();
+    const dosTime = now.getHours() << 11 | now.getMinutes() << 5 | now.getSeconds() >> 1;
+    const dosDate = now.getFullYear() - 1980 << 9 | now.getMonth() + 1 << 5 | now.getDate();
+    const locals = [];
+    const centrals = [];
+    let offset = 0;
+    for (const f of files) {
+      const name = enc.encode(f.name);
+      const data = enc.encode(f.content);
+      const crc = crc32(data);
+      const local = new Uint8Array(30 + name.length + data.length);
+      const lv = new DataView(local.buffer);
+      lv.setUint32(0, 67324752, true);
+      lv.setUint16(4, 20, true);
+      lv.setUint16(6, 2048, true);
+      lv.setUint16(8, 0, true);
+      lv.setUint16(10, dosTime, true);
+      lv.setUint16(12, dosDate, true);
+      lv.setUint32(14, crc, true);
+      lv.setUint32(18, data.length, true);
+      lv.setUint32(22, data.length, true);
+      lv.setUint16(26, name.length, true);
+      lv.setUint16(28, 0, true);
+      local.set(name, 30);
+      local.set(data, 30 + name.length);
+      locals.push(local);
+      const central = new Uint8Array(46 + name.length);
+      const cv = new DataView(central.buffer);
+      cv.setUint32(0, 33639248, true);
+      cv.setUint16(4, 20, true);
+      cv.setUint16(6, 20, true);
+      cv.setUint16(8, 2048, true);
+      cv.setUint16(10, 0, true);
+      cv.setUint16(12, dosTime, true);
+      cv.setUint16(14, dosDate, true);
+      cv.setUint32(16, crc, true);
+      cv.setUint32(20, data.length, true);
+      cv.setUint32(24, data.length, true);
+      cv.setUint16(28, name.length, true);
+      cv.setUint32(42, offset, true);
+      central.set(name, 46);
+      centrals.push(central);
+      offset += local.length;
+    }
+    const centralSize = centrals.reduce((n, c) => n + c.length, 0);
+    const end = new Uint8Array(22);
+    const ev = new DataView(end.buffer);
+    ev.setUint32(0, 101010256, true);
+    ev.setUint16(8, files.length, true);
+    ev.setUint16(10, files.length, true);
+    ev.setUint32(12, centralSize, true);
+    ev.setUint32(16, offset, true);
+    const out = new Uint8Array(offset + centralSize + 22);
+    let p = 0;
+    for (const part of [...locals, ...centrals, end]) {
+      out.set(part, p);
+      p += part.length;
+    }
+    return out;
+  }
+  function exportFiles(res) {
+    const files = [
+      { name: "index.html", content: res.html },
+      { name: "styles.css", content: res.css }
+    ];
+    if (res.js) files.push({ name: "script.js", content: res.js });
+    return files;
+  }
+
   // packages/contracts/src/payload-stats.ts
   var HEAVY_PAYLOAD = {
     /** Más de esto: aviso antes de enviar */
@@ -3397,6 +4614,13 @@
     }
   };
   window.__codeToFigmaPayload = { measurePayload, heavyPayloadReasons, withoutImages, formatBytes };
+  window.__codeToFigmaExportHtml = async function(rootElement, opts = {}) {
+    if (!rootElement || rootElement.nodeType !== Node.ELEMENT_NODE) return null;
+    const fetchCss = opts.fetchCss || window.__codeToFigmaFetchCss;
+    const res = await exportBlock(rootElement, { ...opts, fetchCss });
+    return { ...res, files: exportFiles(res) };
+  };
+  window.__codeToFigmaZip = buildZip;
   if (!window.__codeToFigmaReadyLogged) {
     window.__codeToFigmaReadyLogged = true;
     console.log("[CodeToFigma] Extractor Engine v2.1 (Geometric Direction & Centered Stacking) ready.");

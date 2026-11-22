@@ -194,6 +194,37 @@ async function fetchImageBase64(url, tabUrl) {
   return `data:${mime};base64,${base64}`;
 }
 
+/** Tope de una hoja de estilo descargada para "Exportar HTML" */
+const MAX_STYLESHEET_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Texto de una hoja de estilo de otro dominio ("Exportar HTML"): desde la página el navegador no deja
+ * leer sus reglas. Misma política que las imágenes (sin red local desde webs públicas, cookies solo
+ * del mismo sitio).
+ */
+async function fetchStylesheetText(url, tabUrl) {
+  if (!url) throw new Error('URL no proporcionada');
+  const policy = imageFetchPolicy(url, tabUrl);
+  if (!policy.allowed) throw new Error(`Descarga bloqueada: ${policy.reason}`);
+  let res;
+  try {
+    res = await fetch(url, { credentials: policy.credentials ? 'include' : 'omit' });
+  } catch (netErr) {
+    if (!(await hasAllSites())) {
+      openPermissionPage(false);
+      throw new Error('Sin permiso para descargar hojas de estilo de otros sitios: concédelo en "Code to Figma — Permisos"');
+    }
+    throw netErr;
+  }
+  if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+  const type = (res.headers.get('content-type') || '').toLowerCase();
+  // Una página de error o de login en lugar de la hoja: no es CSS
+  if (/text\/html|application\/json|image\//.test(type)) throw new Error(`Respuesta no es CSS (${type})`);
+  const text = await res.text();
+  if (text.length > MAX_STYLESHEET_BYTES) throw new Error('Hoja de estilo demasiado grande');
+  return text;
+}
+
 function guessMimeFromUrl(url) {
   const ext = (url.split('?')[0].split('#')[0].split('.').pop() || '').toLowerCase();
   return (
@@ -461,6 +492,11 @@ const MESSAGE_HANDLERS = {
   FETCH_IMAGE_AS_BASE64: (message, sender) => {
     const tabUrl = sender && sender.tab ? sender.tab.url : undefined;
     return fetchImageBase64(message.url, tabUrl).then(base64 => ({ base64 }));
+  },
+
+  FETCH_STYLESHEET: (message, sender) => {
+    const tabUrl = sender && sender.tab ? sender.tab.url : undefined;
+    return fetchStylesheetText(message.url, tabUrl).then(text => ({ text }));
   },
 };
 

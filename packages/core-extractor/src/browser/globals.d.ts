@@ -14,4 +14,10 @@ interface Window {
   __codeToFigmaCaptureRegions?: (
     rects: Array<{ left: number; top: number; width: number; height: number }>,
   ) => Promise<Array<string | null>>;
+  /** Exportar el bloque como HTML + CSS + JS (export-html.ts) */
+  __codeToFigmaExportHtml?: (element: Element, opts?: any) => Promise<any>;
+  /** Bytes de un .zip "store" con los archivos dados */
+  __codeToFigmaZip?: (files: Array<{ name: string; content: string }>) => Uint8Array;
+  /** Lo define content.js: descarga el texto de una hoja de estilo de otro dominio */
+  __codeToFigmaFetchCss?: (url: string) => Promise<string | null>;
 }

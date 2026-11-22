@@ -256,6 +256,12 @@ export const MESSAGE_CATALOG = {
     route: 'content → service worker',
     description: 'Descargar una imagen con los permisos de la extensión',
   },
+  FETCH_STYLESHEET: {
+    channel: 'extension',
+    kind: 'query',
+    route: 'content → service worker',
+    description: 'Texto de una hoja de estilo de otro dominio ("Exportar HTML")',
+  },
   CHECK_FIGMA_STATUS: {
     channel: 'extension',
     kind: 'query',

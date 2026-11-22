@@ -5,12 +5,15 @@
  * Expone:
  *  - window.__codeToFigmaExtract(element) → { rootNode, tokens }
  *  - window.__codeToFigmaPayload: medir el peso de una extracción y quitarle las imágenes (fase 5.1)
+ *  - window.__codeToFigmaExportHtml(element) → HTML + CSS + JS del bloque (export-html.ts)
+ *  - window.__codeToFigmaZip(files) → bytes de un .zip con esos archivos
  *  En la extensión corre en el mundo aislado del content script: la página no lo ve.
  */
 import { extractNodeTree } from './extract-node';
 import { resolvePendingImages } from './images';
 import { extractDesignTokens } from './tokens';
 import { emulateState, type InteractionState } from './states';
+import { buildZip, exportBlock, exportFiles, type ExportOptions } from './export-html';
 // Desde la fuente (no desde el paquete): solo funciones puras, sin arrastrar Zod al bundle
 import { formatBytes, heavyPayloadReasons, measurePayload, withoutImages } from '../../../contracts/src/payload-stats';
 
@@ -44,6 +47,19 @@ window.__codeToFigmaExtractState = async function (rootElement: Element, state: 
 };
 
 window.__codeToFigmaPayload = { measurePayload, heavyPayloadReasons, withoutImages, formatBytes };
+
+/**
+ * El bloque como HTML + CSS + JS que funciona fuera de la página. Las hojas de otro dominio se
+ * descargan con window.__codeToFigmaFetchCss (lo define content.js: va por el service worker).
+ */
+window.__codeToFigmaExportHtml = async function (rootElement: Element, opts: ExportOptions = {}) {
+  if (!rootElement || rootElement.nodeType !== Node.ELEMENT_NODE) return null;
+  const fetchCss = opts.fetchCss || window.__codeToFigmaFetchCss;
+  const res = await exportBlock(rootElement, { ...opts, fetchCss });
+  return { ...res, files: exportFiles(res) };
+};
+
+window.__codeToFigmaZip = buildZip;
 
 // Cada clic en el ícono vuelve a cargar este archivo: el aviso solo la primera vez (QA-6)
 if (!(window as any).__codeToFigmaReadyLogged) {

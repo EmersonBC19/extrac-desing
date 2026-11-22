@@ -287,6 +287,12 @@ export declare const MESSAGE_CATALOG: {
         readonly route: "content → service worker";
         readonly description: "Descargar una imagen con los permisos de la extensión";
     };
+    readonly FETCH_STYLESHEET: {
+        readonly channel: "extension";
+        readonly kind: "query";
+        readonly route: "content → service worker";
+        readonly description: "Texto de una hoja de estilo de otro dominio (\"Exportar HTML\")";
+    };
     readonly CHECK_FIGMA_STATUS: {
         readonly channel: "extension";
         readonly kind: "query";

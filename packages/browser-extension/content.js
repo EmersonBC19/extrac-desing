@@ -46,6 +46,7 @@
     zap: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`,
     layers: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`,
     copy: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`,
+    code: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`,
     close: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
     arrowUp: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><polyline points="18 15 12 9 6 15"/></svg>`,
     arrowDown: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><polyline points="6 9 12 15 18 9"/></svg>`,
@@ -219,6 +220,8 @@
       // Hook usado por extractor.js para recortar desde una captura de pantalla
       // los medios que el DOM no entrega (video cross-origin, WebGL, iframes, imágenes bloqueadas).
       window.__codeToFigmaCaptureRegions = this.captureRegions.bind(this);
+      // "Exportar HTML": hojas de estilo de otro dominio (el navegador no deja leerlas desde la página)
+      window.__codeToFigmaFetchCss = url => this.fetchStylesheet(url);
       this.showToast(
         `${ICONS.zap}Code to Figma activo`,
         `Clic: Seleccionar · ${/Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '') ? '⌘' : 'Ctrl'}+Clic: Multi-selección · F: Congelar pantalla`,
@@ -841,6 +844,12 @@
           flex-wrap: wrap;
           gap: 8px;
           justify-content: flex-end;
+        }
+        .heavy-dialog.export-dialog {
+          border-color: rgba(162, 89, 255, 0.5);
+        }
+        .heavy-dialog.export-dialog ul {
+          color: #cbd5e1;
         }
       `;
 
@@ -1553,6 +1562,7 @@
           <button class="btn-figma" id="__btn_send_figma" title="Extraer y enviar este diseño directamente a Figma">${ICONS.figma} Enviar a Figma <span class="hud-kbd" style="color:#fff;background:rgba(255,255,255,0.2);border-color:transparent;">↵</span></button>
           <button class="btn-secondary" id="__btn_freeze" title="Pausa animaciones y menús desplegables para inspeccionarlos">${ICONS.snowflake} ${this.isFrozen ? 'Descongelar' : 'Congelar'} <span class="hud-kbd">F</span></button>
           <button class="btn-secondary" id="__btn_copy_json" title="Copiar el JSON exportado al portapapeles">${ICONS.copy} Copiar JSON</button>
+          <button class="btn-secondary" id="__btn_export_html" title="Exportar este bloque como HTML + CSS + JS que funciona fuera de la página">${ICONS.code} Exportar HTML</button>
           <button class="btn-secondary" id="__btn_cancel" title="Cancelar selección (Esc)">${ICONS.close} Cancelar <span class="hud-kbd">Esc</span></button>
         </div>
       `;
@@ -1581,6 +1591,18 @@
       this.hud.style.left = `${Math.round(hudLeft)}px`;
       this.hud.style.display = 'block';
 
+      // La altura estimada se queda corta en cuanto los botones pasan a otra línea (ventanas bajas o
+      // estrechas): con la medida real el HUD entero queda dentro de la ventana
+      const realH = this.hud.offsetHeight || hudEstHeight;
+      const realW = this.hud.offsetWidth || hudEstWidth;
+      if (realH !== hudEstHeight || realW !== hudEstWidth) {
+        const maxTop = Math.max(12, vpH - realH - 12);
+        const top = this.userCustomPos ? Math.min(hudTop, maxTop) : Math.max(12, vpH - realH - 24);
+        const left = Math.max(12, Math.min(vpW - realW - 12, this.userCustomPos ? hudLeft : (vpW - realW) / 2));
+        this.hud.style.top = `${Math.round(Math.min(top, maxTop))}px`;
+        this.hud.style.left = `${Math.round(left)}px`;
+      }
+
       // Attach Drag & Drop listener to header
       const header = this.hud.querySelector('#__hud_header');
       if (header) {
@@ -1591,6 +1613,7 @@
       const btnSend = this.hud.querySelector('#__btn_send_figma');
       const btnFreeze = this.hud.querySelector('#__btn_freeze');
       const btnCopy = this.hud.querySelector('#__btn_copy_json');
+      const btnExportHtml = this.hud.querySelector('#__btn_export_html');
       const btnCancel = this.hud.querySelector('#__btn_cancel');
       const chkComponent = this.hud.querySelector('#__chk_component');
       const chkHover = this.hud.querySelector('#__chk_hover');
@@ -1607,6 +1630,7 @@
           this.renderHUD();
         });
       if (btnCopy) btnCopy.addEventListener('click', () => this.copyJson());
+      if (btnExportHtml) btnExportHtml.addEventListener('click', () => this.exportHtml());
       if (btnCancel) btnCancel.addEventListener('click', () => this.cancelElevation());
 
       if (chkComponent) {
@@ -2016,6 +2040,145 @@
       } catch (err) {
         console.error(err);
       }
+    }
+
+    /**
+     * Exportar el bloque como HTML + CSS + JS (extractor: export-html.ts). Se mide como al enviar a
+     * Figma (sin la elevación, con lo perezoso cargado y las animaciones de aparición congeladas).
+     */
+    async exportHtml() {
+      if (this.selectedElements.length === 0) return;
+      if (!extensionAlive()) return this.retire();
+      if (!window.__codeToFigmaExportHtml) {
+        this.showToast(`${ICONS.warning} Exportar HTML`, 'Motor de extracción no cargado en la página. Recárgala.', 4500);
+        return;
+      }
+      if (this.selectedElements.length > 1) {
+        this.showToast(
+          `${ICONS.info} Exportar HTML`,
+          'Exporta un solo bloque cada vez: elige su contenedor común con ↑.',
+          4500,
+        );
+        return;
+      }
+      const btn = this.hud.querySelector('#__btn_export_html');
+      const label = `${ICONS.code} Exportar HTML`;
+      const setBtn = html => {
+        if (btn) btn.innerHTML = html;
+      };
+      if (btn) btn.disabled = true;
+      setBtn(`${ICONS.spinner} Exportando…`);
+      try {
+        let res;
+        const relift = await this.suspendLift();
+        try {
+          await this.prepareForExtraction(this.selectedElements, pct => setBtn(`${ICONS.spinner} Recorriendo… ${pct}%`));
+          setBtn(`${ICONS.spinner} Copiando reglas y verificando…`);
+          res = await window.__codeToFigmaExportHtml(this.selectedElements[0]);
+        } finally {
+          this.restoreReveals();
+          if (this.isElevated) relift();
+        }
+        if (!res) throw new Error('No se pudo exportar el bloque');
+        setBtn(label);
+        const choice = await this.askExportFormat(res);
+        if (choice === 'zip') {
+          const zip = window.__codeToFigmaZip(res.files);
+          this.downloadFile(zip, `${res.baseName}.zip`, 'application/zip');
+          const extra = res.js ? ' y script.js' : '';
+          this.showToast(`${ICONS.check} ZIP descargado`, `${res.baseName}.zip: index.html, styles.css${extra}.`, 4000);
+        } else if (choice === 'html') {
+          this.downloadFile(res.singleFile, `${res.baseName}.html`, 'text/html');
+          this.showToast(`${ICONS.check} HTML descargado`, `${res.baseName}.html (CSS y JS dentro del archivo).`, 4000);
+        } else if (choice === 'copy') {
+          await navigator.clipboard.writeText(res.singleFile);
+          this.showToast(`${ICONS.copy} HTML copiado`, 'Un solo archivo con el CSS y el JS dentro, listo para pegar.', 3500);
+        }
+      } catch (err) {
+        console.error('[CodeToFigma] Error exportando HTML:', err);
+        this.showToast(`${ICONS.warning} Error al exportar HTML`, String((err && err.message) || err), 5500);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = label;
+        }
+      }
+    }
+
+    /** Resumen de la exportación y formato. Resuelve 'zip' | 'html' | 'copy' | 'cancel' */
+    askExportFormat(res) {
+      const s = res.stats;
+      const kb = n => `${Math.max(1, Math.round(n / 1024)).toLocaleString('es')} KB`;
+      const widgetNames = { tabs: 'pestañas', disclosure: 'desplegables' };
+      const widgets = Array.from(
+        new Set(s.widgets.map(w => widgetNames[w] || (w.startsWith('bootstrap') ? 'componentes de Bootstrap' : w))),
+      );
+      const fidelity = s.verified
+        ? `Verificado en esta página: ${String(s.fidelity).replace('.', ',')} % de los elementos en su sitio` +
+          (s.patchedElements ? ` · ${s.patchedElements} con ajustes medidos` : '')
+        : 'Sin verificar';
+      const notes = [
+        widgets.length ? `JS incluido para: ${widgets.join(', ')}.` : 'Sin interacciones estándar que activar con JS.',
+        ...s.warnings,
+      ];
+      return new Promise(resolve => {
+        const backdrop = document.createElement('div');
+        backdrop.className = 'heavy-backdrop';
+        backdrop.innerHTML = `
+          <div class="heavy-dialog export-dialog" role="dialog" aria-modal="true" aria-labelledby="__export_title">
+            <h3 id="__export_title">${ICONS.code} Exportar HTML</h3>
+            <p>"${escapeHtml(res.baseName)}": ${s.elements.toLocaleString('es')} elementos y ${s.rules.toLocaleString('es')} reglas CSS de la página (de ${s.totalRules.toLocaleString('es')}), con sus @media, :hover y animaciones.</p>
+            <ul>${notes.map(n => `<li>${escapeHtml(n)}</li>`).join('')}</ul>
+            <div class="heavy-stats">${escapeHtml(fidelity)} · ${kb(res.singleFile.length)}</div>
+            <div class="heavy-actions">
+              <button class="btn-secondary" data-choice="cancel">Cancelar</button>
+              <button class="btn-secondary" data-choice="copy">${ICONS.copy} Copiar HTML</button>
+              <button class="btn-secondary" data-choice="html">HTML único</button>
+              <button class="btn-figma" data-choice="zip">ZIP (HTML + CSS + JS)</button>
+            </div>
+          </div>`;
+        const close = choice => {
+          this.activeDialog = null;
+          backdrop.remove();
+          resolve(choice);
+        };
+        backdrop.addEventListener('click', e => {
+          const target = e.target.closest ? e.target.closest('[data-choice]') : null;
+          if (target) close(target.getAttribute('data-choice'));
+          else if (e.target === backdrop) close('cancel');
+        });
+        this.activeDialog = { cancel: () => close('cancel') };
+        this.shadow.appendChild(backdrop);
+        const primary = backdrop.querySelector('[data-choice="zip"]');
+        if (primary) primary.focus();
+      });
+    }
+
+    /** Descarga un archivo generado (texto o bytes) sin pasar por ningún servidor */
+    downloadFile(data, filename, mime) {
+      const url = URL.createObjectURL(new Blob([data], { type: mime }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.style.display = 'none';
+      (document.body || document.documentElement).appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    }
+
+    /** Texto de una hoja de estilo de otro dominio, descargada por el service worker (o null) */
+    fetchStylesheet(url) {
+      return new Promise(resolve => {
+        if (!extensionAlive()) return resolve(null);
+        try {
+          chrome.runtime.sendMessage({ type: 'FETCH_STYLESHEET', url }, res =>
+            resolve(chrome.runtime.lastError || !res || !res.success ? null : res.text),
+          );
+        } catch (_e) {
+          resolve(null);
+        }
+      });
     }
 
     onKeyDown(e) {

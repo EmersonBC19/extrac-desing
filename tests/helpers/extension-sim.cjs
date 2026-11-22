@@ -49,6 +49,15 @@ async function prepareExtensionSim(page) {
       return { success: false, error: String(e) };
     }
   });
+  // Hojas de estilo de otro dominio: el service worker las descarga con sus permisos (FETCH_STYLESHEET)
+  await page.exposeFunction('__nodeFetchText', async u => {
+    try {
+      const r = await fetch(u);
+      return r.ok ? await r.text() : null;
+    } catch (_e) {
+      return null;
+    }
+  });
   await page.exposeFunction(
     '__nodeShot',
     async () => 'data:image/png;base64,' + (await page.screenshot()).toString('base64'),
@@ -69,6 +78,7 @@ async function injectExtension(page) {
       else if (m.type === 'CAPTURE_REGIONS') window.__bgCapture(0, m.rects, m.viewportWidth).then(crops => cb({ success: true, crops }), e => cb({ success: false, error: String(e) }));
       else cb && cb({ success: false });
     } } };
+    window.__codeToFigmaFetchCss = (url) => window.__nodeFetchText(url);
     window.__codeToFigmaCaptureRegions = (rects) => new Promise(res => chrome.runtime.sendMessage({ type: 'CAPTURE_REGIONS', rects, viewportWidth: innerWidth }, r => res(r.crops)));`;
   // evaluate + eval indirecto: funciona aunque el sitio tenga CSP estricta
   await page.evaluate(code => (0, eval)(code), env);
@@ -100,6 +110,25 @@ async function extract(page, selectorJs, opts = {}) {
       return { rootNode: res.rootNode, tokens: res.tokens, stats };
     },
     { selectorJs, prescroll: !!opts.prescroll, normalize: opts.normalize !== false },
+  );
+}
+
+/**
+ * Exporta `selectorJs` como HTML + CSS + JS (botón "Exportar HTML" de la extensión).
+ * opts.noFetch: sin descarga de hojas de otro dominio (quedan ilegibles)
+ */
+async function exportHtml(page, selectorJs, opts = {}) {
+  await injectExtension(page);
+  return page.evaluate(
+    async ({ selectorJs, noFetch }) => {
+      const el = (0, eval)(selectorJs);
+      if (!el) throw new Error('Selector sin resultado: ' + selectorJs);
+      const fetchCss = noFetch ? async () => null : undefined;
+      const res = await window.__codeToFigmaExportHtml(el, { fetchCss });
+      const zip = Array.from(window.__codeToFigmaZip(res.files));
+      return { ...res, zip };
+    },
+    { selectorJs, noFetch: !!opts.noFetch },
   );
 }
 
@@ -137,4 +166,4 @@ async function imageDimensions(page, root) {
   );
 }
 
-module.exports = { ROOT, read, injectExtension, extract, flatten, imageDimensions, prepareExtensionSim };
+module.exports = { ROOT, read, injectExtension, extract, exportHtml, flatten, imageDimensions, prepareExtensionSim };

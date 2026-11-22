@@ -80,6 +80,16 @@ El Hub es un programa local ligero que comunica la extensión del navegador con 
 5. Presiona **Enter** o pulsa **Enviar a Figma**.
 6. ¡Listo! En segundos aparecerá en tu lienzo de Figma reproducido con **Auto Layout nativo, textos reales, variantes y variables de color**.
 
+### Exportar como HTML + CSS + JS
+
+Con el bloque seleccionado, pulsa **Exportar HTML**. La extensión copia las reglas CSS reales de la página que usa ese bloque (incluidas las de móvil y los efectos al pasar el ratón), comprueba que la copia se vea igual y te deja elegir:
+
+* **ZIP (HTML + CSS + JS)**: `index.html`, `styles.css` y, si hay pestañas o desplegables, `script.js`.
+* **HTML único**: un solo archivo con todo dentro.
+* **Copiar HTML**: al portapapeles, para pegarlo donde quieras.
+
+El diálogo indica qué porcentaje de los elementos quedó exactamente en su sitio. El JavaScript propio del sitio (carruseles a medida, datos del servidor…) no se copia; las pestañas, acordeones y menús estándar sí funcionan.
+
 ---
 
 ## Solución de Problemas Frecuentes

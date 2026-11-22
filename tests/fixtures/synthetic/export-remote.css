@@ -1,0 +1,2 @@
+.card .remote { color: rgb(200, 0, 100); text-decoration: underline; border: var(--rbw, 1px) dashed currentColor; border-width: 0 0 3px; }
+.remote-unused { color: blue; }

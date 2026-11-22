@@ -15,7 +15,7 @@ import { resolvePendingImages } from './images';
 import { extractDesignTokens } from './tokens';
 import { emulateState, type InteractionState } from './states';
 import { buildZip, exportBlock, exportFiles, type ExportOptions } from './export-html';
-import { captureVariants, type CaptureOptions } from './responsive';
+import { captureVariants, extractAtWidth, type CaptureOptions } from './responsive';
 // Desde la fuente (no desde el paquete): solo funciones puras, sin arrastrar Zod al bundle
 import { formatBytes, heavyPayloadReasons, measurePayload, withoutImages } from '../../../contracts/src/payload-stats';
 
@@ -62,6 +62,12 @@ window.__codeToFigmaExportHtml = async function (rootElement: Element, opts: Exp
 };
 
 window.__codeToFigmaZip = buildZip;
+
+/** QA de diseño: el bloque con una ventana del ancho del frame de Figma (Función B) */
+window.__codeToFigmaExtractAtWidth = async function (rootElement: Element, width: number, opts: CaptureOptions) {
+  if (!rootElement || rootElement.nodeType !== Node.ELEMENT_NODE) return null;
+  return extractAtWidth(rootElement, width, { fetchCss: window.__codeToFigmaFetchCss, ...opts });
+};
 
 /** Breakpoints y claro/oscuro: variantes del bloque para Figma (Función A) */
 window.__codeToFigmaCaptureVariants = async function (rootElement: Element, opts: CaptureOptions) {

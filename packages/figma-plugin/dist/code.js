@@ -731,8 +731,8 @@
   function uint8ArrayToBase64url(bytes) {
     return uint8ArrayToBase64(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
   }
-  function hexToUint8Array(hex2) {
-    const cleanHex = hex2.replace(/^0x/, "");
+  function hexToUint8Array(hex3) {
+    const cleanHex = hex3.replace(/^0x/, "");
     if (cleanHex.length % 2 !== 0) {
       throw new Error("Invalid hex string length");
     }
@@ -6393,6 +6393,11 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     board: boolean2().optional(),
     /** Estados extra del mismo componente (fase 6.1): Hover, Focus… → variantes State=… */
     states: array(object({ name: string2().min(1).max(40), rootNode: unknown() }).passthrough()).max(4).optional(),
+    /** QA de diseño (Función B): comparar este bloque con un frame de Figma en lugar de dibujarlo */
+    compare: object({
+      targetNodeId: string2().min(1).max(200),
+      width: number2().positive().max(1e4).optional()
+    }).passthrough().optional(),
     /** Breakpoints y claro/oscuro (Función A): variantes Breakpoint=… y Variables Light/Dark */
     responsive: object({
       variants: array(
@@ -6448,6 +6453,13 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
   // packages/contracts/src/messages.ts
   var MAX_CHUNKS = 256;
   var MAX_CHUNK_CHARS = 1024 * 1024;
+  var FigmaSelectionSchema = object({
+    id: string2().max(200),
+    name: string2().max(1e3),
+    type: string2().max(40),
+    width: number2().finite().nonnegative(),
+    height: number2().finite().nonnegative()
+  }).passthrough();
   var RegisterSchema = object({
     type: _enum(["REGISTER_CLIENT", "REGISTER"]),
     clientType: string2().max(64).optional(),
@@ -6484,7 +6496,14 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       timings: RenderTimingsSchema.optional(),
       fontSubstitutions: FontSubstitutionsSchema.optional()
     }).passthrough(),
-    object({ type: literal("RENDER_ERROR"), error: string2().max(5e3).optional() }).passthrough()
+    object({ type: literal("RENDER_ERROR"), error: string2().max(5e3).optional() }).passthrough(),
+    object({ type: literal("GET_FIGMA_SELECTION"), requestId: string2().max(64).optional() }).passthrough(),
+    object({
+      type: literal("FIGMA_SELECTION"),
+      requestId: string2().max(64).optional(),
+      selection: FigmaSelectionSchema.nullable().optional(),
+      error: string2().max(1e3).optional()
+    }).passthrough()
   ]);
 
   // packages/contracts/src/logger.ts
@@ -7625,19 +7644,19 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     let col = 0;
     for (const g of palette) {
       try {
-        const hex2 = boardColorKey({ ...g.color, a: g.alpha });
+        const hex3 = boardColorKey({ ...g.color, a: g.alpha });
         const base = { type: "SOLID", color: g.color, opacity: g.alpha };
         let paint = base;
         let bindNode;
         if (vars) {
-          const variable = colorVariable(vars.collection, vars.modeId, `Color/${hex2.replace("#", "")}`, g.color);
+          const variable = colorVariable(vars.collection, vars.modeId, `Color/${hex3.replace("#", "")}`, g.color);
           paint = boundSolidPaint(base, variable);
           bindNode = async (n) => {
             n.fills = [paint];
           };
         } else {
           const st = figma.createPaintStyle();
-          st.name = `${prefix}/Color/${hex2}`;
+          st.name = `${prefix}/Color/${hex3}`;
           st.paints = [base];
           bindNode = async (n) => {
             if (typeof n.setFillStyleIdAsync === "function") {
@@ -7662,7 +7681,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         stylesSec.appendChild(sw);
         sw.x = x;
         sw.y = yy;
-        const lbl = await boardLabel(`${hex2}
+        const lbl = await boardLabel(`${hex3}
 ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
         stylesSec.appendChild(lbl);
         lbl.x = x;
@@ -8916,6 +8935,711 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     return { root, afterPlace };
   }
 
+  // packages/figma-plugin/src/qa-compare.ts
+  var WEIGHTS = {
+    thin: 100,
+    hairline: 100,
+    extralight: 200,
+    ultralight: 200,
+    light: 300,
+    regular: 400,
+    normal: 400,
+    book: 400,
+    medium: 500,
+    semibold: 600,
+    demibold: 600,
+    bold: 700,
+    extrabold: 800,
+    ultrabold: 800,
+    heavy: 800,
+    black: 900
+  };
+  function styleWeight(style) {
+    const s = (style || "").toLowerCase().replace(/[\s_-]+/g, "").replace(/italic|oblique/g, "");
+    if (!s) return 400;
+    for (const [k, v] of Object.entries(WEIGHTS).sort((a, b) => b[0].length - a[0].length)) if (s.includes(k)) return v;
+    return 400;
+  }
+  function cssWeight(w) {
+    if (typeof w === "number") return w;
+    const n = parseInt(String(w || ""), 10);
+    if (n) return n;
+    return /bold/i.test(String(w)) ? 700 : 400;
+  }
+  function firstFamily(stack) {
+    return (stack || "").split(",")[0].trim().replace(/^['"]|['"]$/g, "");
+  }
+  function normText(t) {
+    return (t || "").normalize("NFC").replace(/\s+/g, " ").trim().toLowerCase();
+  }
+  function hex2(c) {
+    if (!c) return "—";
+    const h = [c.r, c.g, c.b].map(
+      (x) => Math.round(x * 255).toString(16).padStart(2, "0")
+    ).join("").toUpperCase();
+    return `#${h}${c.a < 0.995 ? ` ${Math.round(c.a * 100)} %` : ""}`;
+  }
+  function deltaE2(a, b) {
+    const lab = (c) => {
+      const lin = (v) => v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+      const [r, g, bl] = [lin(c.r), lin(c.g), lin(c.b)];
+      const x = (r * 0.4124 + g * 0.3576 + bl * 0.1805) / 0.95047;
+      const y = r * 0.2126 + g * 0.7152 + bl * 0.0722;
+      const z = (r * 0.0193 + g * 0.1192 + bl * 0.9505) / 1.08883;
+      const f = (t) => t > 8856e-6 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+      return [116 * f(y) - 16, 500 * (f(x) - f(y)), 200 * (f(y) - f(z))];
+    };
+    const [l1, a1, b1] = lab(a);
+    const [l2, a2, b2] = lab(b);
+    return Math.sqrt((l1 - l2) ** 2 + (a1 - a2) ** 2 + (b1 - b2) ** 2) + Math.abs(a.a - b.a) * 50;
+  }
+  var px = (n) => `${Math.round(n * 10) / 10} px`;
+  function emptyNode(id, kind, name, parent) {
+    return {
+      id,
+      kind,
+      name,
+      text: "",
+      rawText: "",
+      w: 0,
+      h: 0,
+      depth: parent ? parent.depth + 1 : 0,
+      parent,
+      children: [],
+      fill: null,
+      fillBound: false,
+      stroke: null,
+      radius: null,
+      autoLayout: false,
+      padding: null,
+      border: [0, 0, 0, 0],
+      gap: null,
+      font: null,
+      opacity: 1,
+      shadow: null,
+      textIds: /* @__PURE__ */ new Set(),
+      subtree: 1
+    };
+  }
+  function finishSubtree(n) {
+    n.subtree = 1 + n.children.reduce((s, c) => s + finishSubtree(c), 0);
+    return n.subtree;
+  }
+  var VECTOR_TYPES = /* @__PURE__ */ new Set(["VECTOR", "BOOLEAN_OPERATION", "STAR", "LINE", "ELLIPSE", "POLYGON"]);
+  function solidOf(paints) {
+    if (!Array.isArray(paints)) return null;
+    const p = paints.find((x) => x && x.type === "SOLID" && x.visible !== false);
+    if (!p) return null;
+    return {
+      color: { r: p.color.r, g: p.color.g, b: p.color.b, a: p.opacity !== void 0 ? p.opacity : 1 },
+      bound: !!(p.boundVariables && p.boundVariables.color)
+    };
+  }
+  function designModel(node2, parent = null) {
+    const type = String(node2.type);
+    const fills = Array.isArray(node2.fills) ? node2.fills : [];
+    const kind = type === "TEXT" ? "TEXT" : VECTOR_TYPES.has(type) ? "VECTOR" : fills.some((f) => f && f.type === "IMAGE" && f.visible !== false) ? "IMAGE" : "FRAME";
+    const q = emptyNode(String(node2.id), kind, String(node2.name || ""), parent);
+    q.w = Number(node2.width) || 0;
+    q.h = Number(node2.height) || 0;
+    q.opacity = typeof node2.opacity === "number" ? node2.opacity : 1;
+    const solid = solidOf(fills);
+    if (kind === "TEXT") {
+      q.rawText = String(node2.characters || "");
+      q.text = normText(q.rawText);
+      q.fill = solid ? solid.color : null;
+      q.fillBound = !!solid?.bound;
+      const fn = node2.fontName && node2.fontName.family ? node2.fontName : null;
+      const size = typeof node2.fontSize === "number" ? node2.fontSize : 0;
+      if (fn && size) {
+        const lh = node2.lineHeight;
+        const ls = node2.letterSpacing;
+        q.font = {
+          family: fn.family,
+          weight: styleWeight(fn.style),
+          size,
+          lineHeight: lh && lh.unit === "PIXELS" ? lh.value : lh && lh.unit === "PERCENT" ? size * lh.value / 100 : null,
+          letterSpacing: ls && ls.unit === "PIXELS" ? ls.value : ls && ls.unit === "PERCENT" ? size * ls.value / 100 : 0
+        };
+      }
+    } else {
+      q.fill = solid ? solid.color : null;
+      q.fillBound = !!solid?.bound;
+      const st = solidOf(node2.strokes);
+      const weight = typeof node2.strokeWeight === "number" ? node2.strokeWeight : Number(node2.strokeTopWeight) || 0;
+      if (st && weight > 0) q.stroke = { color: st.color, weight };
+      if (typeof node2.cornerRadius === "number") q.radius = node2.cornerRadius;
+      else if (typeof node2.topLeftRadius === "number") q.radius = node2.topLeftRadius;
+      q.autoLayout = !!node2.layoutMode && node2.layoutMode !== "NONE";
+      if (q.autoLayout) {
+        q.padding = [node2.paddingTop || 0, node2.paddingRight || 0, node2.paddingBottom || 0, node2.paddingLeft || 0];
+        q.gap = node2.primaryAxisAlignItems === "SPACE_BETWEEN" ? null : Number(node2.itemSpacing) || 0;
+      }
+      const sh = Array.isArray(node2.effects) ? node2.effects.find((e) => e && e.type === "DROP_SHADOW" && e.visible !== false) : null;
+      if (sh) q.shadow = { blur: sh.radius || 0, x: sh.offset?.x || 0, y: sh.offset?.y || 0 };
+    }
+    if (kind !== "TEXT" && kind !== "VECTOR" && Array.isArray(node2.children)) {
+      for (const c of node2.children) if (c && c.visible !== false) q.children.push(designModel(c, q));
+    }
+    if (!parent) finishSubtree(q);
+    return q;
+  }
+  var isSolid2 = (f) => !!f && (!f.type || f.type === "SOLID") && typeof f.r === "number";
+  var rgba2 = (f) => ({ r: f.r, g: f.g, b: f.b, a: f.a !== void 0 ? f.a : 1 });
+  function prodModel(node2, parent = null) {
+    const kind = node2.type === "TEXT" ? "TEXT" : node2.svgContent || node2.type === "SVG" || node2.type === "VECTOR" ? "VECTOR" : node2.imageData || node2.metadata?.imageOmitted ? "IMAGE" : "FRAME";
+    const q = emptyNode(String(node2.id), kind, String(node2.name || ""), parent);
+    const L = node2.layout || {};
+    q.w = Number(L.measuredWidth ?? (typeof L.width === "number" ? L.width : 0)) || 0;
+    q.h = Number(L.measuredHeight ?? (typeof L.height === "number" ? L.height : 0)) || 0;
+    const S = node2.styles || {};
+    q.opacity = typeof S.opacity === "number" ? S.opacity : 1;
+    const fill = (S.fills || []).find(isSolid2);
+    q.fill = fill ? rgba2(fill) : null;
+    if (kind === "TEXT" && node2.textData) {
+      const td = node2.textData;
+      q.rawText = String(td.characters || "");
+      q.text = normText(q.rawText);
+      const size = Number(td.fontSize) || 0;
+      q.font = {
+        family: firstFamily(td.fontFamily || td.fontStack || ""),
+        weight: cssWeight(td.fontWeight),
+        size,
+        lineHeight: typeof td.lineHeight === "number" && td.lineHeight > 0 ? td.lineHeight : null,
+        letterSpacing: Number(td.letterSpacing) || 0
+      };
+    } else {
+      const st = (S.strokes || [])[0];
+      if (st && st.width > 0) {
+        q.stroke = { color: rgba2(st), weight: st.width };
+        const bs = S.borderSides;
+        q.border = bs ? [bs.top || 0, bs.right || 0, bs.bottom || 0, bs.left || 0] : [st.width, st.width, st.width, st.width];
+      }
+      const cr = S.cornerRadius;
+      q.radius = typeof cr === "number" ? cr : Array.isArray(cr) ? cr[0] : null;
+      q.autoLayout = L.mode === "HORIZONTAL" || L.mode === "VERTICAL";
+      if (q.autoLayout) {
+        const p = L.padding || {};
+        q.padding = [p.top || 0, p.right || 0, p.bottom || 0, p.left || 0];
+        q.gap = L.primaryAxisAlignItems === "SPACE_BETWEEN" ? null : Number(L.itemSpacing) || 0;
+      }
+      const sh = (S.boxShadow || []).find((b) => b && !b.inset);
+      if (sh) q.shadow = { blur: sh.radius || 0, x: sh.offset?.x || 0, y: sh.offset?.y || 0 };
+      for (const c of node2.children || []) q.children.push(prodModel(c, q));
+    }
+    if (!parent) finishSubtree(q);
+    return q;
+  }
+  function flatten(n, out = []) {
+    out.push(n);
+    for (const c of n.children) flatten(c, out);
+    return out;
+  }
+  function textSimilarity(a, b) {
+    if (!a || !b) return 0;
+    if (a === b) return 1;
+    const wa = new Set(a.split(" "));
+    const wb = new Set(b.split(" "));
+    const inter = [...wa].filter((w) => wb.has(w)).length;
+    const jac = inter / (wa.size + wb.size - inter);
+    if (Math.max(a.length, b.length) > 24) return jac;
+    const m = a.length;
+    const n = b.length;
+    const dp = Array.from({ length: m + 1 }, (_, i) => [i, ...new Array(n).fill(0)]);
+    for (let j = 1; j <= n; j++) dp[0][j] = j;
+    for (let i = 1; i <= m; i++)
+      for (let j = 1; j <= n; j++)
+        dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    return Math.max(jac, 1 - dp[m][n] / Math.max(m, n));
+  }
+  function jaccard(a, b) {
+    if (!a.size || !b.size) return 0;
+    let inter = 0;
+    for (const x of a) if (b.has(x)) inter++;
+    return inter / (a.size + b.size - inter);
+  }
+  function sizeSimilarity(a, b) {
+    const r = (x, y) => x > 0 && y > 0 ? Math.min(x, y) / Math.max(x, y) : 0;
+    return (r(a.w, b.w) + r(a.h, b.h)) / 2;
+  }
+  function collectTextIds(n) {
+    for (const c of n.children) for (const id of collectTextIds(c)) n.textIds.add(id);
+    return n.textIds;
+  }
+  function matchTrees(D, P) {
+    const pairs = /* @__PURE__ */ new Map();
+    const used = /* @__PURE__ */ new Set();
+    const contentDiff = /* @__PURE__ */ new Set();
+    const pair = (d, p) => {
+      pairs.set(d, p);
+      used.add(p);
+    };
+    const dTexts = flatten(D).filter((n) => n.kind === "TEXT" && n.text);
+    const pTexts = flatten(P).filter((n) => n.kind === "TEXT" && n.text);
+    const queue = /* @__PURE__ */ new Map();
+    for (const p of pTexts) {
+      const q = queue.get(p.text) || [];
+      q.push(p);
+      queue.set(p.text, q);
+    }
+    let nextId = 0;
+    for (const d of dTexts) {
+      const p = queue.get(d.text)?.shift();
+      if (!p) continue;
+      pair(d, p);
+      d.textIds.add(nextId);
+      p.textIds.add(nextId++);
+    }
+    const candidates = [];
+    for (const d of dTexts) {
+      if (pairs.has(d)) continue;
+      for (const p of pTexts) {
+        if (used.has(p)) continue;
+        const s = textSimilarity(d.text, p.text);
+        if (s >= 0.5) candidates.push([s, d, p]);
+      }
+    }
+    candidates.sort((a, b) => b[0] - a[0]);
+    for (const [, d, p] of candidates) {
+      if (pairs.has(d) || used.has(p)) continue;
+      pair(d, p);
+      contentDiff.add(d);
+      d.textIds.add(nextId);
+      p.textIds.add(nextId++);
+    }
+    collectTextIds(D);
+    collectTextIds(P);
+    pair(D, P);
+    const dFrames = flatten(D).filter((n) => n !== D && n.kind !== "TEXT" && n.textIds.size > 0).sort((a, b) => a.textIds.size - b.textIds.size || b.depth - a.depth);
+    const pFrames = flatten(P).filter((n) => n !== P && n.kind !== "TEXT" && n.textIds.size > 0);
+    for (const d of dFrames) {
+      let best = null;
+      let bestScore = 0;
+      for (const p of pFrames) {
+        if (used.has(p)) continue;
+        const j = jaccard(d.textIds, p.textIds);
+        if (j < 0.5) continue;
+        const score = j * 10 + sizeSimilarity(d, p) - p.subtree * 1e-4;
+        if (score > bestScore) {
+          bestScore = score;
+          best = p;
+        }
+      }
+      if (best) pair(d, best);
+    }
+    const walk = (d) => {
+      const p = pairs.get(d);
+      if (p) {
+        const dKids = d.children.filter((c) => !pairs.has(c) && c.textIds.size === 0);
+        const pKids = p.children.filter((c) => !used.has(c) && c.textIds.size === 0);
+        let j = 0;
+        for (const dc of dKids) {
+          for (let k = j; k < pKids.length; k++) {
+            const pc = pKids[k];
+            const kindOk = dc.kind === pc.kind || dc.kind !== "TEXT" && pc.kind !== "TEXT";
+            if (kindOk && sizeSimilarity(dc, pc) >= 0.5) {
+              pair(dc, pc);
+              j = k + 1;
+              break;
+            }
+          }
+        }
+      }
+      for (const c of d.children) walk(c);
+    };
+    walk(D);
+    return { pairs, contentDiff, dTexts, pTexts };
+  }
+  var hasVisualBox = (n) => !!(n.fill && n.fill.a > 0.01) || !!n.stroke || n.kind === "IMAGE";
+  function labelOf(d, p) {
+    const n = d || p;
+    const parent = n.parent && n.parent.parent ? n.parent.name : "";
+    const name = n.kind === "TEXT" ? `«${n.rawText.slice(0, 40)}${n.rawText.length > 40 ? "…" : ""}»` : n.name;
+    return parent ? `${parent} › ${name}` : name;
+  }
+  function compareTrees(design, production, opts = {}) {
+    const D = designModel(design);
+    const P = prodModel(production);
+    const { pairs, contentDiff, dTexts, pTexts } = matchTrees(D, P);
+    const findings = [];
+    const add = (severity, category, d, p, message) => findings.push({ severity, category, designId: d?.id, prodId: p?.id, label: labelOf(d, p), message });
+    const varHex = opts.variableColors;
+    const outsideTokens = (c) => !!(varHex && varHex.size && c && !varHex.has(hex2({ ...c, a: 1 }).slice(1)));
+    const colorFinding = (what, d, p, dc, pc) => {
+      if (!dc || !pc) return;
+      const de = deltaE2(pc, dc);
+      if (de <= 2) return;
+      const token = outsideTokens(pc) ? " (no es ninguna Variable del archivo)" : "";
+      add(
+        de > 10 ? "alta" : "media",
+        "color",
+        d,
+        p,
+        `${what}: ${hex2(pc)} en producción${token}, ${hex2(dc)} en el diseño`
+      );
+    };
+    for (const [d, p] of pairs) {
+      if (d.kind === "TEXT" && p.kind === "TEXT") {
+        if (contentDiff.has(d)) {
+          add("info", "contenido", d, p, `Contenido distinto: «${p.rawText.slice(0, 60)}» en producción`);
+        }
+        const df = d.font;
+        const pf = p.font;
+        if (df && pf) {
+          const fam = df.family.toLowerCase() !== pf.family.toLowerCase();
+          const wt = df.weight !== pf.weight;
+          const sz = Math.abs(df.size - pf.size) > 0.5;
+          const lh = df.lineHeight != null && pf.lineHeight != null && Math.abs(df.lineHeight - pf.lineHeight) > 0.5;
+          if (fam || wt || sz || lh) {
+            const fmt = (f) => `${f.family} ${Math.round(f.size * 10) / 10}${f.lineHeight != null ? "/" + Math.round(f.lineHeight * 10) / 10 : ""} (${f.weight})`;
+            add(
+              fam || wt ? "alta" : "media",
+              "tipografía",
+              d,
+              p,
+              `Tipografía: ${fmt(pf)} en producción, ${fmt(df)} en el diseño`
+            );
+          }
+          if (Math.abs(df.letterSpacing - pf.letterSpacing) > 0.1) {
+            add(
+              "baja",
+              "tipografía",
+              d,
+              p,
+              `Espaciado entre letras: ${px(pf.letterSpacing)} en producción, ${px(df.letterSpacing)} en el diseño`
+            );
+          }
+        }
+        colorFinding("Color del texto", d, p, d.fill, p.fill);
+        continue;
+      }
+      if (d.kind === "TEXT" || p.kind === "TEXT") continue;
+      if (hasVisualBox(d) && hasVisualBox(p)) {
+        const dw = Math.abs(d.w - p.w);
+        const dh = Math.abs(d.h - p.h);
+        if (dw > 1 || dh > 1) {
+          const parts = [];
+          if (dw > 1) parts.push(`ancho ${px(p.w)} en producción, ${px(d.w)} en el diseño`);
+          if (dh > 1) parts.push(`alto ${px(p.h)} en producción, ${px(d.h)} en el diseño`);
+          add(Math.max(dw, dh) > 8 ? "alta" : "media", "tamaño", d, p, `Tamaño: ${parts.join("; ")}`);
+        }
+      }
+      if (d.autoLayout && p.autoLayout && d.padding && p.padding) {
+        const sides = ["superior", "derecho", "inferior", "izquierdo"];
+        const diff = d.padding.map((v, i) => Math.abs(v - p.padding[i]) > 1);
+        const prodCss = (i) => `${px(p.padding[i] - p.border[i])}${p.border[i] ? ` (+${px(p.border[i])} de borde)` : ""}`;
+        if (diff.some(Boolean)) {
+          const allSame = new Set(p.padding).size === 1 && new Set(d.padding).size === 1 && new Set(p.border).size === 1;
+          if (allSame)
+            add("media", "espaciado", d, p, `Padding: ${prodCss(0)} en producción, ${px(d.padding[0])} en el diseño`);
+          else
+            diff.forEach((x, i) => {
+              if (x)
+                add(
+                  "media",
+                  "espaciado",
+                  d,
+                  p,
+                  `Padding ${sides[i]}: ${prodCss(i)} en producción, ${px(d.padding[i])} en el diseño`
+                );
+            });
+        }
+        if (d.gap != null && p.gap != null && Math.abs(d.gap - p.gap) > 1 && d.children.length > 1) {
+          add(
+            "media",
+            "espaciado",
+            d,
+            p,
+            `Espacio entre elementos: ${px(p.gap)} en producción, ${px(d.gap)} en el diseño`
+          );
+        }
+      }
+      if (d.radius != null && p.radius != null && Math.abs(d.radius - p.radius) > 1 && (hasVisualBox(d) || hasVisualBox(p))) {
+        add("media", "radio", d, p, `Radio de esquina: ${px(p.radius)} en producción, ${px(d.radius)} en el diseño`);
+      }
+      if ((d.fill || p.fill) && d.kind !== "IMAGE" && p.kind !== "IMAGE") {
+        if (d.fill && p.fill) colorFinding("Relleno", d, p, d.fill, p.fill);
+        else if ((d.fill?.a ?? 0) > 0.01 || (p.fill?.a ?? 0) > 0.01) {
+          add("media", "color", d, p, `Relleno: ${hex2(p.fill)} en producción, ${hex2(d.fill)} en el diseño`);
+        }
+      }
+      if (d.stroke && p.stroke) {
+        colorFinding("Borde", d, p, d.stroke.color, p.stroke.color);
+        if (Math.abs(d.stroke.weight - p.stroke.weight) > 0.5) {
+          add(
+            "media",
+            "borde",
+            d,
+            p,
+            `Grosor de borde: ${px(p.stroke.weight)} en producción, ${px(d.stroke.weight)} en el diseño`
+          );
+        }
+      } else if (!!d.stroke !== !!p.stroke) {
+        add(
+          "media",
+          "borde",
+          d,
+          p,
+          d.stroke ? "Borde: el diseño tiene borde y producción no" : "Borde: producción tiene borde y el diseño no"
+        );
+      }
+      if (d.shadow || p.shadow) {
+        const a = p.shadow;
+        const b = d.shadow;
+        if (!a || !b)
+          add(
+            "baja",
+            "sombra",
+            d,
+            p,
+            b ? "Sombra: el diseño tiene sombra y producción no" : "Sombra: producción tiene sombra y el diseño no"
+          );
+        else if (Math.abs(a.blur - b.blur) > 2 || Math.abs(a.x - b.x) > 2 || Math.abs(a.y - b.y) > 2) {
+          add(
+            "baja",
+            "sombra",
+            d,
+            p,
+            `Sombra: desenfoque ${px(a.blur)} y desplazamiento ${a.x},${a.y} en producción; ${px(b.blur)} y ${b.x},${b.y} en el diseño`
+          );
+        }
+      }
+      if (Math.abs(d.opacity - p.opacity) > 0.05) {
+        add(
+          "baja",
+          "opacidad",
+          d,
+          p,
+          `Opacidad: ${Math.round(p.opacity * 100)} % en producción, ${Math.round(d.opacity * 100)} % en el diseño`
+        );
+      }
+    }
+    const matchedProd = new Set(pairs.values());
+    for (const d of dTexts)
+      if (!pairs.has(d))
+        add("alta", "faltante", d, null, `Falta en producción: el texto ${labelOf(d, null).split(" › ").pop()}`);
+    for (const p of pTexts)
+      if (!matchedProd.has(p))
+        add(
+          "media",
+          "sobrante",
+          null,
+          p,
+          `Está en producción pero no en el diseño: ${labelOf(null, p).split(" › ").pop()}`
+        );
+    for (const p of flatten(P)) {
+      if (p.kind === "IMAGE" && !matchedProd.has(p) && p.w * p.h >= 64)
+        add("media", "sobrante", null, p, "Imagen en producción que no está en el diseño");
+    }
+    const order = { alta: 0, media: 1, baja: 2, info: 3 };
+    findings.sort((a, b) => order[a.severity] - order[b.severity]);
+    const designNodes = flatten(D).length;
+    return {
+      findings,
+      pairs: [...pairs.entries()],
+      stats: {
+        designTexts: dTexts.length,
+        prodTexts: pTexts.length,
+        matchedTexts: dTexts.filter((d) => pairs.has(d)).length,
+        designNodes,
+        matchedNodes: pairs.size
+      }
+    };
+  }
+
+  // packages/figma-plugin/src/qa-run.ts
+  var QA_PREFIX = "QA · ";
+  var SEVERITY_COLOR = {
+    alta: { r: 0.86, g: 0.15, b: 0.15 },
+    media: { r: 0.85, g: 0.47, b: 0.02 },
+    baja: { r: 0.28, g: 0.4, b: 0.6 },
+    info: { r: 0.45, g: 0.45, b: 0.5 }
+  };
+  async function variableColors() {
+    const out = /* @__PURE__ */ new Set();
+    if (!variablesAvailable()) return out;
+    try {
+      const V = figma.variables;
+      const vars = typeof V.getLocalVariablesAsync === "function" ? await V.getLocalVariablesAsync("COLOR") : V.getLocalVariables("COLOR");
+      for (const v of vars) {
+        const values = v.valuesByMode || v._values || {};
+        for (const val of Object.values(values)) {
+          if (val && typeof val.r === "number") out.add(hex2({ r: val.r, g: val.g, b: val.b, a: 1 }).slice(1));
+        }
+      }
+    } catch (_e) {
+    }
+    return out;
+  }
+  function absolutePosition(node2) {
+    const bb = node2.absoluteBoundingBox;
+    if (bb && typeof bb.x === "number") return { x: bb.x, y: bb.y };
+    let x = 0;
+    let y = 0;
+    for (let n = node2; n && n.type !== "PAGE" && n.type !== "DOCUMENT"; n = n.parent) {
+      x += n.x || 0;
+      y += n.y || 0;
+    }
+    return { x, y };
+  }
+  function clearQaAnnotations(root) {
+    const walk = (n) => {
+      try {
+        if (Array.isArray(n.annotations) && n.annotations.some((a) => String(a.label || "").startsWith(QA_PREFIX))) {
+          n.annotations = n.annotations.filter((a) => !String(a.label || "").startsWith(QA_PREFIX));
+        }
+      } catch (_e) {
+      }
+      for (const c of n.children || []) walk(c);
+    };
+    walk(root);
+  }
+  async function annotate(findings) {
+    const byNode = /* @__PURE__ */ new Map();
+    for (const f of findings) {
+      if (!f.designId || f.severity === "info") continue;
+      const list = byNode.get(f.designId) || [];
+      list.push(f);
+      byNode.set(f.designId, list);
+    }
+    let count = 0;
+    for (const [id, list] of byNode) {
+      try {
+        const node2 = await figma.getNodeByIdAsync(id);
+        if (!node2 || !("annotations" in node2 || "children" in node2 || node2.type === "TEXT")) continue;
+        const label = QA_PREFIX + list.map((f) => f.message).join("\n");
+        const keep = Array.isArray(node2.annotations) ? node2.annotations : [];
+        node2.annotations = [...keep, { label }];
+        count++;
+      } catch (_e) {
+      }
+    }
+    return count;
+  }
+  async function reportFrame(title, subtitle, result) {
+    const bold = await loadFontSafely("Inter", 700);
+    const regular = await loadFontSafely("Inter", 400);
+    const frame = figma.createFrame();
+    frame.name = `${QA_PREFIX}${title}`;
+    frame.layoutMode = "VERTICAL";
+    frame.primaryAxisSizingMode = "AUTO";
+    frame.counterAxisSizingMode = "FIXED";
+    frame.resize(520, 100);
+    frame.paddingTop = frame.paddingBottom = 24;
+    frame.paddingLeft = frame.paddingRight = 24;
+    frame.itemSpacing = 10;
+    frame.cornerRadius = 12;
+    frame.fills = [{ type: "SOLID", color: { r: 1, g: 1, b: 1 } }];
+    frame.strokes = [{ type: "SOLID", color: { r: 0.88, g: 0.88, b: 0.9 } }];
+    const text = (chars, font, size, color) => {
+      const t = figma.createText();
+      t.fontName = font;
+      t.characters = chars;
+      t.fontSize = size;
+      t.fills = [{ type: "SOLID", color }];
+      frame.appendChild(t);
+      try {
+        t.textAutoResize = "HEIGHT";
+        t.resize(472, t.height || size * 1.4);
+      } catch (_e) {
+      }
+      return t;
+    };
+    text(`${QA_PREFIX}${title}`, bold, 18, { r: 0.1, g: 0.1, b: 0.12 });
+    text(subtitle, regular, 12, { r: 0.4, g: 0.4, b: 0.45 });
+    const shown = result.findings.slice(0, 80);
+    for (const f of shown) {
+      const row = text(
+        `● ${f.severity.toUpperCase()} · ${f.label}
+${f.message}`,
+        regular,
+        12,
+        SEVERITY_COLOR[f.severity]
+      );
+      row.name = f.severity;
+    }
+    if (result.findings.length > shown.length) {
+      text(`…y ${result.findings.length - shown.length} más`, regular, 12, SEVERITY_COLOR.info);
+    }
+    if (!result.findings.length)
+      text("Sin diferencias medibles: producción coincide con el diseño.", regular, 13, { r: 0.05, g: 0.55, b: 0.3 });
+    return frame;
+  }
+  async function runDesignQa(payload, post2, log2) {
+    const t0 = Date.now();
+    const targetId = String(payload.compare?.targetNodeId || "");
+    const target = await figma.getNodeByIdAsync(targetId);
+    if (!target || !("width" in target)) {
+      throw new Error("El frame de diseño ya no existe: selecciónalo de nuevo en Figma y vuelve a comparar");
+    }
+    const prodRoot = payload.rootNode;
+    const result = compareTrees(target, prodRoot, { variableColors: await variableColors() });
+    const viewport = Number(payload.compare?.viewportWidth) || 0;
+    if (viewport && Math.abs(viewport - target.width) > 2 && payload.compare?.fullWidth) {
+      result.findings.unshift({
+        severity: "info",
+        category: "ancho",
+        designId: target.id,
+        label: target.name,
+        message: `El diseño mide ${Math.round(target.width)} px y la web se capturó con una ventana de ${Math.round(viewport)} px`
+      });
+    }
+    clearQaAnnotations(target);
+    const annotated = await annotate(result.findings);
+    await prewarmFonts(prodRoot);
+    const pos = absolutePosition(target);
+    const prod = await buildFigmaNode({ ...prodRoot, layout: { ...prodRoot.layout, positioning: "AUTO", x: 0, y: 0 } });
+    const page = figma.currentPage;
+    const placed = [];
+    if (prod) {
+      prod.name = `Producción · ${target.name}`;
+      page.appendChild(prod);
+      prod.x = Math.round(pos.x + target.width + 120);
+      prod.y = Math.round(pos.y);
+      placed.push(prod);
+    }
+    const counts = { alta: 0, media: 0, baja: 0, info: 0 };
+    for (const f of result.findings) counts[f.severity]++;
+    const total = counts.alta + counts.media + counts.baja;
+    const s = result.stats;
+    const subtitle = `${total} diferencia${total === 1 ? "" : "s"} (${counts.alta} altas, ${counts.media} medias, ${counts.baja} bajas)` + (counts.info ? ` · ${counts.info} avisos` : "") + ` · ${s.matchedTexts}/${s.designTexts} textos y ${s.matchedNodes}/${s.designNodes} capas del diseño emparejadas`;
+    const report = await reportFrame(target.name, subtitle, result);
+    page.appendChild(report);
+    report.x = Math.round(prod ? prod.x + prod.width + 120 : pos.x + target.width + 120);
+    report.y = Math.round(pos.y);
+    placed.push(report);
+    post2({ type: "LOG", level: total ? "warn" : "success", message: `QA de "${target.name}": ${subtitle}` });
+    for (const f of result.findings.slice(0, 8)) {
+      post2({ type: "LOG", level: f.severity === "alta" ? "error" : "warn", message: `${f.label}: ${f.message}` });
+    }
+    if (annotated) post2({ type: "LOG", level: "info", message: `${annotated} capas del diseño anotadas (Dev Mode)` });
+    figma.viewport.scrollAndZoomIntoView([target, ...placed]);
+    page.selection = [report];
+    log2.info("QA de diseño", { diferencias: total, anotadas: annotated });
+    post2({
+      type: "RENDER_SUCCESS",
+      nodeId: report.id,
+      nodeIds: placed.map((n) => n.id),
+      name: report.name,
+      nodeCount: placed.length,
+      pageName: page.name,
+      width: Math.round(report.width),
+      height: Math.round(report.height),
+      nodeType: report.type,
+      durationMs: Date.now() - t0,
+      qa: {
+        total,
+        ...counts,
+        annotated,
+        matchedTexts: s.matchedTexts,
+        designTexts: s.designTexts,
+        matchedNodes: s.matchedNodes,
+        designNodes: s.designNodes,
+        top: result.findings.filter((f) => f.severity !== "info").slice(0, 5).map((f) => `${f.label}: ${f.message}`)
+      }
+    });
+  }
+
   // packages/figma-plugin/src/render-command.ts
   function textReport(root, payloadRoot) {
     let expected = 0;
@@ -8999,6 +9723,14 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     payload.rootNode = rootNode;
     const invalid = guardRenderPayload(payload);
     if (invalid) throw new Error(`Payload inválido: ${invalid}`);
+    if (payload.compare?.targetNodeId) {
+      try {
+        await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+      } catch (_e) {
+      }
+      await runDesignQa(payload, post2, log2);
+      return;
+    }
     let targetPage = figma.currentPage;
     if (payload.pageName) {
       if (typeof figma.loadAllPagesAsync === "function") {
@@ -9030,7 +9762,7 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     }
     if (payload.tokens?.colors && !createdTokensCount && typeof figma.createPaintStyle === "function") {
       const localStyles = typeof figma.getLocalPaintStylesAsync === "function" ? await figma.getLocalPaintStylesAsync() : figma.getLocalPaintStyles();
-      for (const [tokenName, rgba2] of Object.entries(payload.tokens.colors)) {
+      for (const [tokenName, rgba3] of Object.entries(payload.tokens.colors)) {
         try {
           const cleanName = "Token / " + tokenName.replace(/^--/, "");
           const existing = localStyles.find((s) => s.name === cleanName);
@@ -9039,8 +9771,8 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
           style.paints = [
             {
               type: "SOLID",
-              color: { r: rgba2.r, g: rgba2.g, b: rgba2.b },
-              opacity: rgba2.a !== void 0 ? rgba2.a : 1
+              color: { r: rgba3.r, g: rgba3.g, b: rgba3.b },
+              opacity: rgba3.a !== void 0 ? rgba3.a : 1
             }
           ];
           createdTokensCount++;
@@ -9361,6 +10093,18 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     },
     GET_PAGE_INFO: () => {
       post({ type: "PAGE_INFO", pageName: figma.currentPage.name });
+    },
+    // QA de diseño: el frame seleccionado, para que la extensión capture la web a su mismo ancho
+    GET_SELECTION: (msg) => {
+      const node2 = figma.currentPage.selection[0];
+      const selection = node2 && "width" in node2 ? {
+        id: node2.id,
+        name: node2.name,
+        type: node2.type,
+        width: Math.round(node2.width),
+        height: Math.round(node2.height)
+      } : null;
+      post({ type: "SELECTION_INFO", requestId: msg.requestId, selection });
     },
     FOCUS_NODE: async (msg) => {
       if (!msg.nodeId) return;

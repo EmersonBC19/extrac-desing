@@ -204,6 +204,32 @@ function freezeTransitions(): () => void {
 
 // ── Captura ────────────────────────────────────────────────────────────────────────────────────
 
+/**
+ * QA de diseño: el bloque tal como se ve con una ventana de `width` px (el ancho del frame de
+ * Figma). Con la ventana actual de ese ancho, la página en vivo; si no, la página de render.
+ */
+export async function extractAtWidth(
+  el: Element,
+  width: number,
+  opts: Pick<CaptureOptions, 'frameUrl' | 'getToken' | 'fetchCss' | 'timeoutMs'>,
+): Promise<any> {
+  if (Math.abs(Math.round(innerWidth) - width) <= 2) {
+    const res = await window.__codeToFigmaExtract!(el);
+    if (!res) throw new Error('No se pudo extraer el bloque');
+    return res.rootNode;
+  }
+  const exp = await exportBlock(el, { verify: false, fetchCss: opts.fetchCss });
+  const token = opts.getToken ? await opts.getToken() : '';
+  return extractInFrame(
+    opts.frameUrl,
+    captureDoc(exp.html),
+    exp.css,
+    Math.round(width),
+    opts.timeoutMs ?? 20000,
+    token,
+  );
+}
+
 export async function captureVariants(el: Element, opts: CaptureOptions): Promise<CaptureResult> {
   const warnings: string[] = [];
   const timeout = opts.timeoutMs ?? 20000;

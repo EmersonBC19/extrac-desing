@@ -177,6 +177,11 @@ export interface WSRenderPayload {
     groupName?: string;
     sectionTitle?: string;
     tokens?: DesignTokens;
+    /** QA de diseño: comparar rootNode con un frame de Figma (no se dibuja como render normal) */
+    compare?: {
+        targetNodeId: string;
+        width?: number;
+    };
     /** Breakpoints y claro/oscuro: variantes Breakpoint=… y Variables con modos Light/Dark */
     responsive?: ResponsivePayload;
 }

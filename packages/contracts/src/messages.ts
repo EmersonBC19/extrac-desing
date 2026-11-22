@@ -121,6 +121,18 @@ export const MESSAGE_CATALOG = {
     route: 'hub/plugin → cliente',
     description: 'Falló un render o un payload fue rechazado',
   },
+  GET_FIGMA_SELECTION: {
+    channel: 'hub',
+    kind: 'query',
+    route: 'extensión → hub → plugin',
+    description: 'QA de diseño: qué frame está seleccionado en Figma (nombre y ancho)',
+  },
+  FIGMA_SELECTION: {
+    channel: 'hub',
+    kind: 'event',
+    route: 'plugin → hub → extensión',
+    description: 'Respuesta a GET_FIGMA_SELECTION',
+  },
 
   // ── Plugin (UI ↔ sandbox) ───────────────────────────────────────────────────────────────────
   CLEAR_PAGE: { channel: 'plugin', kind: 'command', route: 'UI → sandbox', description: 'Vaciar la página actual' },
@@ -200,6 +212,18 @@ export const MESSAGE_CATALOG = {
     description: 'Resultado real de un borrado (qué se borró y cuántos ya no existían)',
   },
   GET_PAGE_INFO: { channel: 'plugin', kind: 'query', route: 'UI → sandbox', description: 'Nombre de la página actual' },
+  GET_SELECTION: {
+    channel: 'plugin',
+    kind: 'query',
+    route: 'UI → sandbox',
+    description: 'QA de diseño: el frame seleccionado (id, nombre, tamaño)',
+  },
+  SELECTION_INFO: {
+    channel: 'plugin',
+    kind: 'event',
+    route: 'sandbox → UI',
+    description: 'Respuesta a GET_SELECTION',
+  },
   PAGE_INFO: {
     channel: 'plugin',
     kind: 'event',
@@ -262,6 +286,18 @@ export const MESSAGE_CATALOG = {
     route: 'content → service worker',
     description: 'Texto de una hoja de estilo de otro dominio ("Exportar HTML")',
   },
+  QUERY_FIGMA_SELECTION: {
+    channel: 'extension',
+    kind: 'query',
+    route: 'content → service worker',
+    description: 'QA de diseño: el frame seleccionado en Figma (vía hub)',
+  },
+  COMPARE_IN_FIGMA: {
+    channel: 'extension',
+    kind: 'command',
+    route: 'content → service worker',
+    description: 'QA de diseño: enviar la extracción para comparar y esperar el resumen',
+  },
   RENDER_FRAME_TOKEN: {
     channel: 'extension',
     kind: 'command',
@@ -293,6 +329,17 @@ export function messageTypesOf(channel: MessageChannel, route?: RegExp): Message
 
 // ── Mensajes que RECIBE el hub: entrada no confiable → esquema Zod ───────────────────────────
 // (el árbol de RENDER_NODES lo valida aparte validateRenderPayload, con límites de tamaño)
+
+/** QA de diseño: el frame de Figma con el que se compara */
+const FigmaSelectionSchema = z
+  .object({
+    id: z.string().max(200),
+    name: z.string().max(1000),
+    type: z.string().max(40),
+    width: z.number().finite().nonnegative(),
+    height: z.number().finite().nonnegative(),
+  })
+  .passthrough();
 
 const RegisterSchema = z
   .object({
@@ -346,6 +393,15 @@ export const HubInboundSchema = z.discriminatedUnion('type', [
     })
     .passthrough(),
   z.object({ type: z.literal('RENDER_ERROR'), error: z.string().max(5000).optional() }).passthrough(),
+  z.object({ type: z.literal('GET_FIGMA_SELECTION'), requestId: z.string().max(64).optional() }).passthrough(),
+  z
+    .object({
+      type: z.literal('FIGMA_SELECTION'),
+      requestId: z.string().max(64).optional(),
+      selection: FigmaSelectionSchema.nullable().optional(),
+      error: z.string().max(1000).optional(),
+    })
+    .passthrough(),
 ]);
 
 export type HubInboundMessage = z.infer<typeof HubInboundSchema>;
@@ -368,8 +424,21 @@ export type HubOutboundMessage =
       durationMs?: number;
       timings?: RenderTimings;
       fontSubstitutions?: FontSubstitutions;
+      /** QA de diseño: resumen de la comparación */
+      qa?: Record<string, unknown>;
     }
-  | { type: 'RENDER_ERROR'; error: string };
+  | { type: 'RENDER_ERROR'; error: string }
+  | { type: 'GET_FIGMA_SELECTION'; requestId: string }
+  | { type: 'FIGMA_SELECTION'; requestId?: string; selection?: FigmaSelection | null; error?: string };
+
+/** Frame de Figma seleccionado (QA de diseño) */
+export interface FigmaSelection {
+  id: string;
+  name: string;
+  type: string;
+  width: number;
+  height: number;
+}
 
 // ── Plugin: UI → sandbox (code.ts) ───────────────────────────────────────────────────────────
 export type PluginUiMessage =
@@ -381,6 +450,7 @@ export type PluginUiMessage =
   | { type: 'FOCUS_NODE'; nodeId: string }
   | { type: 'ZOOM_ALL' }
   | { type: 'GET_PAGE_INFO' }
+  | { type: 'GET_SELECTION'; requestId?: string }
   | { type: 'GET_PAIRING_CODE' }
   | { type: 'SET_PAIRING_CODE'; code: string }
   | { type: 'GET_SETTINGS' }
@@ -404,4 +474,5 @@ export type PluginSandboxMessage =
   | { type: 'AVAILABLE_FONTS'; fonts: Array<{ family: string; style: string }> }
   | { type: 'FONTS_REPLACED'; count: number; details?: string }
   | { type: 'RENDER_SUCCESS'; nodeId: string; name: string; [k: string]: unknown }
-  | { type: 'RENDER_ERROR'; error: string };
+  | { type: 'RENDER_ERROR'; error: string }
+  | { type: 'SELECTION_INFO'; requestId?: string; selection: FigmaSelection | null };

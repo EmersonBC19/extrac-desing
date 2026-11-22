@@ -324,6 +324,10 @@ function buildRenderMessage(data) {
           board: data.board === true, // landing completa / multi-selección → tablero design system
           source: data.source, // { url, title } para nombrar la página del tablero
           states: Array.isArray(data.states) ? data.states : undefined, // variantes de estado (fase 6.1)
+          // Breakpoints y tema: variantes Breakpoint=… con Variables Light/Dark (Función A)
+          responsive: data.responsive && Array.isArray(data.responsive.variants) ? data.responsive : undefined,
+          // QA de diseño: comparar con un frame de Figma en lugar de dibujar (Función B)
+          compare: data.compare && typeof data.compare.targetNodeId === 'string' ? data.compare : undefined,
           clearPage: false,
         }
       : { rootNode: data, clearPage: false };
@@ -406,6 +410,74 @@ function sendToWebSocketHub(data, hubUrl = HUB_URL) {
   });
 }
 // ── Envío al hub (fin) ────────────────────────────────────────────────────────────────────
+
+/**
+ * QA de diseño: abre una conexión con el hub como cliente (recibe las respuestas), envía `messages`
+ * y resuelve con el primer mensaje que cumpla `isReply`. Para la selección de Figma y el resumen de
+ * una comparación.
+ */
+function hubRequest(messages, isReply, timeoutMs, hubUrl = HUB_URL) {
+  return new Promise((resolve, reject) => {
+    let ws;
+    try {
+      ws = new WebSocket(hubUrl);
+    } catch (err) {
+      return reject(new Error('No se pudo conectar con el hub: ' + err.message));
+    }
+    let settled = false;
+    const finish = (err, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try {
+        ws.close();
+      } catch (_) {}
+      if (err) reject(err);
+      else resolve(value);
+    };
+    const timer = setTimeout(() => finish(new Error('Figma no respondió a tiempo')), timeoutMs);
+    ws.onopen = () => {
+      try {
+        ws.send(JSON.stringify({ type: 'REGISTER_CLIENT', clientType: 'BROWSER_EXTENSION' }));
+        for (const m of messages) ws.send(typeof m === 'string' ? m : JSON.stringify(m));
+      } catch (err) {
+        finish(err);
+      }
+    };
+    ws.onmessage = event => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (isReply(msg)) finish(null, msg);
+      } catch (_) {}
+    };
+    ws.onerror = () => finish(new Error('Hub no detectado en ' + hubUrl));
+  });
+}
+
+async function queryFigmaSelection() {
+  const requestId = Math.random().toString(36).slice(2, 12);
+  const reply = await hubRequest(
+    [{ type: 'GET_FIGMA_SELECTION', requestId }],
+    m => m.type === 'FIGMA_SELECTION' && m.requestId === requestId,
+    8000,
+  );
+  if (reply.error) throw new Error(reply.error);
+  return reply.selection || null;
+}
+
+async function compareInFigma(payload) {
+  const text = JSON.stringify(buildRenderMessage(payload));
+  if (text.length > CHUNK_THRESHOLD_BYTES) {
+    throw new Error('La selección es demasiado grande para comparar: elige un componente más pequeño');
+  }
+  const reply = await hubRequest(
+    [text],
+    m => m.type === 'RENDER_ERROR' || (m.type === 'RENDER_SUCCESS' && m.qa),
+    120000,
+  );
+  if (reply.type === 'RENDER_ERROR') throw new Error(reply.error || 'Figma no pudo comparar');
+  return { qa: reply.qa, name: reply.name };
+}
 
 // Check if WebSocket Hub and Figma plugin are live
 function checkHubStatus() {
@@ -514,6 +586,11 @@ const MESSAGE_HANDLERS = {
   TRANSMIT_TO_FIGMA: message => sendToWebSocketHub(message.payload).then(sent => ({ sent })),
 
   CHECK_FIGMA_STATUS: () => checkHubStatus().then(status => ({ status })),
+
+  // QA de diseño: qué frame hay seleccionado en Figma, y la comparación con su resumen
+  QUERY_FIGMA_SELECTION: () => queryFigmaSelection().then(selection => ({ selection })),
+
+  COMPARE_IN_FIGMA: message => compareInFigma(message.payload),
 
   CAPTURE_REGIONS: (message, sender) => {
     const windowId = sender && sender.tab ? sender.tab.windowId : undefined;

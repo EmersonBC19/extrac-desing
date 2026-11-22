@@ -124,7 +124,24 @@ con modos `Light` y `Dark`** (colección "Tema · …"), más una vista en modo 
   script; una web que la incruste no puede usarla para descargar imágenes de otros dominios.
 - Límite: lo que cambia por JavaScript al redimensionar (no por CSS) no aparece en los otros anchos.
 
-### 6. 🧩 Exportar un bloque como HTML + CSS + JS
+### 6. 🔍 QA de diseño contra producción
+
+En Figma, selecciona el frame de diseño; en la web, selecciona el mismo componente y pulsa **Comparar con Figma**.
+La extensión pregunta al plugin (vía hub) qué frame está seleccionado, captura la web (una pantalla completa, con una
+ventana del ancho del frame; un componente, tal como se ve) y el plugin entrega:
+
+- un informe en el lienzo ("QA · …") con cada diferencia medible, de la más grave a la menos: tamaño, padding, gap,
+  radio, rellenos, bordes, sombras, opacidad y tipografía (familia, peso, tamaño, interlineado), más lo que está en un
+  lado y no en el otro y los colores que no son ninguna Variable del archivo;
+- anotaciones de Dev Mode sobre las capas del diseño (al volver a comparar se reemplazan);
+- el bloque de producción dibujado al lado, y un resumen en la extensión.
+
+Emparejar diseño y web es el núcleo (`packages/figma-plugin/src/qa-compare.ts`): textos iguales como anclas,
+contenedores por los textos que contienen y el resto por orden dentro de su padre; los nombres de capa y las clases
+CSS no tienen que coincidir. Los textos distintos (contenido real en vez del de ejemplo) se marcan como "contenido
+distinto", sin contar como error. Se compara con la fuente declarada en el CSS, no con la sustituta de Figma.
+
+### 7. 🧩 Exportar un bloque como HTML + CSS + JS
 
 En la extensión, con un bloque seleccionado, **Exportar HTML** genera una copia que funciona fuera de la página
 (`packages/core-extractor/src/browser/export-html.ts`):

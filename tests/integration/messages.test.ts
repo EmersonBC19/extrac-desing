@@ -48,7 +48,10 @@ describe('catálogo de mensajes', () => {
 
   it('UI del plugin: atiende todo mensaje que le manda el hub', () => {
     const keys = handlerKeys(read('packages/figma-plugin/src/ui.html'), 'HUB_HANDLERS');
-    const fromHub = messageTypesOf('hub', /hub →|→ hub → plugin/);
+    // Lo que sale del propio plugin (FIGMA_SELECTION: plugin → hub → extensión) no necesita manejador
+    const fromHub = messageTypesOf('hub', /hub →|→ hub → plugin/).filter(
+      t => !/^plugin →/.test((MESSAGE_CATALOG as any)[t].route),
+    );
     for (const type of fromHub) expect(keys, type).toContain(type);
   });
 

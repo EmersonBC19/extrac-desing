@@ -160,6 +160,14 @@ exports.WSRenderPayloadSchema = z
         .array(z.object({ name: z.string().min(1).max(40), rootNode: z.unknown() }).passthrough())
         .max(4)
         .optional(),
+    /** QA de diseño (Función B): comparar este bloque con un frame de Figma en lugar de dibujarlo */
+    compare: z
+        .object({
+        targetNodeId: z.string().min(1).max(200),
+        width: z.number().positive().max(10000).optional(),
+    })
+        .passthrough()
+        .optional(),
     /** Breakpoints y claro/oscuro (Función A): variantes Breakpoint=… y Variables Light/Dark */
     responsive: z
         .object({

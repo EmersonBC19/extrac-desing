@@ -144,6 +144,18 @@ exports.MESSAGE_CATALOG = {
         route: 'hub/plugin → cliente',
         description: 'Falló un render o un payload fue rechazado',
     },
+    GET_FIGMA_SELECTION: {
+        channel: 'hub',
+        kind: 'query',
+        route: 'extensión → hub → plugin',
+        description: 'QA de diseño: qué frame está seleccionado en Figma (nombre y ancho)',
+    },
+    FIGMA_SELECTION: {
+        channel: 'hub',
+        kind: 'event',
+        route: 'plugin → hub → extensión',
+        description: 'Respuesta a GET_FIGMA_SELECTION',
+    },
     // ── Plugin (UI ↔ sandbox) ───────────────────────────────────────────────────────────────────
     CLEAR_PAGE: { channel: 'plugin', kind: 'command', route: 'UI → sandbox', description: 'Vaciar la página actual' },
     DELETE_NODE: { channel: 'plugin', kind: 'command', route: 'UI → sandbox', description: 'Borrar un nodo del lienzo' },
@@ -222,6 +234,18 @@ exports.MESSAGE_CATALOG = {
         description: 'Resultado real de un borrado (qué se borró y cuántos ya no existían)',
     },
     GET_PAGE_INFO: { channel: 'plugin', kind: 'query', route: 'UI → sandbox', description: 'Nombre de la página actual' },
+    GET_SELECTION: {
+        channel: 'plugin',
+        kind: 'query',
+        route: 'UI → sandbox',
+        description: 'QA de diseño: el frame seleccionado (id, nombre, tamaño)',
+    },
+    SELECTION_INFO: {
+        channel: 'plugin',
+        kind: 'event',
+        route: 'sandbox → UI',
+        description: 'Respuesta a GET_SELECTION',
+    },
     PAGE_INFO: {
         channel: 'plugin',
         kind: 'event',
@@ -283,6 +307,18 @@ exports.MESSAGE_CATALOG = {
         route: 'content → service worker',
         description: 'Texto de una hoja de estilo de otro dominio ("Exportar HTML")',
     },
+    QUERY_FIGMA_SELECTION: {
+        channel: 'extension',
+        kind: 'query',
+        route: 'content → service worker',
+        description: 'QA de diseño: el frame seleccionado en Figma (vía hub)',
+    },
+    COMPARE_IN_FIGMA: {
+        channel: 'extension',
+        kind: 'command',
+        route: 'content → service worker',
+        description: 'QA de diseño: enviar la extracción para comparar y esperar el resumen',
+    },
     RENDER_FRAME_TOKEN: {
         channel: 'extension',
         kind: 'command',
@@ -308,6 +344,16 @@ function messageTypesOf(channel, route) {
 }
 // ── Mensajes que RECIBE el hub: entrada no confiable → esquema Zod ───────────────────────────
 // (el árbol de RENDER_NODES lo valida aparte validateRenderPayload, con límites de tamaño)
+/** QA de diseño: el frame de Figma con el que se compara */
+const FigmaSelectionSchema = z
+    .object({
+    id: z.string().max(200),
+    name: z.string().max(1000),
+    type: z.string().max(40),
+    width: z.number().finite().nonnegative(),
+    height: z.number().finite().nonnegative(),
+})
+    .passthrough();
 const RegisterSchema = z
     .object({
     type: z.enum(['REGISTER_CLIENT', 'REGISTER']),
@@ -355,5 +401,14 @@ exports.HubInboundSchema = z.discriminatedUnion('type', [
     })
         .passthrough(),
     z.object({ type: z.literal('RENDER_ERROR'), error: z.string().max(5000).optional() }).passthrough(),
+    z.object({ type: z.literal('GET_FIGMA_SELECTION'), requestId: z.string().max(64).optional() }).passthrough(),
+    z
+        .object({
+        type: z.literal('FIGMA_SELECTION'),
+        requestId: z.string().max(64).optional(),
+        selection: FigmaSelectionSchema.nullable().optional(),
+        error: z.string().max(1000).optional(),
+    })
+        .passthrough(),
 ]);
 //# sourceMappingURL=messages.js.map

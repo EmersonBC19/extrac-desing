@@ -101,3 +101,16 @@ describe('envío por partes: service worker → hub → plugin', () => {
     cli.close();
   });
 });
+
+describe('el service worker no pierde campos del envío', () => {
+  it('responsive (breakpoints y tema) y compare (QA de diseño) llegan al hub', () => {
+    const variants = [{ name: 'Mobile', width: 375, rootNode: frame(), dark: frame() }];
+    const msg = sender.buildRenderMessage({
+      rootNode: frame(),
+      responsive: { variants, themeSource: 'media' },
+      compare: { targetNodeId: '1:2', width: 320 },
+    });
+    expect(msg.payload.responsive).toEqual({ variants, themeSource: 'media' });
+    expect(msg.payload.compare).toEqual({ targetNodeId: '1:2', width: 320 });
+  });
+});

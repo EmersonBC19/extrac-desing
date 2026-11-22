@@ -7,6 +7,8 @@ export declare class FigmaWsHub {
     private wss;
     private figmaSockets;
     private otherClients;
+    /** QA de diseño: consultas de selección en curso (requestId → quién preguntó) */
+    private pendingSelections;
     private pairing;
     private pairingLimiter;
     private pluginGeminiApiKey;

@@ -89,6 +89,12 @@ Antes de enviar, marca en el panel:
 
 Si la página no tiene modo oscuro, se avisa y se envía solo el tema actual.
 
+### Revisar si la web respeta el diseño
+
+1. En Figma, con el plugin abierto, selecciona el frame del diseño.
+2. En el navegador, selecciona el mismo componente y pulsa **Comparar con Figma**.
+3. En segundos, junto al diseño aparecen la versión de producción y un informe "QA · …" con cada diferencia (por ejemplo, "Padding: 20 px en producción, 24 px en el diseño"). Las capas con diferencias quedan anotadas en Dev Mode.
+
 ### Exportar como HTML + CSS + JS
 
 Con el bloque seleccionado, pulsa **Exportar HTML**. La extensión copia las reglas CSS reales de la página que usa ese bloque (incluidas las de móvil y los efectos al pasar el ratón), comprueba que la copia se vea igual y te deja elegir:

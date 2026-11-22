@@ -46,6 +46,7 @@
     zap: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`,
     layers: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`,
     copy: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`,
+    compare: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><rect x="3" y="4" width="7" height="16" rx="1"/><rect x="14" y="4" width="7" height="16" rx="1"/><path d="M10 12h4"/></svg>`,
     devices: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><rect x="2" y="4" width="14" height="11" rx="1.5"/><rect x="17" y="8" width="5" height="12" rx="1"/><line x1="6" y1="19" x2="12" y2="19"/></svg>`,
     moon: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`,
     code: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`,
@@ -1578,6 +1579,7 @@
           <button class="btn-secondary" id="__btn_freeze" title="Pausa animaciones y menús desplegables para inspeccionarlos">${ICONS.snowflake} ${this.isFrozen ? 'Descongelar' : 'Congelar'} <span class="hud-kbd">F</span></button>
           <button class="btn-secondary" id="__btn_copy_json" title="Copiar el JSON exportado al portapapeles">${ICONS.copy} Copiar JSON</button>
           <button class="btn-secondary" id="__btn_export_html" title="Exportar este bloque como HTML + CSS + JS que funciona fuera de la página">${ICONS.code} Exportar HTML</button>
+          <button class="btn-secondary" id="__btn_compare" title="Comparar este bloque con el frame seleccionado en Figma y listar las diferencias">${ICONS.compare} Comparar con Figma</button>
           <button class="btn-secondary" id="__btn_cancel" title="Cancelar selección (Esc)">${ICONS.close} Cancelar <span class="hud-kbd">Esc</span></button>
         </div>
       `;
@@ -1629,6 +1631,8 @@
       const btnFreeze = this.hud.querySelector('#__btn_freeze');
       const btnCopy = this.hud.querySelector('#__btn_copy_json');
       const btnExportHtml = this.hud.querySelector('#__btn_export_html');
+      const btnCompare = this.hud.querySelector('#__btn_compare');
+      if (btnCompare) btnCompare.addEventListener('click', () => this.compareWithFigma());
       const btnCancel = this.hud.querySelector('#__btn_cancel');
       const chkComponent = this.hud.querySelector('#__chk_component');
       const chkHover = this.hud.querySelector('#__chk_hover');
@@ -2166,6 +2170,80 @@
       } catch (err) {
         console.error('[CodeToFigma] Error exportando HTML:', err);
         this.showToast(`${ICONS.warning} Error al exportar HTML`, String((err && err.message) || err), 5500);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = label;
+        }
+      }
+    }
+
+    /**
+     * QA de diseño (Función B): compara el bloque con el frame seleccionado en Figma. Una pantalla
+     * completa se captura con una ventana del ancho del frame; un componente, tal como se ve ahora.
+     */
+    async compareWithFigma() {
+      if (this.selectedElements.length !== 1) {
+        this.showToast(`${ICONS.info} Comparar con Figma`, 'Selecciona un solo bloque para comparar.', 4000);
+        return;
+      }
+      if (!extensionAlive()) return this.retire();
+      const btn = this.hud.querySelector('#__btn_compare');
+      const label = `${ICONS.compare} Comparar con Figma`;
+      const setBtn = html => {
+        if (btn) btn.innerHTML = html;
+      };
+      const ask = (type, extra = {}) =>
+        new Promise((resolve, reject) => {
+          chrome.runtime.sendMessage({ type, ...extra }, res => {
+            if (chrome.runtime.lastError) return reject(new Error('La extensión no responde. Recarga la página.'));
+            if (!res || !res.success) return reject(new Error((res && res.error) || 'Sin respuesta'));
+            resolve(res);
+          });
+        });
+      if (btn) btn.disabled = true;
+      setBtn(`${ICONS.spinner} Preguntando a Figma…`);
+      try {
+        const { selection } = await ask('QUERY_FIGMA_SELECTION');
+        if (!selection) throw new Error('En Figma, selecciona el frame de diseño con el que comparar y vuelve a pulsar.');
+        const el = this.selectedElements[0];
+        const fullWidth = el.getBoundingClientRect().width >= innerWidth - 24;
+        let rootNode;
+        const relift = await this.suspendLift();
+        try {
+          await this.prepareForExtraction([el], pct => setBtn(`${ICONS.spinner} Recorriendo… ${pct}%`));
+          setBtn(`${ICONS.spinner} Capturando a ${fullWidth ? selection.width : Math.round(innerWidth)} px…`);
+          if (fullWidth && Math.abs(selection.width - innerWidth) > 2 && window.__codeToFigmaExtractAtWidth) {
+            rootNode = await window.__codeToFigmaExtractAtWidth(el, selection.width, {
+              frameUrl: chrome.runtime.getURL('render-frame.html'),
+              getToken: () => this.renderFrameToken(),
+            });
+          } else {
+            const res = await window.__codeToFigmaExtract(el);
+            rootNode = res && res.rootNode;
+          }
+        } finally {
+          this.restoreReveals();
+          if (this.isElevated) relift();
+        }
+        if (!rootNode) throw new Error('No se pudo extraer el bloque');
+        if (window.__codeToFigmaPayload?.withoutImages) rootNode = window.__codeToFigmaPayload.withoutImages(rootNode);
+        setBtn(`${ICONS.spinner} Comparando en Figma…`);
+        const { qa } = await ask('COMPARE_IN_FIGMA', {
+          payload: {
+            rootNode,
+            compare: { targetNodeId: selection.id, width: selection.width, viewportWidth: Math.round(innerWidth), fullWidth },
+            source: { url: location.href, title: document.title },
+          },
+        });
+        const total = qa.total || 0;
+        const head = total
+          ? `${total} diferencia${total === 1 ? '' : 's'} con "${selection.name}" (${qa.alta || 0} altas, ${qa.media || 0} medias, ${qa.baja || 0} bajas)`
+          : `Sin diferencias medibles con "${selection.name}"`;
+        const top = (qa.top || []).slice(0, 3).join(' · ');
+        this.showToast(`${ICONS.compare} QA de diseño`, `${head}. ${top ? top + ' · ' : ''}Informe completo en Figma.`, 9000);
+      } catch (err) {
+        this.showToast(`${ICONS.warning} Comparar con Figma`, String((err && err.message) || err), 6000);
       } finally {
         if (btn) {
           btn.disabled = false;

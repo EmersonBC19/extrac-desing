@@ -117,6 +117,22 @@ const handlers: { [T in PluginUiMessageType]: Handler<T> } = {
     post({ type: 'PAGE_INFO', pageName: figma.currentPage.name });
   },
 
+  // QA de diseño: el frame seleccionado, para que la extensión capture la web a su mismo ancho
+  GET_SELECTION: msg => {
+    const node = figma.currentPage.selection[0] as SceneNode | undefined;
+    const selection =
+      node && 'width' in node
+        ? {
+            id: node.id,
+            name: node.name,
+            type: node.type,
+            width: Math.round((node as any).width),
+            height: Math.round((node as any).height),
+          }
+        : null;
+    post({ type: 'SELECTION_INFO', requestId: (msg as any).requestId, selection });
+  },
+
   FOCUS_NODE: async msg => {
     if (!msg.nodeId) return;
     try {

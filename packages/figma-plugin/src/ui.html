@@ -1827,6 +1827,10 @@
         viewsList = msg.payload?.views || [];
         renderViewsList();
       },
+      // QA de diseño: la extensión pregunta qué frame hay seleccionado (responde el sandbox)
+      GET_FIGMA_SELECTION(msg) {
+        parent.postMessage({ pluginMessage: { type: 'GET_SELECTION', requestId: msg.requestId } }, '*');
+      },
       RENDER_NODES(msg) {
         lastRenderStartTime = performance.now();
         log(`Recibido componente desde WebSocket: "${msg.payload?.rootNode?.name || 'Component'}"`, 'info');
@@ -1999,6 +2003,10 @@
           activePageName.textContent = `Página: ${msg.pageName}`;
         }
       },
+      SELECTION_INFO(msg) {
+        notifyHub({ type: 'FIGMA_SELECTION', requestId: msg.requestId, selection: msg.selection || null });
+        if (!msg.selection) log('QA: la extensión pidió comparar, pero no hay ningún frame seleccionado en Figma.', 'warn');
+      },
       RENDER_SUCCESS(msg) {
         renderProgressLine = null;
         const measuredDuration = (msg.durationMs !== undefined && msg.durationMs >= 0) 
@@ -2047,7 +2055,8 @@
           durationMs: stats.latencyMs,
           timings: msg.timings,
           fontSubstitutions: msg.fontSubstitutions,
-          textReport: msg.textReport
+          textReport: msg.textReport,
+          qa: msg.qa
         });
       },
       RENDER_ERROR(msg) {

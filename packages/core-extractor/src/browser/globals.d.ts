@@ -18,6 +18,8 @@ interface Window {
   __codeToFigmaExportHtml?: (element: Element, opts?: any) => Promise<any>;
   /** Bytes de un .zip "store" con los archivos dados */
   __codeToFigmaZip?: (files: Array<{ name: string; content: string }>) => Uint8Array;
+  /** QA de diseño: el bloque con una ventana de ese ancho (responsive.ts) */
+  __codeToFigmaExtractAtWidth?: (element: Element, width: number, opts: any) => Promise<any>;
   /** El bloque a varios anchos y temas (responsive.ts) */
   __codeToFigmaCaptureVariants?: (element: Element, opts: any) => Promise<any>;
   /** Lo define content.js: descarga el texto de una hoja de estilo de otro dominio */

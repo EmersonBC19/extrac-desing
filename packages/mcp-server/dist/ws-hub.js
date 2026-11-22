@@ -43,6 +43,8 @@ export class FigmaWsHub {
     wss = null;
     figmaSockets = new Set();
     otherClients = new Set();
+    /** QA de diseño: consultas de selección en curso (requestId → quién preguntó) */
+    pendingSelections = new Map();
     pairing = loadOrCreatePairingCode();
     pairingLimiter = new PairingRateLimiter();
     pluginGeminiApiKey = null;
@@ -285,6 +287,8 @@ export class FigmaWsHub {
                 }
                 catch (_e) { }
             }
+            // QA de diseño: el resumen de la comparación vuelve a la extensión
+            const qa = msg.qa;
             this.broadcastToClients({
                 type: 'RENDER_SUCCESS',
                 nodeId: msg.nodeId,
@@ -292,11 +296,44 @@ export class FigmaWsHub {
                 durationMs: msg.durationMs,
                 timings: msg.timings,
                 fontSubstitutions: msg.fontSubstitutions,
+                ...(qa && typeof qa === 'object' ? { qa } : {}),
             });
         },
         RENDER_ERROR: (_ws, _state, msg) => {
             this.log.error('Error reportado por el plugin de Figma', { error: msg.error });
             this.broadcastToClients({ type: 'RENDER_ERROR', error: String(msg.error || 'Error desconocido') });
+        },
+        // QA de diseño: la extensión pregunta qué frame está seleccionado en Figma (para capturar la web
+        // al mismo ancho). Se reenvía a los plugins y la primera respuesta vuelve a quien preguntó.
+        GET_FIGMA_SELECTION: (ws, _state, msg) => {
+            const requestId = msg.requestId || Math.random().toString(36).slice(2, 12);
+            if (this.figmaSockets.size === 0) {
+                this.send(ws, { type: 'FIGMA_SELECTION', requestId, error: 'El plugin de Figma no está abierto' });
+                return;
+            }
+            const timer = setTimeout(() => {
+                if (!this.pendingSelections.has(requestId))
+                    return;
+                this.pendingSelections.delete(requestId);
+                this.send(ws, { type: 'FIGMA_SELECTION', requestId, error: 'Figma no respondió a tiempo' });
+            }, 6000);
+            this.pendingSelections.set(requestId, { ws, timer });
+            this.broadcastToPlugins({ type: 'GET_FIGMA_SELECTION', requestId });
+        },
+        FIGMA_SELECTION: (ws, state, msg) => {
+            if (!state.isFigma || !msg.requestId)
+                return; // solo los plugins responden
+            const pending = this.pendingSelections.get(msg.requestId);
+            if (!pending)
+                return;
+            clearTimeout(pending.timer);
+            this.pendingSelections.delete(msg.requestId);
+            this.send(pending.ws, {
+                type: 'FIGMA_SELECTION',
+                requestId: msg.requestId,
+                selection: msg.selection ?? null,
+                ...(msg.error ? { error: msg.error } : {}),
+            });
         },
     };
     sendStatus(ws) {

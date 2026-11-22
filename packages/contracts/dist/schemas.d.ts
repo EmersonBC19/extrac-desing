@@ -126,6 +126,10 @@ export declare const WSRenderPayloadSchema: z.ZodObject<{
         name: z.ZodString;
         rootNode: z.ZodUnknown;
     }, z.core.$loose>>>;
+    compare: z.ZodOptional<z.ZodObject<{
+        targetNodeId: z.ZodString;
+        width: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$loose>>;
     responsive: z.ZodOptional<z.ZodObject<{
         variants: z.ZodArray<z.ZodObject<{
             name: z.ZodString;

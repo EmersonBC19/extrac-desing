@@ -131,6 +131,18 @@ export declare const MESSAGE_CATALOG: {
         readonly route: "hub/plugin → cliente";
         readonly description: "Falló un render o un payload fue rechazado";
     };
+    readonly GET_FIGMA_SELECTION: {
+        readonly channel: "hub";
+        readonly kind: "query";
+        readonly route: "extensión → hub → plugin";
+        readonly description: "QA de diseño: qué frame está seleccionado en Figma (nombre y ancho)";
+    };
+    readonly FIGMA_SELECTION: {
+        readonly channel: "hub";
+        readonly kind: "event";
+        readonly route: "plugin → hub → extensión";
+        readonly description: "Respuesta a GET_FIGMA_SELECTION";
+    };
     readonly CLEAR_PAGE: {
         readonly channel: "plugin";
         readonly kind: "command";
@@ -233,6 +245,18 @@ export declare const MESSAGE_CATALOG: {
         readonly route: "UI → sandbox";
         readonly description: "Nombre de la página actual";
     };
+    readonly GET_SELECTION: {
+        readonly channel: "plugin";
+        readonly kind: "query";
+        readonly route: "UI → sandbox";
+        readonly description: "QA de diseño: el frame seleccionado (id, nombre, tamaño)";
+    };
+    readonly SELECTION_INFO: {
+        readonly channel: "plugin";
+        readonly kind: "event";
+        readonly route: "sandbox → UI";
+        readonly description: "Respuesta a GET_SELECTION";
+    };
     readonly PAGE_INFO: {
         readonly channel: "plugin";
         readonly kind: "event";
@@ -292,6 +316,18 @@ export declare const MESSAGE_CATALOG: {
         readonly kind: "query";
         readonly route: "content → service worker";
         readonly description: "Texto de una hoja de estilo de otro dominio (\"Exportar HTML\")";
+    };
+    readonly QUERY_FIGMA_SELECTION: {
+        readonly channel: "extension";
+        readonly kind: "query";
+        readonly route: "content → service worker";
+        readonly description: "QA de diseño: el frame seleccionado en Figma (vía hub)";
+    };
+    readonly COMPARE_IN_FIGMA: {
+        readonly channel: "extension";
+        readonly kind: "command";
+        readonly route: "content → service worker";
+        readonly description: "QA de diseño: enviar la extracción para comparar y esperar el resumen";
     };
     readonly RENDER_FRAME_TOKEN: {
         readonly channel: "extension";
@@ -376,6 +412,20 @@ export declare const HubInboundSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 }, z.core.$loose>, z.ZodObject<{
     type: z.ZodLiteral<"RENDER_ERROR">;
     error: z.ZodOptional<z.ZodString>;
+}, z.core.$loose>, z.ZodObject<{
+    type: z.ZodLiteral<"GET_FIGMA_SELECTION">;
+    requestId: z.ZodOptional<z.ZodString>;
+}, z.core.$loose>, z.ZodObject<{
+    type: z.ZodLiteral<"FIGMA_SELECTION">;
+    requestId: z.ZodOptional<z.ZodString>;
+    selection: z.ZodOptional<z.ZodNullable<z.ZodObject<{
+        id: z.ZodString;
+        name: z.ZodString;
+        type: z.ZodString;
+        width: z.ZodNumber;
+        height: z.ZodNumber;
+    }, z.core.$loose>>>;
+    error: z.ZodOptional<z.ZodString>;
 }, z.core.$loose>], "type">;
 export type HubInboundMessage = z.infer<typeof HubInboundSchema>;
 export type HubInboundType = HubInboundMessage['type'];
@@ -424,10 +474,28 @@ export type HubOutboundMessage = {
     durationMs?: number;
     timings?: RenderTimings;
     fontSubstitutions?: FontSubstitutions;
+    /** QA de diseño: resumen de la comparación */
+    qa?: Record<string, unknown>;
 } | {
     type: 'RENDER_ERROR';
     error: string;
+} | {
+    type: 'GET_FIGMA_SELECTION';
+    requestId: string;
+} | {
+    type: 'FIGMA_SELECTION';
+    requestId?: string;
+    selection?: FigmaSelection | null;
+    error?: string;
 };
+/** Frame de Figma seleccionado (QA de diseño) */
+export interface FigmaSelection {
+    id: string;
+    name: string;
+    type: string;
+    width: number;
+    height: number;
+}
 export type PluginUiMessage = {
     type: 'RENDER_NODES';
     payload: unknown;
@@ -449,6 +517,9 @@ export type PluginUiMessage = {
     type: 'ZOOM_ALL';
 } | {
     type: 'GET_PAGE_INFO';
+} | {
+    type: 'GET_SELECTION';
+    requestId?: string;
 } | {
     type: 'GET_PAIRING_CODE';
 } | {
@@ -517,6 +588,10 @@ export type PluginSandboxMessage = {
 } | {
     type: 'RENDER_ERROR';
     error: string;
+} | {
+    type: 'SELECTION_INFO';
+    requestId?: string;
+    selection: FigmaSelection | null;
 };
 export {};
 //# sourceMappingURL=messages.d.ts.map

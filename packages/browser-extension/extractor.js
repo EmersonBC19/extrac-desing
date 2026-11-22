@@ -4638,6 +4638,23 @@ ${js.replace(/<\/script/gi, "<\\/script")}<\/script>
       document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== sheet);
     };
   }
+  async function extractAtWidth(el, width, opts) {
+    if (Math.abs(Math.round(innerWidth) - width) <= 2) {
+      const res = await window.__codeToFigmaExtract(el);
+      if (!res) throw new Error("No se pudo extraer el bloque");
+      return res.rootNode;
+    }
+    const exp = await exportBlock(el, { verify: false, fetchCss: opts.fetchCss });
+    const token = opts.getToken ? await opts.getToken() : "";
+    return extractInFrame(
+      opts.frameUrl,
+      captureDoc(exp.html),
+      exp.css,
+      Math.round(width),
+      opts.timeoutMs ?? 2e4,
+      token
+    );
+  }
   async function captureVariants(el, opts) {
     const warnings = [];
     const timeout = opts.timeoutMs ?? 2e4;
@@ -4803,6 +4820,10 @@ ${js.replace(/<\/script/gi, "<\\/script")}<\/script>
     return { ...res, files: exportFiles(res) };
   };
   window.__codeToFigmaZip = buildZip;
+  window.__codeToFigmaExtractAtWidth = async function(rootElement, width, opts) {
+    if (!rootElement || rootElement.nodeType !== Node.ELEMENT_NODE) return null;
+    return extractAtWidth(rootElement, width, { fetchCss: window.__codeToFigmaFetchCss, ...opts });
+  };
   window.__codeToFigmaCaptureVariants = async function(rootElement, opts) {
     if (!rootElement || rootElement.nodeType !== Node.ELEMENT_NODE) return null;
     return captureVariants(rootElement, { fetchCss: window.__codeToFigmaFetchCss, ...opts });

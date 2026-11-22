@@ -14,6 +14,7 @@ import { setBoardCtx } from './board/context';
 import { guardRenderPayload } from './validation';
 import { cssTokensToVariables, variablesAvailable } from './board/variables';
 import { buildResponsiveVariants } from './theme-variants';
+import { runDesignQa } from './qa-run';
 
 /**
  * Diagnóstico de textos tras dibujar: cuántos venían en el payload, cuántos se crearon y, de los
@@ -129,6 +130,15 @@ export async function renderNodesCommand(
 
   const invalid = guardRenderPayload(payload);
   if (invalid) throw new Error(`Payload inválido: ${invalid}`);
+
+  // QA de diseño (Función B): comparar con un frame de Figma en lugar de dibujar un render normal
+  if (payload.compare?.targetNodeId) {
+    try {
+      await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
+    } catch (_e) {}
+    await runDesignQa(payload, post, log);
+    return;
+  }
 
   let targetPage = figma.currentPage;
 

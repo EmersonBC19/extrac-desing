@@ -9402,7 +9402,13 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
             `Imagen distinta: proporción ${ratioText(rp)} en producción, ${ratioText(rd)} en el diseño`
           );
         } else {
-          add("info", "imagen", d, p, "Imagen: no es el mismo archivo que en el diseño (puede ser la misma exportada de otra forma)");
+          add(
+            "info",
+            "imagen",
+            d,
+            p,
+            "Imagen: no es el mismo archivo que en el diseño (puede ser la misma exportada de otra forma)"
+          );
         }
       }
       if (d.image.scaleMode !== p.image.scaleMode) {
@@ -9753,8 +9759,13 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     const groups = groupFindings(result.findings);
     const shown = groups.slice(0, MAX_REPORT_ROWS);
     for (const g of shown) {
-      const row = text(`● ${g.severity.toUpperCase()} · ${g.where}
-${g.message}`, regular, 12, SEVERITY_COLOR[g.severity]);
+      const row = text(
+        `● ${g.severity.toUpperCase()} · ${g.where}
+${g.message}`,
+        regular,
+        12,
+        SEVERITY_COLOR[g.severity]
+      );
       row.name = g.severity;
     }
     if (groups.length > shown.length) {

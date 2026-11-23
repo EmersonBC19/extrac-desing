@@ -46,8 +46,9 @@ chrome.runtime.onInstalled.addListener(async details => {
 /** Páginas donde Chrome no deja inyectar scripts de extensiones (internas, tienda, visor de PDF…) */
 function isRestrictedUrl(url) {
   return (
-    /^(chrome|chrome-extension|chrome-search|chrome-untrusted|edge|brave|opera|about|view-source|devtools):/i.test(url) ||
-    /^https:\/\/(chromewebstore\.google\.com|chrome\.google\.com\/webstore)/i.test(url)
+    /^(chrome|chrome-extension|chrome-search|chrome-untrusted|edge|brave|opera|about|view-source|devtools):/i.test(
+      url,
+    ) || /^https:\/\/(chromewebstore\.google\.com|chrome\.google\.com\/webstore)/i.test(url)
   );
 }
 
@@ -212,7 +213,9 @@ async function fetchStylesheetText(url, tabUrl) {
   } catch (netErr) {
     if (!(await hasAllSites())) {
       openPermissionPage(false);
-      throw new Error('Sin permiso para descargar hojas de estilo de otros sitios: concédelo en "Code to Figma — Permisos"');
+      throw new Error(
+        'Sin permiso para descargar hojas de estilo de otros sitios: concédelo en "Code to Figma — Permisos"',
+      );
     }
     throw netErr;
   }
@@ -298,7 +301,8 @@ async function captureRegions(windowId, rects, viewportWidth) {
 const HUB_URL = 'ws://localhost:8080';
 // = HUB_PROTOCOL de packages/contracts (lo comprueba tests/integration/messages.test.ts)
 const HUB_PROTOCOL = 2;
-const OUTDATED_HUB = 'El hub de Code to Figma es de una versión anterior: ciérralo y vuelve a abrirlo (npm run start:hub, o recompila el ejecutable con npm run build:hub-exe)';
+const OUTDATED_HUB =
+  'El hub de Code to Figma es de una versión anterior: ciérralo y vuelve a abrirlo (npm run start:hub, o recompila el ejecutable con npm run build:hub-exe)';
 const OUTDATED_PLUGIN = 'El plugin de Figma es de una versión anterior: ciérralo y vuelve a abrirlo en Figma';
 // Mismos valores que packages/contracts/src/payload-stats.ts (este archivo no se empaqueta)
 const CHUNK_THRESHOLD_BYTES = 1024 * 1024;
@@ -578,7 +582,11 @@ const renderTokens = new Map(); // token → caducidad
 const claimedRenderFrames = new Set();
 
 function isRenderFrame(sender) {
-  return !!(sender && typeof sender.url === 'string' && /^chrome-extension:\/\/[^/]+\/render-frame\.html(?:[?#]|$)/.test(sender.url));
+  return !!(
+    sender &&
+    typeof sender.url === 'string' &&
+    /^chrome-extension:\/\/[^/]+\/render-frame\.html(?:[?#]|$)/.test(sender.url)
+  );
 }
 
 function renderFrameKey(sender) {

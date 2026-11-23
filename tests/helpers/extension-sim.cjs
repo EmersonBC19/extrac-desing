@@ -183,4 +183,14 @@ async function imageDimensions(page, root) {
   );
 }
 
-module.exports = { ROOT, read, injectExtension, extract, exportHtml, captureVariants, flatten, imageDimensions, prepareExtensionSim };
+module.exports = {
+  ROOT,
+  read,
+  injectExtension,
+  extract,
+  exportHtml,
+  captureVariants,
+  flatten,
+  imageDimensions,
+  prepareExtensionSim,
+};

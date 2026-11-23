@@ -25,7 +25,8 @@ const isAncestorOf = (a: any, n: any) => {
   for (let p = n.parent; p; p = p.parent) if (p === a) return true;
   return false;
 };
-const inside = (a: any, b: any) => a.x >= b.x - 1 && a.y >= b.y - 1 && a.x + a.w <= b.x + b.w + 1 && a.y + a.h <= b.y + b.h + 1;
+const inside = (a: any, b: any) =>
+  a.x >= b.x - 1 && a.y >= b.y - 1 && a.x + a.w <= b.x + b.w + 1 && a.y + a.h <= b.y + b.h + 1;
 const overlaps = (a: any, b: any) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 
 const B = useBrowser({ width: 1200, height: 700 });
@@ -92,7 +93,14 @@ describe('visor 3D con tarjetas y marcadores', () => {
     const figma = await runPlugin({ rootNode: stage });
     const all = figma.currentPage.findAll(() => true) as any[];
     // Cada título de tarjeta queda dentro de todos los frames que lo recortan
-    for (const title of ['PUERTOS USB-C', 'BOOT Y RST', 'LED RGB', 'MÓDULO ESP32-S3', 'ANTENA DE PCB', 'TIRAS DE PINES']) {
+    for (const title of [
+      'PUERTOS USB-C',
+      'BOOT Y RST',
+      'LED RGB',
+      'MÓDULO ESP32-S3',
+      'ANTENA DE PCB',
+      'TIRAS DE PINES',
+    ]) {
       const t = all.find(n => n.type === 'TEXT' && String(n.characters).includes(title));
       expect(t, title).toBeDefined();
       for (let p = t.parent; p && p.type !== 'PAGE'; p = p.parent) {
@@ -106,7 +114,10 @@ describe('visor 3D con tarjetas y marcadores', () => {
     const drawOrder = all; // findAll recorre en orden de dibujo: lo posterior queda encima
     const above = drawOrder.slice(drawOrder.indexOf(board) + 1).filter(n => !isAncestorOf(n, board));
     const covering = above.filter(
-      n => n.type !== 'TEXT' && (n.fills || []).some((f: any) => f.visible !== false && (f.opacity ?? 1) > 0.5) && overlaps(absBox(n), bb),
+      n =>
+        n.type !== 'TEXT' &&
+        (n.fills || []).some((f: any) => f.visible !== false && (f.opacity ?? 1) > 0.5) &&
+        overlaps(absBox(n), bb),
     );
     expect(covering.map(n => n.name)).toEqual([]);
   });

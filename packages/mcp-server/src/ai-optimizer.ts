@@ -125,7 +125,10 @@ Output ONLY a valid JSON object representing the optimized root UINode. No markd
       if (!res.ok) {
         const errBody = await res.text().catch(() => '');
         // Si el modelo no existe (404) o está descontinuado en la versión de API, probamos el siguiente candidato
-        const isNotFound = res.status === 404 || errBody.toLowerCase().includes('not found') || errBody.toLowerCase().includes('is not supported');
+        const isNotFound =
+          res.status === 404 ||
+          errBody.toLowerCase().includes('not found') ||
+          errBody.toLowerCase().includes('is not supported');
         if (isNotFound) {
           lastFailureReason = `Modelo ${modelToTry} no disponible (${res.status}): ${errBody.slice(0, 150)}`;
           continue;
@@ -147,7 +150,10 @@ Output ONLY a valid JSON object representing the optimized root UINode. No markd
       }
 
       // Limpiar posibles bloques ```json ``` que a veces añade la API
-      const cleanJson = candidateText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+      const cleanJson = candidateText
+        .replace(/^```json\s*/i, '')
+        .replace(/```\s*$/i, '')
+        .trim();
       const optimizedRoot = JSON.parse(cleanJson);
 
       if (!optimizedRoot || typeof optimizedRoot !== 'object' || !optimizedRoot.type) {

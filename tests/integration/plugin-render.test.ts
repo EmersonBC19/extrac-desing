@@ -153,7 +153,8 @@ describe('render normal', () => {
             type: 'SVG',
             name: 'Icon / Wifi',
             layout: { width: 24, height: 24 },
-            svgContent: '<svg width="24" height="24"><path d="M0 0h24v24" fill="url(#broken-glow)" stroke="url(#missing-grad)" /></svg>',
+            svgContent:
+              '<svg width="24" height="24"><path d="M0 0h24v24" fill="url(#broken-glow)" stroke="url(#missing-grad)" /></svg>',
           },
         ],
       },
@@ -673,7 +674,13 @@ describe('fuentes (fase 5.3)', () => {
           name: 'Heading',
           layout: { mode: 'NONE', width: 'FILL', height: 60, measuredWidth: 326, measuredHeight: 60, x: 0, y: 0 },
           styles: { fills: [{ r: 0.1, g: 0.1, b: 0.1, a: 1 }] },
-          textData: { characters: 'iPhone Duo', fontSize: 56, fontWeight: '600', fontFamily: 'SF Pro Display', noWrap: true },
+          textData: {
+            characters: 'iPhone Duo',
+            fontSize: 56,
+            fontWeight: '600',
+            fontFamily: 'SF Pro Display',
+            noWrap: true,
+          },
         },
       ],
     };

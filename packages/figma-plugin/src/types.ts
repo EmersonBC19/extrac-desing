@@ -114,7 +114,12 @@ export interface UIStyles {
   fills: (RGBAColor | UIGradientPaint)[];
   strokes?: StrokeStyle[];
   borderSides?: BorderSides;
-  accentBorder?: { side: 'TOP' | 'RIGHT' | 'BOTTOM' | 'LEFT'; color: RGBAColor; width: number; style?: 'SOLID' | 'DASHED' | 'DOTTED' };
+  accentBorder?: {
+    side: 'TOP' | 'RIGHT' | 'BOTTOM' | 'LEFT';
+    color: RGBAColor;
+    width: number;
+    style?: 'SOLID' | 'DASHED' | 'DOTTED';
+  };
   cornerRadius?: number | [number, number, number, number];
   opacity?: number;
   boxShadow?: BoxShadow[];

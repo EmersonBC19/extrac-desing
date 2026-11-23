@@ -142,7 +142,10 @@ describe('bordes', () => {
 });
 
 describe('párrafos con enlaces (notas al pie de apple.com)', () => {
-  const textNodes = (root: any) => flatten(root).filter((x: any) => x.node.type === 'TEXT').map((x: any) => x.node);
+  const textNodes = (root: any) =>
+    flatten(root)
+      .filter((x: any) => x.node.type === 'TEXT')
+      .map((x: any) => x.node);
 
   it('cada nota con padding es UN solo texto con el enlace como tramo (antes: piezas que se montaban)', async () => {
     const ul = await get('footnotes');
@@ -183,8 +186,7 @@ describe('textos de una línea', () => {
 describe('ancho de badges y botones', () => {
   it('un número en círculo de 20 px conserva su ancho (antes HUG: una barrita de 7 px sin número)', async () => {
     const box = await get('badges');
-    const byText = (t: string) =>
-      flatten(box).find((x: any) => x.node.type !== 'TEXT' && texts(x.node) === t)?.node;
+    const byText = (t: string) => flatten(box).find((x: any) => x.node.type !== 'TEXT' && texts(x.node) === t)?.node;
     expect(byText('1')?.layout.width).toBe(20);
     expect(byText('Nuevo')?.layout.width).toBe('HUG'); // se ajusta al texto en la web
     expect(byText('Ir')?.layout.width).toBe(200); // ancho fijo

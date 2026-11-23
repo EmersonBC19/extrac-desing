@@ -120,11 +120,7 @@ function firstFamily(stack: string): string {
 }
 
 export function normText(t: string): string {
-  return (t || '')
-    .normalize('NFC')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
+  return (t || '').normalize('NFC').replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
 export function hex(c: RGBA | null): string {
@@ -508,7 +504,16 @@ const FIT_NAMES: Record<string, string> = {
 /** 1.777 → "16:9"; si no es una proporción habitual, "1,78:1" */
 function ratioText(r: number): string {
   const common: Array<[number, number]> = [
-    [1, 1], [4, 3], [3, 2], [16, 9], [21, 9], [5, 4], [3, 4], [2, 3], [9, 16], [4, 5],
+    [1, 1],
+    [4, 3],
+    [3, 2],
+    [16, 9],
+    [21, 9],
+    [5, 4],
+    [3, 4],
+    [2, 3],
+    [9, 16],
+    [4, 5],
   ];
   for (const [a, b] of common) if (Math.abs(r / (a / b) - 1) < 0.015) return `${a}:${b}`;
   return `${(Math.round(r * 100) / 100).toString().replace('.', ',')}:1`;
@@ -588,7 +593,13 @@ export function compareTrees(design: any, production: any, opts: CompareOptions 
           `Imagen distinta: proporción ${ratioText(rp)} en producción, ${ratioText(rd)} en el diseño`,
         );
       } else {
-        add('info', 'imagen', d, p, 'Imagen: no es el mismo archivo que en el diseño (puede ser la misma exportada de otra forma)');
+        add(
+          'info',
+          'imagen',
+          d,
+          p,
+          'Imagen: no es el mismo archivo que en el diseño (puede ser la misma exportada de otra forma)',
+        );
       }
     }
     if (d.image.scaleMode !== p.image.scaleMode) {

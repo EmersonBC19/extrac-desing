@@ -33,7 +33,8 @@ describe('ai-optimizer (Gemini Flash)', () => {
   });
 
   it('optimiza exitosamente el árbol y restaura imágenes base64', async () => {
-    const fakeImageBase64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    const fakeImageBase64 =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
     const payload = {
       rootNode: {
         id: 'root-1',

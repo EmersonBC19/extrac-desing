@@ -18,9 +18,10 @@ export function safeVarName(name: string): string {
 export async function newCollection(base: string): Promise<{ collection: VariableCollection; modeId: string }> {
   let existing: string[] = [];
   try {
-    const cols = typeof (figma.variables as any).getLocalVariableCollectionsAsync === 'function'
-      ? await (figma.variables as any).getLocalVariableCollectionsAsync()
-      : figma.variables.getLocalVariableCollections?.() || [];
+    const cols =
+      typeof (figma.variables as any).getLocalVariableCollectionsAsync === 'function'
+        ? await (figma.variables as any).getLocalVariableCollectionsAsync()
+        : figma.variables.getLocalVariableCollections?.() || [];
     existing = cols.map((c: any) => c.name);
   } catch (_e) {}
   let name = base;
@@ -106,16 +107,16 @@ export async function cssTokensToVariables(
   colors: Record<string, { r: number; g: number; b: number; a?: number }>,
 ): Promise<number> {
   const V = figma.variables;
-  const collections = typeof (V as any).getLocalVariableCollectionsAsync === 'function'
-    ? await (V as any).getLocalVariableCollectionsAsync()
-    : V.getLocalVariableCollections?.() || [];
-  const collection =
-    collections.find((c: any) => c.name === 'Tokens CSS') ||
-    V.createVariableCollection('Tokens CSS');
+  const collections =
+    typeof (V as any).getLocalVariableCollectionsAsync === 'function'
+      ? await (V as any).getLocalVariableCollectionsAsync()
+      : V.getLocalVariableCollections?.() || [];
+  const collection = collections.find((c: any) => c.name === 'Tokens CSS') || V.createVariableCollection('Tokens CSS');
   const modeId = collection.modes[0].modeId;
-  const allVars = typeof (V as any).getLocalVariablesAsync === 'function'
-    ? await (V as any).getLocalVariablesAsync('COLOR')
-    : V.getLocalVariables?.('COLOR') || [];
+  const allVars =
+    typeof (V as any).getLocalVariablesAsync === 'function'
+      ? await (V as any).getLocalVariablesAsync('COLOR')
+      : V.getLocalVariables?.('COLOR') || [];
   const existing = allVars.filter((v: any) => v.variableCollectionId === collection.id);
   let count = 0;
   for (const [token, c] of Object.entries(colors)) {

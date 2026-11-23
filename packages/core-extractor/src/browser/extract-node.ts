@@ -492,7 +492,15 @@ export function extractNodeTree(
         const st = layer.match(STOP_START);
         if (!kind || !st || !(period >= 4 && period <= 256)) return;
         const t = thick(parseFloat(st[1]));
-        marks.push({ kind, t, pos: 'start', color, pw: kind === 'VLINE' ? period : 0, ph: kind === 'HLINE' ? period : 0, idx });
+        marks.push({
+          kind,
+          t,
+          pos: 'start',
+          color,
+          pw: kind === 'VLINE' ? period : 0,
+          ph: kind === 'HLINE' ? period : 0,
+          idx,
+        });
         return;
       }
       const size = pxPair(sizeOf(idx));
@@ -521,7 +529,8 @@ export function extractNodeTree(
     let H = Math.max(0, ...marks.map(m => m.ph));
     if (!W) W = H || 8;
     if (!H) H = W || 8;
-    const fits = (period: number, total: number) => !period || Math.abs(total / period - Math.round(total / period)) < 0.01;
+    const fits = (period: number, total: number) =>
+      !period || Math.abs(total / period - Math.round(total / period)) < 0.01;
     const used = marks.filter(m => fits(m.pw, W) && fits(m.ph, H));
     if (!used.length) return null;
 
@@ -876,10 +885,7 @@ export function extractNodeTree(
             },
             styles: {
               // color de fondo debajo, mosaico en medio y el resto de capas (viñetas) encima
-              fills: [
-                ...(bg && bg.a > 0.01 ? [bg] : []),
-                ...gradientsExcept(style.backgroundImage, gridTile.layers),
-              ],
+              fills: [...(bg && bg.a > 0.01 ? [bg] : []), ...gradientsExcept(style.backgroundImage, gridTile.layers)],
               imageScaleMode: 'TILE',
               cornerRadius: parseCornerRadius(style),
             },
@@ -887,7 +893,7 @@ export function extractNodeTree(
             children: [],
           };
         }
-        const decoFills = decoGrads.length > 0 ? decoGrads : (bg && bg.a > 0.01 ? [bg] : []);
+        const decoFills = decoGrads.length > 0 ? decoGrads : bg && bg.a > 0.01 ? [bg] : [];
         const decoStrokes: any[] = [];
         let borderSides: any = undefined;
         if (hasBorder) {
@@ -1135,7 +1141,11 @@ export function extractNodeTree(
        * Color sólido + su opacidad. Solo fill-opacity / stroke-opacity: añadir también `opacity`
        * multiplicaba la transparencia (α²) y la del trazo apagaba también el relleno.
        */
-      const setPaint = (attr: 'fill' | 'stroke', c: { r: number; g: number; b: number; a: number }, cssOpacity: string) => {
+      const setPaint = (
+        attr: 'fill' | 'stroke',
+        c: { r: number; g: number; b: number; a: number },
+        cssOpacity: string,
+      ) => {
         const hex = (v: number) =>
           Math.round(v * 255)
             .toString(16)
@@ -1175,7 +1185,11 @@ export function extractNodeTree(
         applyStrokeGeometry();
       } else if (hasStroke) {
         const usable = (v: string) => !!v && v !== 'none' && !urlRef(v);
-        const strokeColorStr = usable(vStroke) ? vStroke : usable(svgCompStyle.stroke) ? svgCompStyle.stroke : style.color;
+        const strokeColorStr = usable(vStroke)
+          ? vStroke
+          : usable(svgCompStyle.stroke)
+            ? svgCompStyle.stroke
+            : style.color;
         const ps = parseColor(strokeColorStr, style.color) || cc;
         setPaint('stroke', ps, vs.strokeOpacity);
         applyStrokeGeometry();

@@ -191,10 +191,7 @@ export class FigmaWsHub {
             const shouldOptimize = !measured &&
                 (msg.payload?.optimizeWithAi === true ||
                     (msg.payload?.optimizeWithAi !== false && this.pluginAiOptimization === true && Boolean(geminiKey)));
-            const geminiModel = msg.payload?.geminiModel ||
-                this.pluginGeminiModel ||
-                process.env.GEMINI_MODEL ||
-                'gemini-2.5-flash';
+            const geminiModel = msg.payload?.geminiModel || this.pluginGeminiModel || process.env.GEMINI_MODEL || 'gemini-2.5-flash';
             if (geminiKey && shouldOptimize) {
                 this.log.info(`Iniciando optimización con Gemini Flash (${geminiModel})...`);
                 try {
@@ -319,7 +316,11 @@ export class FigmaWsHub {
             }
             // Un plugin anterior no conoce esta consulta: la ignoraría y la extensión esperaría en vano
             if (this.pluginProtocol() < HUB_PROTOCOL) {
-                this.send(ws, { type: 'FIGMA_SELECTION', requestId, error: 'El plugin de Figma es de una versión anterior: ciérralo y vuelve a abrirlo en Figma' });
+                this.send(ws, {
+                    type: 'FIGMA_SELECTION',
+                    requestId,
+                    error: 'El plugin de Figma es de una versión anterior: ciérralo y vuelve a abrirlo en Figma',
+                });
                 return;
             }
             const timer = setTimeout(() => {

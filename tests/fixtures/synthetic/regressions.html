@@ -141,7 +141,10 @@
 
     <div id="ghost" class="box"><span>texto</span></div>
     <div id="zero" class="box"><span>texto</span></div>
-    <div id="deco" class="box"><div>texto</div><div>más</div></div>
+    <div id="deco" class="box">
+      <div>texto</div>
+      <div>más</div>
+    </div>
     <div id="ppwrap">
       <div id="pp"><span>con pseudo</span></div>
     </div>
@@ -198,43 +201,72 @@
       "
     ></div>
     <!-- Cuadrícula en un pseudo-elemento que cubre la sección -->
-    <div id="gridpseudo" class="box gridpseudo"><div>contenido</div><div>más</div></div>
+    <div id="gridpseudo" class="box gridpseudo">
+      <div>contenido</div>
+      <div>más</div>
+    </div>
 
     <!-- Líneas de circuito: SVG con stroke-width y tamaño por CSS; y otro estirado sin proporciones -->
     <svg id="circuit" style="display: block; width: 600px; height: 200px" viewBox="0 0 300 100">
       <path d="M0 50H250" stroke="#2dd4bf" stroke-width="1" fill="none" />
       <circle cx="250" cy="50" r="4" fill="none" stroke="#2dd4bf" stroke-width="1" />
     </svg>
-    <svg id="circuit2" style="display: block; width: 600px; height: 100px" viewBox="0 0 300 100" preserveAspectRatio="none">
+    <svg
+      id="circuit2"
+      style="display: block; width: 600px; height: 100px"
+      viewBox="0 0 300 100"
+      preserveAspectRatio="none"
+    >
       <path d="M0 50H250" stroke="#2dd4bf" stroke-width="1" fill="none" />
     </svg>
 
     <!-- Texto suelto junto a un elemento (título directo en el div + <small> debajo) -->
     <div id="chiptext" style="width: 420px; font-family: Arial; font-size: 14px">
       <div style="font-weight: 700">
-        LED + resistencia de 220–330 Ω<small style="display: block; font-family: monospace">se usa en 4 laboratorios</small>
+        LED + resistencia de 220–330 Ω<small style="display: block; font-family: monospace"
+          >se usa en 4 laboratorios</small
+        >
       </div>
     </div>
 
     <!-- Notas al pie (apple.com): párrafos "todo inline" con padding, enlace y espacios del código fuente -->
-    <ul id="footnotes" style="list-style: none; padding: 0; width: 520px; font: 12px/16px Arial; color: rgba(0, 0, 0, 0.56)">
-      <li style="padding-bottom: 10px"><small>◊</small> Sólo para nuevas suscripciones que cumplan con los requisitos.
-						$45.900&nbsp;o
-						$62.900&nbsp;o
-						$86.900&nbsp;al mes al finalizar el periodo de prueba. Sujeto a restricciones y otros&nbsp;<a href="#">términos</a>.</li>
-      <li style="padding-bottom: 10px">Apple&nbsp;TV requiere suscripción. Sujeto a restricciones y otros <a href="#">términos</a>.</li>
+    <ul
+      id="footnotes"
+      style="list-style: none; padding: 0; width: 520px; font: 12px/16px Arial; color: rgba(0, 0, 0, 0.56)"
+    >
+      <li style="padding-bottom: 10px">
+        <small>◊</small> Sólo para nuevas suscripciones que cumplan con los requisitos. $45.900&nbsp;o $62.900&nbsp;o
+        $86.900&nbsp;al mes al finalizar el periodo de prueba. Sujeto a restricciones y otros&nbsp;<a href="#"
+          >términos</a
+        >.
+      </li>
+      <li style="padding-bottom: 10px">
+        Apple&nbsp;TV requiere suscripción. Sujeto a restricciones y otros <a href="#">términos</a>.
+      </li>
     </ul>
-    <div id="shopline" style="padding-top: 10px; font: 12px Arial"><a href="#">Busca un distribuidor</a> cerca de ti.</div>
+    <div id="shopline" style="padding-top: 10px; font: 12px Arial">
+      <a href="#">Busca un distribuidor</a> cerca de ti.
+    </div>
     <!-- Texto suelto junto a un bloque, con saltos y tabulaciones del código fuente -->
-    <div id="mixedws" style="font: 14px Arial; width: 500px">Precio:
-				$45.900&nbsp;o
-				$62.900<div>bloque</div></div>
+    <div id="mixedws" style="font: 14px Arial; width: 500px">
+      Precio: $45.900&nbsp;o $62.900
+      <div>bloque</div>
+    </div>
 
     <!-- Número en círculo de ancho fijo (tarjetas del visor), pastilla que se ajusta al texto y botón de ancho fijo -->
     <div id="badges" style="display: flex; gap: 12px; align-items: center; padding: 8px">
       <span
         id="numbadge"
-        style="display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: #2dd4bf; color: #0d1117; font: 700 12px/1 monospace"
+        style="
+          display: inline-grid;
+          place-items: center;
+          width: 20px;
+          height: 20px;
+          border-radius: 50%;
+          background: #2dd4bf;
+          color: #0d1117;
+          font: 700 12px/1 monospace;
+        "
         >1</span
       >
       <span id="pill" class="badge" style="padding: 2px 10px; border-radius: 999px; background: #eee">Nuevo</span>
@@ -242,8 +274,14 @@
     </div>
 
     <!-- Nombres: CSS Modules de Vite (_local_hash_línea) y clases de alcance de frameworks -->
-    <div id="cssmod" class="_head_pgjsj_6 svelte-1x2y3z"><div>uno</div><div>dos</div></div>
-    <div id="scoped" class="svelte-1x2y3z lab-row"><div>uno</div><div>dos</div></div>
+    <div id="cssmod" class="_head_pgjsj_6 svelte-1x2y3z">
+      <div>uno</div>
+      <div>dos</div>
+    </div>
+    <div id="scoped" class="svelte-1x2y3z lab-row">
+      <div>uno</div>
+      <div>dos</div>
+    </div>
 
     <div id="tall">
       <div id="collapsed"><div></div></div>

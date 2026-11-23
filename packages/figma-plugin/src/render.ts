@@ -705,13 +705,13 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
               }
             }
           } catch (childErr: any) {
-              // Un hijo con error de dimensionado no debe abortar a sus hermanos
-              figma.ui.postMessage({
-                type: 'LOG',
-                level: 'warn',
-                message: `Ajuste de capa "${childData.name}" incompleto: ${childErr?.message || childErr}`,
-              });
-            }
+            // Un hijo con error de dimensionado no debe abortar a sus hermanos
+            figma.ui.postMessage({
+              type: 'LOG',
+              level: 'warn',
+              message: `Ajuste de capa "${childData.name}" incompleto: ${childErr?.message || childErr}`,
+            });
+          }
         }
       }
 

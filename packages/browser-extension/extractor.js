@@ -1175,7 +1175,15 @@
           const st2 = layer.match(STOP_START);
           if (!kind2 || !st2 || !(period >= 4 && period <= 256)) return;
           const t2 = thick(parseFloat(st2[1]));
-          marks.push({ kind: kind2, t: t2, pos: "start", color, pw: kind2 === "VLINE" ? period : 0, ph: kind2 === "HLINE" ? period : 0, idx });
+          marks.push({
+            kind: kind2,
+            t: t2,
+            pos: "start",
+            color,
+            pw: kind2 === "VLINE" ? period : 0,
+            ph: kind2 === "HLINE" ? period : 0,
+            idx
+          });
           return;
         }
         const size = pxPair(sizeOf(idx));
@@ -1504,10 +1512,7 @@
               },
               styles: {
                 // color de fondo debajo, mosaico en medio y el resto de capas (viñetas) encima
-                fills: [
-                  ...bg && bg.a > 0.01 ? [bg] : [],
-                  ...gradientsExcept(style2.backgroundImage, gridTile2.layers)
-                ],
+                fills: [...bg && bg.a > 0.01 ? [bg] : [], ...gradientsExcept(style2.backgroundImage, gridTile2.layers)],
                 imageScaleMode: "TILE",
                 cornerRadius: parseCornerRadius(style2)
               },

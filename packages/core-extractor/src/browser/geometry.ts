@@ -269,7 +269,8 @@ export function fitWrapToGeometry(node: RawNode, W: number, H: number) {
 
 /** ¿Crea este elemento bloque contenedor para descendientes absolutos (o fijos, si fixedToo)? */
 function isContainingBlock(s: CSSStyleDeclaration, fixedToo: boolean): boolean {
-  const transformed = s.transform !== 'none' || s.filter !== 'none' || /paint|layout|strict|content/.test(s.contain || '');
+  const transformed =
+    s.transform !== 'none' || s.filter !== 'none' || /paint|layout|strict|content/.test(s.contain || '');
   return fixedToo ? transformed : transformed || s.position !== 'static';
 }
 

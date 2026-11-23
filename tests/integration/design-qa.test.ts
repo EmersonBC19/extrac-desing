@@ -138,7 +138,10 @@ describe('QA de diseño: imágenes', () => {
     const before = figma.logs.length;
     await figma.ui.onmessage({
       type: 'RENDER_NODES',
-      payload: { rootNode: JSON.parse(JSON.stringify(trees[prodId])), compare: { targetNodeId: target.id, width: 312 } },
+      payload: {
+        rootNode: JSON.parse(JSON.stringify(trees[prodId])),
+        compare: { targetNodeId: target.id, width: 312 },
+      },
     });
     const logs = figma.logs.slice(before);
     const report = figma.currentPage.children.find((n: any) => /^QA · /.test(n.name));
@@ -193,12 +196,19 @@ describe('QA de diseño: informe legible', () => {
     const before = figma.logs.length;
     await figma.ui.onmessage({
       type: 'RENDER_NODES',
-      payload: { rootNode: JSON.parse(JSON.stringify(trees[prodId])), compare: { targetNodeId: target.id, width: 352 } },
+      payload: {
+        rootNode: JSON.parse(JSON.stringify(trees[prodId])),
+        compare: { targetNodeId: target.id, width: 352 },
+      },
     });
     const logs = figma.logs.slice(before);
     const report = figma.currentPage.children.find((n: any) => /^QA · /.test(n.name));
     const rows = (report?.children || []).filter((n: any) => n.type === 'TEXT').map((t: any) => t.characters);
-    return { rows, success: logs.find((m: any) => m.type === 'RENDER_SUCCESS'), errors: logs.filter((m: any) => m.type === 'RENDER_ERROR') };
+    return {
+      rows,
+      success: logs.find((m: any) => m.type === 'RENDER_SUCCESS'),
+      errors: logs.filter((m: any) => m.type === 'RENDER_ERROR'),
+    };
   }
 
   it('el mismo bloque: solo la fuente sustituida, en una fila y como diferencia baja', async () => {

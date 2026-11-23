@@ -23,6 +23,7 @@
  *     Bootstrap) reciben un script pequeño que los hace funcionar. El JavaScript propio del sitio no
  *     se copia: depende de su build, su estado y su servidor.
  */
+import { applyRevealsToClone, detectClassReveals, REVEAL_JS, type StyleReveal } from './export-reveals';
 
 export interface ExportOptions {
   /** Descarga el texto de una hoja de otro dominio (la extensión lo hace desde el service worker) */
@@ -31,6 +32,11 @@ export interface ExportOptions {
   verify?: boolean;
   /** Tope de tiempo de la verificación en ms */
   verifyTimeoutMs?: number;
+  /**
+   * Elementos que aparecen al hacer scroll movidos por JavaScript (el inspector los dejó visibles
+   * para medir): su estado oculto y el visible. Se exportan ocultos y script.js los anima.
+   */
+  reveals?: StyleReveal[];
 }
 
 export interface ExportStats {
@@ -48,6 +54,8 @@ export interface ExportStats {
   /** % de elementos con la misma posición y tamaño (±2 px) que en la página; null sin verificar */
   fidelity: number | null;
   widgets: string[];
+  /** Animaciones de entrada al hacer scroll que se conservaron */
+  reveals: number;
   warnings: string[];
 }
 
@@ -1288,6 +1296,11 @@ export async function exportBlock(input: Element, opts: ExportOptions = {}): Pro
   }
 
   // 3. Clon
+  // Animaciones de entrada por clase (AOS, WOW, is-visible…), detectadas sobre el original
+  const styleReveals = (opts.reveals || []).filter(rv => rv && rv.el && root.contains(rv.el));
+  const byStyle = new Set(styleReveals.map(rv => rv.el));
+  const classReveals = detectClassReveals(root).filter(rv => !byStyle.has(rv.el));
+
   const { clone, origs, widgets, warnings: cloneWarnings } = cloneBlock(root);
   warnings.push(...cloneWarnings);
   clone.setAttribute('data-ctf-root', '');
@@ -1389,6 +1402,18 @@ export async function exportBlock(input: Element, opts: ExportOptions = {}): Pro
     }
   }
 
+  // Reveals: el clon vuelve a su estado oculto y script.js lo anima al entrar en la vista
+  const indexOf = new Map(origs.map((o, i) => [o, String(i)]));
+  const cloneByIdx = new Map<string, Element>();
+  for (const el of [clone, ...Array.from(clone.querySelectorAll(`[${IDX}]`))]) {
+    const i = el.getAttribute(IDX);
+    if (i != null) cloneByIdx.set(i, el);
+  }
+  const reveal = applyRevealsToClone(classReveals, styleReveals, el => {
+    const i = indexOf.get(el);
+    return i != null ? cloneByIdx.get(i) || null : null;
+  });
+
   // Marcas finales: solo los elementos corregidos conservan su número
   const patched = new Set(patches.map(p => p.idx));
   for (const el of [clone, ...Array.from(clone.querySelectorAll(`[${IDX}]`))]) {
@@ -1401,9 +1426,10 @@ export async function exportBlock(input: Element, opts: ExportOptions = {}): Pro
     (patches.length
       ? `\n\n/* Ajustes medidos en la página: estilos que las reglas copiadas no reproducen (hojas que no se\n * pudieron leer, estilos puestos por JavaScript o que dependían de elementos que no se exportan) */\n${patchCss(patches, important)}`
       : '') +
-    '\n';
+    '\n' +
+    (reveal.css ? '\n' + reveal.css : '');
 
-  const js = widgets.size ? WIDGETS_JS : '';
+  const js = [widgets.size ? WIDGETS_JS : '', reveal.count ? REVEAL_JS : ''].filter(Boolean).join('\n');
   const finalHtml = clone.outerHTML;
   const html = buildDoc(
     finalHtml,
@@ -1439,6 +1465,7 @@ export async function exportBlock(input: Element, opts: ExportOptions = {}): Pro
       patchedProps: patches.reduce((n, p) => n + Object.keys(p.props).length, 0),
       fidelity,
       widgets: Array.from(widgets),
+      reveals: reveal.count,
       warnings,
     },
   };

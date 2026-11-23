@@ -1,0 +1,76 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Animaciones de entrada al hacer scroll</title>
+    <style>
+      body {
+        margin: 0;
+        font:
+          16px Arial,
+          sans-serif;
+      }
+      #block {
+        padding: 40px;
+        background: #f4f6fb;
+      }
+      .card {
+        height: 220px;
+        margin: 0 0 40px;
+        background: #3355ff;
+        color: #fff;
+        border-radius: 12px;
+      }
+      .spacer {
+        height: 1400px;
+      }
+      /* Como AOS: oculto hasta que la librería agrega .aos-animate (una vez) */
+      [data-aos] {
+        opacity: 0;
+        transform: translateY(40px);
+        transition:
+          opacity 0.4s ease,
+          transform 0.4s ease;
+      }
+      [data-aos].aos-animate {
+        opacity: 1;
+        transform: none;
+      }
+      /* La regla del sitio es más específica que el atributo de la exportación */
+      #block .js-card {
+        opacity: 1;
+        transition:
+          opacity 0.5s ease-out,
+          transform 0.5s ease-out;
+      }
+    </style>
+  </head>
+  <body>
+    <section id="block">
+      <div class="card" id="aos-1" data-aos="fade-up">AOS arriba</div>
+      <div class="spacer"></div>
+      <div class="card" id="aos-2" data-aos="fade-up">AOS abajo</div>
+      <div class="spacer"></div>
+      <div class="card js-card" id="js-card">Animado por JavaScript</div>
+      <div class="card" id="plain">Sin animación</div>
+    </section>
+    <script>
+      // Por clase (una vez) y por estilos en línea (se oculta otra vez al salir de la vista)
+      const io = new IntersectionObserver(entries => {
+        for (const e of entries) {
+          const el = e.target;
+          if (el.hasAttribute('data-aos')) {
+            if (e.isIntersecting) el.classList.add('aos-animate');
+          } else {
+            el.style.opacity = e.isIntersecting ? '1' : '0';
+            el.style.transform = e.isIntersecting ? 'none' : 'translateY(30px)';
+          }
+        }
+      });
+      document.querySelectorAll('[data-aos], .js-card').forEach(el => io.observe(el));
+      const js = document.getElementById('js-card');
+      js.style.opacity = '0';
+      js.style.transform = 'translateY(30px)';
+    </script>
+  </body>
+</html>

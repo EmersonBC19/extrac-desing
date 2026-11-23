@@ -3503,6 +3503,167 @@
     return { url: location.href, title: document.title, rootNode: res.rootNode, tokens: res.tokens, stable };
   }
 
+  // packages/core-extractor/src/browser/export-reveals.ts
+  var REVEAL_CLASSES = [
+    "aos-animate",
+    "animated",
+    "animate__animated",
+    "is-visible",
+    "is-revealed",
+    "revealed",
+    "reveal-visible",
+    "in-view",
+    "is-inview",
+    "inview",
+    "is-in-view",
+    "visible",
+    "appeared",
+    "is-appeared",
+    "animate-in",
+    "animated-in"
+  ];
+  var FREEZE = "*, *::before, *::after { transition: none !important; animation: none !important; }";
+  function freezeTransitions() {
+    try {
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(FREEZE);
+      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+      return () => {
+        document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== sheet);
+      };
+    } catch (_e) {
+      const style = document.createElement("style");
+      style.textContent = FREEZE;
+      (document.head || document.documentElement).appendChild(style);
+      return () => style.remove();
+    }
+  }
+  var translatePx = (transform) => {
+    const m = String(transform || "").match(/matrix\(([^)]+)\)/);
+    if (!m) return 0;
+    const v = m[1].split(",").map(Number);
+    return Math.hypot(v[4] || 0, v[5] || 0);
+  };
+  var scaleOf = (transform) => {
+    const m = String(transform || "").match(/matrix\(([^)]+)\)/);
+    if (!m) return 1;
+    const v = m[1].split(",").map(Number);
+    return Math.hypot(v[0], v[1]);
+  };
+  function looksHidden(withClass, without) {
+    const o1 = parseFloat(withClass.opacity);
+    const o0 = parseFloat(without.opacity);
+    if (o1 - o0 > 0.5) return true;
+    if (withClass.visibility !== "hidden" && without.visibility === "hidden") return true;
+    const dt = Math.abs(translatePx(without.transform) - translatePx(withClass.transform));
+    const ds = Math.abs(scaleOf(without.transform) - scaleOf(withClass.transform));
+    return o1 - o0 > 0.2 && (dt > 8 || ds > 0.05);
+  }
+  function detectClassReveals(root, max = 300) {
+    const found = [];
+    const candidates = [root, ...Array.from(root.querySelectorAll("*"))].filter(
+      (el) => REVEAL_CLASSES.some((c) => el.classList && el.classList.contains(c))
+    );
+    if (!candidates.length) return found;
+    const unfreeze = freezeTransitions();
+    try {
+      for (const el of candidates.slice(0, max)) {
+        const cs = window.getComputedStyle(el);
+        if (cs.position === "fixed" || cs.display === "none") continue;
+        const visible = { opacity: cs.opacity, visibility: cs.visibility, transform: cs.transform };
+        if (!(parseFloat(visible.opacity) > 0.5) || visible.visibility === "hidden") continue;
+        const classes = REVEAL_CLASSES.filter((c) => el.classList.contains(c));
+        el.classList.remove(...classes);
+        const after = window.getComputedStyle(el);
+        const hidden = { opacity: after.opacity, visibility: after.visibility, transform: after.transform };
+        el.classList.add(...classes);
+        void window.getComputedStyle(el).opacity;
+        if (looksHidden(visible, hidden)) found.push({ el, classes });
+      }
+    } finally {
+      unfreeze();
+    }
+    return found;
+  }
+  function stripForced(clone) {
+    const style = clone.style;
+    if (!style) return;
+    for (const p of ["opacity", "visibility", "transform", "filter", "transition", "animation"]) {
+      if (style.getPropertyPriority(p) === "important") style.removeProperty(p);
+    }
+    if (!style.length) clone.removeAttribute("style");
+  }
+  function enterTransition(original) {
+    const t = String(original || "").trim();
+    const durations = [...t.matchAll(/(\d*\.?\d+)(ms|s)\b/g)].map((m) => parseFloat(m[1]) * (m[2] === "s" ? 1e3 : 1));
+    if (/(opacity|transform|all)/.test(t) && durations.some((d) => d > 0)) return t;
+    return "opacity 0.6s ease-out, transform 0.6s ease-out, filter 0.6s ease-out";
+  }
+  function applyRevealsToClone(classReveals, styleReveals, cloneOf) {
+    const rules = [];
+    let count = 0;
+    for (const r of classReveals) {
+      const c = cloneOf(r.el);
+      if (!c) continue;
+      c.classList.remove(...r.classes);
+      if (!c.getAttribute("class")) c.removeAttribute("class");
+      c.setAttribute("data-ctf-reveal", "class");
+      c.setAttribute("data-ctf-reveal-class", r.classes.join(" "));
+      count++;
+    }
+    styleReveals.forEach((r) => {
+      const c = cloneOf(r.el);
+      if (!c) return;
+      stripForced(c);
+      const id = `r${count}`;
+      c.setAttribute("data-ctf-reveal", id);
+      const decl = (s) => [
+        `opacity: ${s.opacity}`,
+        s.transform && s.transform !== "none" ? `transform: ${s.transform}` : "transform: none",
+        `visibility: ${s.visibility || "visible"}`,
+        s.filter && s.filter !== "none" ? `filter: ${s.filter}` : ""
+      ].filter(Boolean).map((d) => `${d} !important`).join("; ");
+      rules.push(
+        `[data-ctf-reveal="${id}"] { ${decl(r.hidden)}; transition: ${enterTransition(r.transition)} !important; }`,
+        `[data-ctf-reveal="${id}"].ctf-in { ${decl(r.visible)}; }`
+      );
+      count++;
+    });
+    if (!count) return { css: "", count };
+    const css = `/* Animaciones de entrada al hacer scroll: el estado oculto está aquí o en las reglas copiadas;
+ * script.js las activa al entrar en la vista (sin animación con prefers-reduced-motion) */
+` + rules.join("\n") + (rules.length ? "\n" : "") + `@media (prefers-reduced-motion: reduce) {
+  [data-ctf-reveal] { transition: none !important; animation: none !important; }
+}
+`;
+    return { css, count };
+  }
+  var REVEAL_JS = `/* Code to Figma — animaciones de entrada al hacer scroll */
+(function () {
+  var els = document.querySelectorAll('[data-ctf-reveal]');
+  if (!els.length) return;
+  function show(el) {
+    var cls = el.getAttribute('data-ctf-reveal-class');
+    if (cls) cls.split(' ').forEach(function (c) { if (c) el.classList.add(c); });
+    else el.classList.add('ctf-in');
+  }
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce || !('IntersectionObserver' in window)) {
+    Array.prototype.forEach.call(els, show);
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (e.isIntersecting) {
+        show(e.target);
+        io.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.15, rootMargin: '0px 0px -5% 0px' });
+  Array.prototype.forEach.call(els, function (el) { io.observe(el); });
+})();
+`;
+
   // packages/core-extractor/src/browser/export-html.ts
   var SVG_NS = "http://www.w3.org/2000/svg";
   var IDX = "data-ctf-i";
@@ -4491,6 +4652,9 @@ ${r}
 }` : r);
       }
     }
+    const styleReveals = (opts.reveals || []).filter((rv) => rv && rv.el && root.contains(rv.el));
+    const byStyle = new Set(styleReveals.map((rv) => rv.el));
+    const classReveals = detectClassReveals(root).filter((rv) => !byStyle.has(rv.el));
     const { clone, origs, widgets, warnings: cloneWarnings } = cloneBlock(root);
     warnings.push(...cloneWarnings);
     clone.setAttribute("data-ctf-root", "");
@@ -4583,6 +4747,16 @@ ${body}
         warnings.push("No se pudo verificar el resultado en esta página");
       }
     }
+    const indexOf = new Map(origs.map((o, i) => [o, String(i)]));
+    const cloneByIdx = /* @__PURE__ */ new Map();
+    for (const el of [clone, ...Array.from(clone.querySelectorAll(`[${IDX}]`))]) {
+      const i = el.getAttribute(IDX);
+      if (i != null) cloneByIdx.set(i, el);
+    }
+    const reveal = applyRevealsToClone(classReveals, styleReveals, (el) => {
+      const i = indexOf.get(el);
+      return i != null ? cloneByIdx.get(i) || null : null;
+    });
     const patched = new Set(patches.map((p) => p.idx));
     for (const el of [clone, ...Array.from(clone.querySelectorAll(`[${IDX}]`))]) {
       const i = el.getAttribute(IDX);
@@ -4593,8 +4767,8 @@ ${body}
 
 /* Ajustes medidos en la página: estilos que las reglas copiadas no reproducen (hojas que no se
  * pudieron leer, estilos puestos por JavaScript o que dependían de elementos que no se exportan) */
-${patchCss(patches, important)}` : "") + "\n";
-    const js = widgets.size ? WIDGETS_JS : "";
+${patchCss(patches, important)}` : "") + "\n" + (reveal.css ? "\n" + reveal.css : "");
+    const js = [widgets.size ? WIDGETS_JS : "", reveal.count ? REVEAL_JS : ""].filter(Boolean).join("\n");
     const finalHtml = clone.outerHTML;
     const html = buildDoc(
       finalHtml,
@@ -4631,6 +4805,7 @@ ${js.replace(/<\/script/gi, "<\\/script")}<\/script>
         patchedProps: patches.reduce((n, p) => n + Object.keys(p.props).length, 0),
         fidelity,
         widgets: Array.from(widgets),
+        reveals: reveal.count,
         warnings
       }
     };
@@ -4823,7 +4998,7 @@ ${js.replace(/<\/script/gi, "<\\/script")}<\/script>
       return `${cs.color}|${cs.backgroundColor}|${cs.borderTopColor}`;
     }).join(";");
   }
-  function freezeTransitions() {
+  function freezeTransitions2() {
     const sheet = new CSSStyleSheet();
     sheet.replaceSync("*, *::before, *::after { transition: none !important; }");
     document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
@@ -4888,7 +5063,7 @@ ${js.replace(/<\/script/gi, "<\\/script")}<\/script>
         }
       } else {
         const before = colorSignature(el);
-        const unfreeze = freezeTransitions();
+        const unfreeze = freezeTransitions2();
         const isDark = pageLooksDark();
         const undo = toggleClassTheme();
         try {

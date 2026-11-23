@@ -2198,7 +2198,14 @@
             setBtn(`${ICONS.spinner} Recorriendo… ${pct}%`),
           );
           setBtn(`${ICONS.spinner} Copiando reglas y verificando…`);
-          res = await window.__codeToFigmaExportHtml(this.selectedElements[0]);
+          // Los reveals forzados para medir vuelven a su estado oculto y se animan en la exportación
+          const reveals = (this.revealOverrides || []).map(({ el, hidden, visible, transition }) => ({
+            el,
+            hidden,
+            visible,
+            transition,
+          }));
+          res = await window.__codeToFigmaExportHtml(this.selectedElements[0], { reveals });
         } finally {
           this.restoreReveals();
           if (this.isElevated) relift();
@@ -2828,14 +2835,30 @@
         if (this.hasVisibleTwin(el, r)) continue;
         const props = ['opacity', 'visibility', 'transform', 'filter', 'transition', 'animation'];
         const saved = props.map(p => [p, el.style.getPropertyValue(p), el.style.getPropertyPriority(p)]);
+        // Estado oculto y transición para la exportación HTML (vuelve a animar la entrada). La
+        // transición se lee antes de congelarla; el estado oculto, después: puede estar a mitad de
+        // la salida y, sin transición, getComputedStyle (vivo) da ya el valor final
+        const transition = cs.transition;
         el.style.setProperty('transition', 'none', 'important');
         el.style.setProperty('animation', 'none', 'important');
+        const hidden = { opacity: cs.opacity, transform: cs.transform, visibility: cs.visibility, filter: cs.filter };
         el.style.setProperty('opacity', String(rec.opacity), 'important');
         if (rec.visibility !== cs.visibility) el.style.setProperty('visibility', rec.visibility, 'important');
         if (rec.transform && rec.transform !== cs.transform)
           el.style.setProperty('transform', rec.transform, 'important');
         if (rec.filter && rec.filter !== cs.filter) el.style.setProperty('filter', rec.filter, 'important');
-        overrides.push({ el, saved });
+        overrides.push({
+          el,
+          saved,
+          hidden,
+          transition,
+          visible: {
+            opacity: String(rec.opacity),
+            transform: rec.transform,
+            visibility: rec.visibility,
+            filter: rec.filter,
+          },
+        });
       }
       this.revealOverrides = overrides;
       return overrides.length;

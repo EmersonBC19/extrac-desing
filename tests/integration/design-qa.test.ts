@@ -7,6 +7,7 @@ import * as path from 'path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createRequire } from 'module';
 import { useBrowser } from '../helpers/browser';
+import { HUB_PROTOCOL } from '../../packages/contracts/src/index';
 
 const require = createRequire(import.meta.url);
 const { extract } = require('../helpers/extension-sim.cjs');
@@ -135,7 +136,7 @@ describe('selección de Figma: extensión → hub → plugin → extensión', ()
       );
 
       const plugin = await connectClient(hub.url, 'null');
-      plugin.send({ type: 'REGISTER_CLIENT', clientType: 'FIGMA_PLUGIN', pairingCode: code });
+      plugin.send({ type: 'REGISTER_CLIENT', clientType: 'FIGMA_PLUGIN', pairingCode: code, protocol: HUB_PROTOCOL });
       await plugin.waitFor((m: any) => m.type === 'AUTH_OK');
       ext.send({ type: 'GET_FIGMA_SELECTION', requestId: 'r1' });
       const ask = await plugin.waitFor((m: any) => m.type === 'GET_FIGMA_SELECTION');
@@ -155,6 +156,45 @@ describe('selección de Figma: extensión → hub → plugin → extensión', ()
       expect(got.selection).toMatchObject({ id: '1:2', name: 'Tarjeta', width: 320 });
       plugin.close();
       ext.close();
+    } finally {
+      await hub.stop();
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it('hub o plugin de una versión anterior: se dice qué reiniciar, sin esperar en vano', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ctf-qa-'));
+    const hub = await startHub({ home });
+    try {
+      const code = fs.readFileSync(path.join(home, '.code-to-figma', 'pairing-code'), 'utf8').trim();
+      const ext = await connectClient(hub.url);
+      ext.send({ type: 'REGISTER_CLIENT', clientType: 'BROWSER_EXTENSION' });
+      ext.send({ type: 'GET_STATUS' });
+      const st0 = await ext.waitFor((m: any) => m.type === 'STATUS_RESPONSE');
+      expect(st0.payload).toMatchObject({ protocol: HUB_PROTOCOL, pluginProtocol: 0 });
+
+      // El plugin abierto desde antes de actualizar no anuncia versión
+      const old = await connectClient(hub.url, 'null');
+      old.send({ type: 'REGISTER_CLIENT', clientType: 'FIGMA_PLUGIN', pairingCode: code });
+      await old.waitFor((m: any) => m.type === 'AUTH_OK');
+      const t0 = Date.now();
+      ext.send({ type: 'GET_FIGMA_SELECTION', requestId: 'v1' });
+      const reply = await ext.waitFor((m: any) => m.type === 'FIGMA_SELECTION' && m.requestId === 'v1');
+      expect(reply.error).toMatch(/plugin de Figma es de una versión anterior/);
+      expect(Date.now() - t0).toBeLessThan(1500);
+      old.close();
+      ext.close();
+
+      const ext2 = await connectClient(hub.url);
+      ext2.send({ type: 'REGISTER_CLIENT', clientType: 'BROWSER_EXTENSION' });
+      const fresh = await connectClient(hub.url, 'null');
+      fresh.send({ type: 'REGISTER_CLIENT', clientType: 'FIGMA_PLUGIN', pairingCode: code, protocol: HUB_PROTOCOL });
+      await fresh.waitFor((m: any) => m.type === 'AUTH_OK');
+      ext2.send({ type: 'GET_STATUS' });
+      const st1 = await ext2.waitFor((m: any) => m.type === 'STATUS_RESPONSE' && m.payload.figmaConnected);
+      expect(st1.payload.pluginProtocol).toBe(HUB_PROTOCOL);
+      fresh.close();
+      ext2.close();
     } finally {
       await hub.stop();
       fs.rmSync(home, { recursive: true, force: true });

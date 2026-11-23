@@ -296,6 +296,10 @@ async function captureRegions(windowId, rects, viewportWidth) {
 
 // ── Envío al hub (inicio) ─────────────────────────────────────────────────────────────────
 const HUB_URL = 'ws://localhost:8080';
+// = HUB_PROTOCOL de packages/contracts (lo comprueba tests/integration/messages.test.ts)
+const HUB_PROTOCOL = 2;
+const OUTDATED_HUB = 'El hub de Code to Figma es de una versión anterior: ciérralo y vuelve a abrirlo (npm run start:hub, o recompila el ejecutable con npm run build:hub-exe)';
+const OUTDATED_PLUGIN = 'El plugin de Figma es de una versión anterior: ciérralo y vuelve a abrirlo en Figma';
 // Mismos valores que packages/contracts/src/payload-stats.ts (este archivo no se empaqueta)
 const CHUNK_THRESHOLD_BYTES = 1024 * 1024;
 const CHUNK_SIZE_CHARS = 512 * 1024;
@@ -479,13 +483,25 @@ async function compareInFigma(payload) {
   return { qa: reply.qa, name: reply.name };
 }
 
+/**
+ * Breakpoints, tema y QA necesitan hub y plugin de esta versión. Uno anterior (el hub arrancado antes
+ * de actualizar, el plugin abierto desde entonces) descarta esos mensajes sin avisar: se dice aquí,
+ * con qué hay que reiniciar, en vez de esperar una respuesta que no llegará.
+ */
+async function assertUpToDate(hubUrl = HUB_URL) {
+  const st = await checkHubStatus(hubUrl);
+  if (!st.hubRunning) return; // el envío informará que no hay hub
+  if ((st.protocol || 1) < HUB_PROTOCOL) throw new Error(OUTDATED_HUB);
+  if (st.figmaConnected && st.pluginProtocol && st.pluginProtocol < HUB_PROTOCOL) throw new Error(OUTDATED_PLUGIN);
+}
+
 // Check if WebSocket Hub and Figma plugin are live
-function checkHubStatus() {
+function checkHubStatus(hubUrl = HUB_URL) {
   return new Promise(resolve => {
     let ws;
     let settled = false;
     try {
-      ws = new WebSocket('ws://localhost:8080');
+      ws = new WebSocket(hubUrl);
     } catch (err) {
       return resolve({ hubRunning: false, figmaConnected: false, figmaCount: 0 });
     }
@@ -530,6 +546,8 @@ function checkHubStatus() {
             hubRunning: true,
             figmaConnected: !!msg.payload?.figmaConnected,
             figmaCount: msg.payload?.figmaCount || 0,
+            protocol: msg.payload?.protocol || 1,
+            pluginProtocol: msg.payload?.pluginProtocol ?? (msg.payload?.figmaConnected ? 1 : 0),
           });
         }
       } catch (_) {}
@@ -583,12 +601,18 @@ function claimRenderToken(token, sender) {
 // Mensajes del content script (catálogo: packages/contracts/src/messages.ts, canal "extension").
 // Cada manejador devuelve una promesa; su resultado se fusiona en { success: true, ... }.
 const MESSAGE_HANDLERS = {
-  TRANSMIT_TO_FIGMA: message => sendToWebSocketHub(message.payload).then(sent => ({ sent })),
+  TRANSMIT_TO_FIGMA: async message => {
+    if (message.payload && message.payload.responsive) await assertUpToDate();
+    return { sent: await sendToWebSocketHub(message.payload) };
+  },
 
   CHECK_FIGMA_STATUS: () => checkHubStatus().then(status => ({ status })),
 
   // QA de diseño: qué frame hay seleccionado en Figma, y la comparación con su resumen
-  QUERY_FIGMA_SELECTION: () => queryFigmaSelection().then(selection => ({ selection })),
+  QUERY_FIGMA_SELECTION: async () => {
+    await assertUpToDate();
+    return { selection: await queryFigmaSelection() };
+  },
 
   COMPARE_IN_FIGMA: message => compareInFigma(message.payload),
 

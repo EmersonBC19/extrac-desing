@@ -2004,6 +2004,8 @@
             "Asegúrate de que Code to Figma Hub esté abierto (o ejecuta 'npm run start:hub'). También puedes usar 'Copiar JSON' para pegar en Figma.",
             5500,
           );
+        } else if (msg.includes('versión anterior')) {
+          this.showToast(`${ICONS.warning} Actualiza Code to Figma`, msg, 9000);
         } else {
           this.showToast(`${ICONS.warning} Error de extracción`, msg, 5500);
         }

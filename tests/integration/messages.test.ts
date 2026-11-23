@@ -5,7 +5,7 @@ import { createRequire } from 'module';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { HubInboundSchema, MESSAGE_CATALOG, messageTypesOf } from '../../packages/contracts/src/index';
+import { HUB_PROTOCOL, HubInboundSchema, MESSAGE_CATALOG, messageTypesOf } from '../../packages/contracts/src/index';
 
 const require = createRequire(import.meta.url);
 const { loadPlugin } = require('../helpers/figma-mock.cjs');
@@ -22,6 +22,20 @@ function handlerKeys(src: string, tableName: string): string[] {
   );
   return [...body.matchAll(/^\s{2,6}([A-Z][A-Z0-9_]+)\s*(?:\(|:)/gm)].map(m => m[1]);
 }
+
+describe('versión del protocolo', () => {
+  it('la UI del plugin y el service worker anuncian la misma versión que el contrato', () => {
+    for (const file of ['packages/figma-plugin/src/ui.html', 'packages/browser-extension/background.js']) {
+      const m = read(file).match(/const HUB_PROTOCOL = (\d+);/);
+      expect(m && Number(m[1]), file).toBe(HUB_PROTOCOL);
+    }
+    // Cada registro del plugin la envía
+    const ui = read('packages/figma-plugin/src/ui.html');
+    expect(ui.match(/clientType: 'FIGMA_PLUGIN',\s+protocol: HUB_PROTOCOL,/g)).toHaveLength(
+      ui.match(/clientType: 'FIGMA_PLUGIN'/g)!.length,
+    );
+  });
+});
 
 describe('catálogo de mensajes', () => {
   it('todo mensaje del catálogo tiene canal, tipo CQRS y ruta', () => {

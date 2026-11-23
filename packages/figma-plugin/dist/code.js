@@ -6465,7 +6465,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     clientType: string2().max(64).optional(),
     role: string2().max(64).optional(),
     client: string2().max(200).optional(),
-    pairingCode: string2().max(32).optional()
+    pairingCode: string2().max(32).optional(),
+    protocol: number2().int().nonnegative().max(1e3).optional()
   }).passthrough();
   var RenderTimingsSchema = object({
     fontsMs: number2().finite(),

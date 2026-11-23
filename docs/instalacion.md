@@ -120,5 +120,12 @@ El diálogo indica qué porcentaje de los elementos quedó exactamente en su sit
 ### 3. "Hub no detectado en puerto 8080"
 * **Solución**: Comprueba que `code-to-figma-hub.exe` esté abierto. Si lo estás usando en modo desarrollo, puedes iniciarlo con `npm run start:hub`.
 
-### 4. Código de vinculación olvidado o cambiado
+### 4. "Es de una versión anterior" tras actualizar
+* **Causa**: el hub o el plugin siguen abiertos desde antes de la actualización y no conocen las funciones nuevas (breakpoints, claro/oscuro, Comparar con Figma).
+* **Solución**: el aviso dice cuál de los dos es.
+  * **Hub**: ciérralo y vuelve a abrirlo. Si usas el ejecutable, regenéralo antes con `npm run build:hub-exe`.
+  * **Plugin**: ciérralo en Figma y vuelve a ejecutarlo.
+  * **Extensión**: recárgala en `chrome://extensions` y refresca la pestaña.
+
+### 5. Código de vinculación olvidado o cambiado
 * Si necesitas volver a vincularte, abre el archivo `~/.code-to-figma/pairing-code` con el Bloc de notas para ver tu código actual. Si borras ese archivo, el hub generará uno nuevo en su próximo inicio.

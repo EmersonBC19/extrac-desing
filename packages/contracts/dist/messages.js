@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.HubInboundSchema = exports.MESSAGE_CATALOG = exports.MAX_CHUNK_CHARS = exports.MAX_CHUNKS = void 0;
+exports.HubInboundSchema = exports.HUB_PROTOCOL = exports.MESSAGE_CATALOG = exports.MAX_CHUNK_CHARS = exports.MAX_CHUNKS = void 0;
 exports.messageTypesOf = messageTypesOf;
 /**
  * Mensajes del sistema (plan de mejoras, fase 4.1): una sola definición de qué mensajes existen,
@@ -354,6 +354,14 @@ const FigmaSelectionSchema = z
     height: z.number().finite().nonnegative(),
 })
     .passthrough();
+/**
+ * Versión del protocolo hub ↔ extensión ↔ plugin. Súbela cuando una función necesite que los tres
+ * estén al día (2: breakpoints y tema, QA de diseño y selección de Figma). El hub la anuncia en
+ * STATUS_RESPONSE y el plugin al registrarse: un hub arrancado antes de actualizar, o el plugin
+ * abierto desde entonces, descartan los mensajes nuevos sin avisar, y así la extensión puede decir
+ * qué hay que reiniciar en vez de esperar una respuesta que nunca llega.
+ */
+exports.HUB_PROTOCOL = 2;
 const RegisterSchema = z
     .object({
     type: z.enum(['REGISTER_CLIENT', 'REGISTER']),
@@ -361,6 +369,7 @@ const RegisterSchema = z
     role: z.string().max(64).optional(),
     client: z.string().max(200).optional(),
     pairingCode: z.string().max(32).optional(),
+    protocol: z.number().int().nonnegative().max(1000).optional(),
 })
     .passthrough();
 /** Tiempos de dibujo en Figma por etapa (fase 5.1: medir en lugar de suponer) */

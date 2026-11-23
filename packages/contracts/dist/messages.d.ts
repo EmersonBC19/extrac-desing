@@ -351,6 +351,14 @@ export declare const MESSAGE_CATALOG: {
 export type MessageType = keyof typeof MESSAGE_CATALOG;
 /** Tipos de mensaje de un canal (para comprobar en pruebas que todos tienen manejador) */
 export declare function messageTypesOf(channel: MessageChannel, route?: RegExp): MessageType[];
+/**
+ * Versión del protocolo hub ↔ extensión ↔ plugin. Súbela cuando una función necesite que los tres
+ * estén al día (2: breakpoints y tema, QA de diseño y selección de Figma). El hub la anuncia en
+ * STATUS_RESPONSE y el plugin al registrarse: un hub arrancado antes de actualizar, o el plugin
+ * abierto desde entonces, descartan los mensajes nuevos sin avisar, y así la extensión puede decir
+ * qué hay que reiniciar en vez de esperar una respuesta que nunca llega.
+ */
+export declare const HUB_PROTOCOL = 2;
 /** Tiempos de dibujo en Figma por etapa (fase 5.1: medir en lugar de suponer) */
 declare const RenderTimingsSchema: z.ZodObject<{
     fontsMs: z.ZodOptional<z.ZodNumber>;
@@ -375,6 +383,7 @@ export declare const HubInboundSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     role: z.ZodOptional<z.ZodString>;
     client: z.ZodOptional<z.ZodString>;
     pairingCode: z.ZodOptional<z.ZodString>;
+    protocol: z.ZodOptional<z.ZodNumber>;
 }, z.core.$loose>, z.ZodObject<{
     type: z.ZodLiteral<"GET_STATUS">;
 }, z.core.$loose>, z.ZodObject<{
@@ -443,6 +452,10 @@ export type HubOutboundMessage = {
         connected: boolean;
         figmaConnected: boolean;
         figmaCount: number;
+        /** HUB_PROTOCOL de este hub (un hub anterior no lo envía) */
+        protocol: number;
+        /** El más alto entre los plugins conectados (1 = anterior a que existiera; 0 = ninguno) */
+        pluginProtocol: number;
     };
 } | {
     type: 'VIEWS_CATALOG';

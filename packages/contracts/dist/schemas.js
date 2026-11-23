@@ -155,6 +155,16 @@ exports.WSRenderPayloadSchema = z
     tokens: z.object({}).passthrough().optional(),
     createAsComponent: z.boolean().optional(),
     board: z.boolean().optional(),
+    /** Página de un escaneo del sitio: va al mapa del sitio, en fila con las demás rutas */
+    scan: z
+        .object({
+        id: z.string().min(1).max(64),
+        index: z.number().int().min(0).max(100),
+        total: z.number().int().min(1).max(100),
+        path: z.string().max(2000),
+        label: z.string().max(200).optional(),
+    })
+        .optional(),
     /** Estados extra del mismo componente (fase 6.1): Hover, Focus… → variantes State=… */
     states: z
         .array(z.object({ name: z.string().min(1).max(40), rootNode: z.unknown() }).passthrough())

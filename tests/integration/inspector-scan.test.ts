@@ -1,0 +1,106 @@
+// Escaneo del sitio desde el inspector (content.js): lista de rutas, confirmación, avance y cancelación.
+// chrome.runtime se simula: se capturan los mensajes al service worker y se le inyecta el avance.
+import { describe, expect, it } from 'vitest';
+import { createRequire } from 'module';
+import type { Page } from 'playwright';
+import { useBrowser } from '../helpers/browser';
+
+const require = createRequire(import.meta.url);
+const { read } = require('../helpers/extension-sim.cjs');
+
+const B = useBrowser({ width: 1440, height: 900 });
+
+async function openAt(path: string): Promise<Page> {
+  const page = await B.page(path);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.__toWorker = [];
+    w.__listeners = [];
+    w.chrome = {
+      runtime: {
+        id: 'extension-de-prueba',
+        lastError: null,
+        onMessage: {
+          addListener: (f: any) => w.__listeners.push(f),
+          removeListener: (f: any) => (w.__listeners = w.__listeners.filter((x: any) => x !== f)),
+        },
+        sendMessage(m: any, cb: any) {
+          w.__toWorker.push(m);
+          if (!cb) return;
+          if (m.type === 'SCAN_START') cb({ success: true, scanId: 'scan_t', total: m.routes.length });
+          else cb({ success: true, status: { hubRunning: true, figmaConnected: true, figmaCount: 1 } });
+        },
+      },
+    };
+    // El service worker avisa el avance a la pestaña
+    w.__progress = (m: any) => w.__listeners.forEach((f: any) => f({ type: 'SCAN_PROGRESS', scanId: 'scan_t', ...m }));
+  });
+  await page.evaluate(c => (0, eval)(c), read('packages/browser-extension/extractor.js'));
+  await page.evaluate(c => (0, eval)(c), read('packages/browser-extension/content.js'));
+  return page;
+}
+
+const shadowText = (page: Page) => page.evaluate(() => (window as any).__codeToFigmaInstance.shadow.textContent);
+const dialogOpen = (page: Page) =>
+  page.waitForFunction(() => (window as any).__codeToFigmaInstance.shadow.querySelector('.scan-dialog'));
+
+describe('escanear el sitio desde el inspector', () => {
+  it('tecla S: lista de rutas con las excluidas a la vista; confirmar envía solo las elegidas', async () => {
+    const page = await openAt('synthetic/scan/index.html');
+    await page.keyboard.press('s');
+    await dialogOpen(page);
+    const info = await page.evaluate(() => {
+      const sh = (window as any).__codeToFigmaInstance.shadow;
+      return {
+        paths: [...sh.querySelectorAll('.scan-route .scan-path')].map((e: any) => e.textContent),
+        excluded: sh.querySelector('.scan-excluded summary')?.textContent,
+        button: sh.querySelector('#__scan_go').textContent,
+      };
+    });
+    expect(info.paths.length).toBe(4); // inicio, precios, lento y blog (agrupado)
+    expect(info.excluded).toMatch(/1 enlaces excluidos/);
+    expect(info.button).toBe('Escanear 4 páginas');
+    // desmarcar una y confirmar
+    await page.evaluate(() => {
+      const sh = (window as any).__codeToFigmaInstance.shadow;
+      const box = sh.querySelectorAll('.scan-route input')[1];
+      box.checked = false;
+      box.dispatchEvent(new Event('change', { bubbles: true }));
+      sh.querySelector('#__scan_go').click();
+    });
+    const start = await page.waitForFunction(() =>
+      (window as any).__toWorker.find((m: any) => m.type === 'SCAN_START'),
+    );
+    const msg: any = await start.jsonValue();
+    expect(msg.routes).toHaveLength(3);
+    expect(msg.routes.some((r: any) => /precios/.test(r.path))).toBe(false);
+    expect(msg.routes.every((r: any) => !/logout/.test(r.url))).toBe(true);
+  });
+
+  it('el avance se ve en un panel; al terminar, un resumen; cancelar avisa al service worker', async () => {
+    const page = await openAt('synthetic/scan/index.html');
+    await page.keyboard.press('s');
+    await dialogOpen(page);
+    await page.evaluate(() => (window as any).__codeToFigmaInstance.shadow.querySelector('#__scan_go').click());
+    await page.waitForFunction(() => (window as any).__codeToFigmaInstance.scanPanel);
+    await page.evaluate(() => (window as any).__progress({ status: 'page', index: 1, total: 4, path: '/precios' }));
+    expect(await shadowText(page)).toMatch(/Escaneando 2 de 4 · \/precios/);
+    await page.evaluate(() => (window as any).__codeToFigmaInstance.shadow.querySelector('#__scan_cancel').click());
+    const cancel = await page.evaluate(() => (window as any).__toWorker.some((m: any) => m.type === 'SCAN_CANCEL'));
+    expect(cancel).toBe(true);
+    await page.evaluate(() => (window as any).__progress({ status: 'error', index: 2, total: 4, path: '/lento' }));
+    await page.evaluate(() => (window as any).__progress({ status: 'cancelled', sent: 2, total: 4 }));
+    const text = await shadowText(page);
+    expect(text).toMatch(/Escaneo cancelado/);
+    expect(text).toMatch(/2 de 4 páginas enviadas a Figma \(1 con error\)/);
+    expect(await page.evaluate(() => (window as any).__codeToFigmaInstance.scanPanel)).toBeNull();
+  });
+
+  it('cancelar la lista no envía nada', async () => {
+    const page = await openAt('synthetic/scan/index.html');
+    await page.keyboard.press('s');
+    await dialogOpen(page);
+    await page.keyboard.press('Escape');
+    expect(await page.evaluate(() => (window as any).__toWorker.some((m: any) => m.type === 'SCAN_START'))).toBe(false);
+  });
+});

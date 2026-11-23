@@ -161,4 +161,39 @@ describe('ajustes del plugin', () => {
     expect(saved.items).toEqual([]);
     await page.close();
   });
+
+  it('escaneo: el fin va al sandbox después de la última página y respeta "Tablero: nunca"', async () => {
+    for (const [saved, board] of [
+      [{}, true],
+      [{ boardMode: 'NEVER' }, false],
+    ] as const) {
+      const page = await openUi(saved);
+      // La página trae una imagen que hay que normalizar (asíncrono): el fin llega justo después
+      const img =
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+      await page.evaluate(
+        ({ root, img }) => {
+          const w = window as any;
+          w.handleWebSocketMessage({
+            type: 'RENDER_NODES',
+            payload: {
+              rootNode: { ...root, imageData: img },
+              board: true,
+              scan: { id: 's9', index: 0, total: 1, path: '/a' },
+            },
+          });
+          w.handleWebSocketMessage({ type: 'SCAN_FINISH', scanId: 's9', count: 1 });
+        },
+        { root: ROOT_NODE, img },
+      );
+      await page.waitForFunction(() => (window as any).__toSandbox.some((m: any) => m.type === 'SCAN_FINISH'));
+      const seq = await page.evaluate(() =>
+        (window as any).__toSandbox.filter((m: any) => m.type === 'RENDER_NODES' || m.type === 'SCAN_FINISH'),
+      );
+      expect(seq.map((m: any) => m.type)).toEqual(['RENDER_NODES', 'SCAN_FINISH']);
+      expect(seq[0].payload.board).toBe(false); // una página del escaneo nunca arma tablero sola
+      expect(seq[1]).toMatchObject({ scanId: 's9', board });
+      await page.close();
+    }
+  });
 });

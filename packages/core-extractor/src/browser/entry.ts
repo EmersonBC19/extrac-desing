@@ -14,6 +14,7 @@ import { extractNodeTree } from './extract-node';
 import { resolvePendingImages } from './images';
 import { extractDesignTokens } from './tokens';
 import { emulateState, readTransition, type InteractionState } from './states';
+import { collectRoutesFromPage, scanCurrentPage } from './scan';
 import { buildZip, exportBlock, exportFiles, type ExportOptions } from './export-html';
 import { captureVariants, extractAtWidth, type CaptureOptions } from './responsive';
 // Desde la fuente (no desde el paquete): solo funciones puras, sin arrastrar Zod al bundle
@@ -48,6 +49,26 @@ window.__codeToFigmaExtractState = async function (rootElement: Element, state: 
   } finally {
     emulation.undo();
   }
+};
+
+/**
+ * Escaneo del sitio desde la extensión: rutas de la página (con su sitemap) y extracción de una
+ * página completa en la ventana de escaneo. La captura de pantalla la pide al service worker.
+ */
+window.__codeToFigmaScan = {
+  collectRoutes: collectRoutesFromPage,
+  scanPage: async (options?: { prescroll?: boolean }) => {
+    if (typeof window.__codeToFigmaCaptureRegions !== 'function' && typeof chrome !== 'undefined' && chrome.runtime) {
+      // Sin el inspector (ventana de escaneo): la captura la hace el service worker
+      window.__codeToFigmaCaptureRegions = rects =>
+        new Promise(resolve =>
+          chrome.runtime.sendMessage({ type: 'CAPTURE_REGIONS', rects, viewportWidth: innerWidth }, (res: any) =>
+            resolve(chrome.runtime.lastError || !res || !res.success ? [] : res.crops),
+          ),
+        );
+    }
+    return scanCurrentPage(options);
+  },
 };
 
 window.__codeToFigmaPayload = { measurePayload, heavyPayloadReasons, withoutImages, formatBytes };

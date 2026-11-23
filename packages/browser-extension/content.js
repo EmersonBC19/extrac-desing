@@ -848,6 +848,21 @@
           font-size: 11px;
           margin-bottom: 14px;
         }
+        .scan-dialog { width: min(560px, 100%); }
+        .scan-list { max-height: 46vh; overflow: auto; margin: 0 0 10px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 6px; }
+        .scan-route { display: flex; align-items: baseline; gap: 8px; padding: 4px 6px; border-radius: 6px; cursor: pointer; }
+        .scan-route:hover { background: rgba(255,255,255,0.06); }
+        .scan-path { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: #e2e8f0; word-break: break-all; }
+        .scan-label { color: #94a3b8; font-size: 11px; }
+        .scan-excluded { margin: 0 0 10px; color: #fbbf24; font-size: 11px; }
+        .scan-excluded div { color: #94a3b8; margin: 2px 0 0 12px; }
+        .scan-panel {
+          position: fixed; left: 24px; bottom: 24px; z-index: 2147483647; pointer-events: auto;
+          display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 10px;
+          background: ${DARK_BG}; color: #fff; font-size: 13px;
+          border: 1px solid rgba(162, 89, 255, 0.4); box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+          max-width: min(520px, calc(100vw - 48px));
+        }
         .heavy-actions {
           display: flex;
           flex-wrap: wrap;
@@ -914,6 +929,14 @@
     }
 
     bindEvents() {
+      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
+        this._onRuntimeMessage = message => {
+          if (message && message.type === 'SCAN_PROGRESS') this.onScanProgress(message);
+        };
+        try {
+          chrome.runtime.onMessage.addListener(this._onRuntimeMessage);
+        } catch (_e) {}
+      }
       window.addEventListener('mousemove', this.onMouseMove, true);
       window.addEventListener('click', this.onClick, true);
       window.addEventListener('mousedown', this.onMouseDownBlock, true);
@@ -927,6 +950,12 @@
     }
 
     unbindEvents() {
+      if (this._onRuntimeMessage) {
+        try {
+          chrome.runtime.onMessage.removeListener(this._onRuntimeMessage);
+        } catch (_e) {}
+        this._onRuntimeMessage = null;
+      }
       window.removeEventListener('mousemove', this.onMouseMove, true);
       window.removeEventListener('click', this.onClick, true);
       window.removeEventListener('mousedown', this.onMouseDownBlock, true);
@@ -1539,6 +1568,7 @@
                 <button class="btn-hierarchy" id="__btn_hud_child" title="Seleccionar elemento hijo (Flecha abajo)">${ICONS.arrowDown} Hijo <span class="hud-kbd">↓</span></button>
                 <button class="btn-hierarchy" id="__btn_hud_body" title="Seleccionar la página completa (${document.body ? 'body' : 'html'})">${ICONS.layers} Toda la Página</button>
                 <button class="btn-hierarchy" id="__btn_hud_theme" title="Alternar Modo Claro / Oscuro en la página">${ICONS.sun} Tema</button>
+                <button class="btn-hierarchy" id="__btn_hud_scan" title="Recorrer las páginas de este sitio y llevarlas todas a Figma (tecla S)">${ICONS.layers} Escanear sitio <span class="hud-kbd">S</span></button>
               </div>
             `
                 : `
@@ -1678,6 +1708,9 @@
       if (btnTheme) {
         btnTheme.addEventListener('click', () => this.toggleTheme());
       }
+
+      const btnScan = this.hud.querySelector('#__btn_hud_scan');
+      if (btnScan) btnScan.addEventListener('click', () => this.startSiteScan());
 
       if (btnParent) btnParent.addEventListener('click', () => this.elevateParent());
       if (btnChild) btnChild.addEventListener('click', () => this.elevateChild());
@@ -2402,6 +2435,14 @@
         return;
       }
 
+      // Escanear el sitio: S
+      if ((e.key === 's' || e.key === 'S') && !isInput && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.startSiteScan();
+        return;
+      }
+
       // Freeze Mode Hotkeys: 'f', 'F', or Space (when not typing in an input)
       if (
         (e.key === 'f' || e.key === 'F' || e.code === 'KeyF' || (e.code === 'Space' && !this.isElevated)) &&
@@ -2485,6 +2526,164 @@
         6000,
       );
       setTimeout(() => this.destroy(), 6200);
+    }
+
+    // ── Escaneo del sitio ──────────────────────────────────────────────────────────────────
+    // Detecta las rutas, el usuario confirma cuáles (máx. SCAN_MAX) y el service worker las recorre
+    // en una ventana de escaneo visible. Aquí se muestra el avance y se puede cancelar.
+
+    async startSiteScan() {
+      if (this.scanState)
+        return this.showToast(`${ICONS.info} Escaneo en curso`, 'Espera a que termine o cancélalo.', 3000);
+      if (!extensionAlive()) return this.retire();
+      if (!window.__codeToFigmaScan) {
+        return this.showToast(
+          `${ICONS.warning} Escanear sitio`,
+          'Motor de extracción no cargado en la página. Recárgala.',
+          4500,
+        );
+      }
+      this.showToast(
+        `${ICONS.spinner} Buscando las páginas del sitio…`,
+        'Enlaces de esta página y su sitemap.xml.',
+        2000,
+      );
+      let found;
+      try {
+        found = await window.__codeToFigmaScan.collectRoutes();
+      } catch (err) {
+        return this.showToast(`${ICONS.warning} Escanear sitio`, String((err && err.message) || err), 4500);
+      }
+      const routes = await this.askScanRoutes(found.routes, found.excluded);
+      if (!routes || !routes.length) return;
+      const res = await new Promise(resolve => {
+        try {
+          chrome.runtime.sendMessage({ type: 'SCAN_START', routes }, r => resolve(chrome.runtime.lastError ? null : r));
+        } catch (_e) {
+          resolve(null);
+        }
+      });
+      if (!res || !res.success) {
+        return this.showToast(
+          `${ICONS.warning} No se pudo empezar el escaneo`,
+          (res && res.error) || 'La extensión no responde. Recarga la página.',
+          7000,
+        );
+      }
+      this.scanState = { scanId: res.scanId, total: res.total, errors: 0, skipped: 0 };
+      this.showScanPanel(`Abriendo la ventana de escaneo… (${res.total} páginas)`);
+    }
+
+    /** Lista de rutas con casillas (máx. SCAN_MAX marcadas). Resuelve las elegidas o null */
+    askScanRoutes(routes, excluded) {
+      const SCAN_MAX = 15;
+      return new Promise(resolve => {
+        const backdrop = document.createElement('div');
+        backdrop.className = 'heavy-backdrop';
+        const rows = routes
+          .map(
+            (r, i) => `
+              <label class="scan-route">
+                <input type="checkbox" data-idx="${i}" ${i < SCAN_MAX ? 'checked' : ''} />
+                <span class="scan-path">${escapeHtml(r.path)}</span>
+                <span class="scan-label">${escapeHtml(r.label || '')}${r.grouped > 1 ? ` · ${r.grouped} similares, se escanea 1` : ''}</span>
+              </label>`,
+          )
+          .join('');
+        const ex = excluded.length
+          ? `<details class="scan-excluded"><summary>${excluded.length} enlaces excluidos por seguridad</summary>${excluded
+              .slice(0, 50)
+              .map(e => `<div><span class="scan-path">${escapeHtml(e.path)}</span> — ${escapeHtml(e.reason)}</div>`)
+              .join('')}</details>`
+          : '';
+        backdrop.innerHTML = `
+          <div class="heavy-dialog scan-dialog" role="dialog" aria-modal="true" aria-labelledby="__scan_title">
+            <h3 id="__scan_title">${ICONS.layers} Escanear el sitio</h3>
+            <p>Se abrirá una ventana que recorre las páginas elegidas con tu sesión, una por una, y las lleva a Figma como un mapa del sitio con su tablero de componentes.</p>
+            <div class="scan-list">${rows || '<p>No se encontraron otras páginas en este sitio.</p>'}</div>
+            ${ex}
+            <div class="heavy-stats"><span id="__scan_count"></span></div>
+            <div class="heavy-actions">
+              <button class="btn-secondary" data-choice="cancel">Cancelar</button>
+              <button class="btn-figma" data-choice="scan" id="__scan_go">Escanear</button>
+            </div>
+          </div>`;
+        const boxes = () => [...backdrop.querySelectorAll('input[type="checkbox"]')];
+        const refresh = () => {
+          const checked = boxes().filter(b => b.checked).length;
+          backdrop.querySelector('#__scan_count').textContent =
+            `${checked} de ${Math.min(SCAN_MAX, routes.length)} páginas como máximo (${SCAN_MAX})`;
+          boxes().forEach(b => (b.disabled = !b.checked && checked >= SCAN_MAX));
+          const go = backdrop.querySelector('#__scan_go');
+          go.disabled = checked === 0;
+          go.textContent = `Escanear ${checked} página${checked === 1 ? '' : 's'}`;
+        };
+        const close = value => {
+          this.activeDialog = null;
+          backdrop.remove();
+          resolve(value);
+        };
+        backdrop.addEventListener('change', refresh);
+        backdrop.addEventListener('click', e => {
+          const t = e.target.closest ? e.target.closest('[data-choice]') : null;
+          if (t && t.getAttribute('data-choice') === 'scan') {
+            close(
+              boxes()
+                .filter(b => b.checked)
+                .map(b => routes[Number(b.getAttribute('data-idx'))]),
+            );
+          } else if (t || e.target === backdrop) close(null);
+        });
+        this.activeDialog = { cancel: () => close(null) };
+        this.shadow.appendChild(backdrop);
+        refresh();
+      });
+    }
+
+    showScanPanel(text) {
+      if (!this.scanPanel) {
+        this.scanPanel = document.createElement('div');
+        this.scanPanel.className = 'scan-panel';
+        this.scanPanel.innerHTML = `<span class="scan-panel-text"></span><button class="btn-secondary" id="__scan_cancel">Cancelar</button>`;
+        this.scanPanel.querySelector('#__scan_cancel').addEventListener('click', () => {
+          try {
+            chrome.runtime.sendMessage({ type: 'SCAN_CANCEL' }, () => void chrome.runtime.lastError);
+          } catch (_e) {}
+          this.scanPanel.querySelector('.scan-panel-text').textContent = 'Cancelando…';
+        });
+        this.shadow.appendChild(this.scanPanel);
+      }
+      this.scanPanel.querySelector('.scan-panel-text').textContent = text;
+    }
+
+    hideScanPanel() {
+      if (this.scanPanel) this.scanPanel.remove();
+      this.scanPanel = null;
+    }
+
+    onScanProgress(m) {
+      if (!this.scanState || m.scanId !== this.scanState.scanId) return;
+      const st = this.scanState;
+      if (m.status === 'page') this.showScanPanel(`Escaneando ${m.index + 1} de ${m.total} · ${m.path}`);
+      else if (m.status === 'skip') st.skipped++;
+      else if (m.status === 'error') st.errors++;
+      else if (m.status === 'done' || m.status === 'cancelled' || m.status === 'failed') {
+        this.hideScanPanel();
+        this.scanState = null;
+        const notes = [st.skipped ? `${st.skipped} saltadas` : '', st.errors ? `${st.errors} con error` : '']
+          .filter(Boolean)
+          .join(', ');
+        if (m.status === 'failed') {
+          this.showToast(`${ICONS.warning} El escaneo falló`, m.error || 'Error desconocido', 7000);
+        } else {
+          this.showToast(
+            `${ICONS.check} ${m.status === 'cancelled' ? 'Escaneo cancelado' : 'Escaneo terminado'}`,
+            `${m.sent} de ${m.total} páginas enviadas a Figma${notes ? ` (${notes})` : ''}.` +
+              (m.sent ? ' Figma está armando el mapa del sitio y su tablero.' : ''),
+            7000,
+          );
+        }
+      }
     }
 
     destroy() {

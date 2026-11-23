@@ -306,6 +306,11 @@ export class FigmaWsHub {
             this.log.error('Error reportado por el plugin de Figma', { error: msg.error });
             this.broadcastToClients({ type: 'RENDER_ERROR', error: String(msg.error || 'Error desconocido') });
         },
+        // Fin del escaneo del sitio: el plugin arma el tablero con todas las rutas recibidas
+        SCAN_FINISH: (_ws, _state, msg) => {
+            this.log.info(`Escaneo del sitio terminado (${msg.count} rutas)`, { scanId: msg.scanId });
+            this.broadcastToPlugins({ type: 'SCAN_FINISH', scanId: msg.scanId, count: msg.count, source: msg.source });
+        },
         // QA de diseño: la extensión pregunta qué frame está seleccionado en Figma (para capturar la web
         // al mismo ancho). Se reenvía a los plugins y la primera respuesta vuelve a quien preguntó.
         GET_FIGMA_SELECTION: (ws, _state, msg) => {

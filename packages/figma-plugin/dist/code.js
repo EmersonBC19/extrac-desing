@@ -6391,6 +6391,14 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     tokens: object({}).passthrough().optional(),
     createAsComponent: boolean2().optional(),
     board: boolean2().optional(),
+    /** Página de un escaneo del sitio: va al mapa del sitio, en fila con las demás rutas */
+    scan: object({
+      id: string2().min(1).max(64),
+      index: number2().int().min(0).max(100),
+      total: number2().int().min(1).max(100),
+      path: string2().max(2e3),
+      label: string2().max(200).optional()
+    }).optional(),
     /** Estados extra del mismo componente (fase 6.1): Hover, Focus… → variantes State=… */
     states: array(object({ name: string2().min(1).max(40), rootNode: unknown() }).passthrough()).max(4).optional(),
     /** QA de diseño (Función B): comparar este bloque con un frame de Figma en lugar de dibujarlo */
@@ -6498,6 +6506,12 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       fontSubstitutions: FontSubstitutionsSchema.optional()
     }).passthrough(),
     object({ type: literal("RENDER_ERROR"), error: string2().max(5e3).optional() }).passthrough(),
+    object({
+      type: literal("SCAN_FINISH"),
+      scanId: string2().min(1).max(64),
+      count: number2().int().min(0).max(100),
+      source: object({ url: string2().max(4096).optional(), title: string2().max(1e3).optional() }).optional()
+    }),
     object({ type: literal("GET_FIGMA_SELECTION"), requestId: string2().max(64).optional() }).passthrough(),
     object({
       type: literal("FIGMA_SELECTION"),
@@ -10138,7 +10152,7 @@ ${g.message}`,
           }
         }
       } else {
-        const GAP = Number(payload.placementGap) || 120;
+        const GAP2 = Number(payload.placementGap) || 120;
         const placementMode = (payload.placementMode || "SIDE").toUpperCase();
         const otherChildren = targetPage.children.filter((child) => child.id !== rootFigmaNode.id);
         if (otherChildren.length === 0 || placementMode === "CENTER") {
@@ -10149,7 +10163,7 @@ ${g.message}`,
           const selected = targetPage.selection.find((s) => s.id !== rootFigmaNode.id);
           if (selected) {
             rootFigmaNode.x = Math.round(selected.x);
-            rootFigmaNode.y = Math.round(selected.y + selected.height + GAP);
+            rootFigmaNode.y = Math.round(selected.y + selected.height + GAP2);
           } else {
             let maxBottom = -Infinity;
             let alignX = otherChildren[0].x;
@@ -10161,12 +10175,12 @@ ${g.message}`,
               }
             }
             rootFigmaNode.x = Math.round(alignX);
-            rootFigmaNode.y = Math.round(maxBottom + GAP);
+            rootFigmaNode.y = Math.round(maxBottom + GAP2);
           }
         } else {
           const selected = targetPage.selection.find((s) => s.id !== rootFigmaNode.id);
           if (selected) {
-            rootFigmaNode.x = Math.round(selected.x + selected.width + GAP);
+            rootFigmaNode.x = Math.round(selected.x + selected.width + GAP2);
             rootFigmaNode.y = Math.round(selected.y);
           } else {
             let maxRight = -Infinity;
@@ -10178,7 +10192,7 @@ ${g.message}`,
                 alignY = child.y;
               }
             }
-            rootFigmaNode.x = Math.round(maxRight + GAP);
+            rootFigmaNode.x = Math.round(maxRight + GAP2);
             rootFigmaNode.y = Math.round(alignY);
           }
         }
@@ -10258,7 +10272,133 @@ ${g.message}`,
     }
   }
 
+  // packages/figma-plugin/src/scan-map.ts
+  var GAP = 240;
+  var TITLE_SPACE = 80;
+  var scans = /* @__PURE__ */ new Map();
+  function startState() {
+    const others = figma.currentPage.children;
+    const originX = others.length ? Math.round(Math.max(...others.map((c) => c.x + c.width)) + 400) : 0;
+    const y = (others.length ? Math.round(Math.min(...others.map((c) => c.y))) : 0) + TITLE_SPACE;
+    return { originX, y, nextX: originX, nodeIds: [], pages: [], tokens: null };
+  }
+  var widthOf = (n) => typeof n?.layout?.measuredWidth === "number" ? n.layout.measuredWidth : typeof n?.layout?.width === "number" ? n.layout.width : 1440;
+  var heightOf = (n) => typeof n?.layout?.measuredHeight === "number" ? n.layout.measuredHeight : typeof n?.layout?.height === "number" ? n.layout.height : 900;
+  async function renderScanPage(payload, post2, log2) {
+    const scan = payload.scan;
+    const state = scans.get(scan.id) || startState();
+    scans.set(scan.id, state);
+    state.pages.push({
+      index: scan.index,
+      path: scan.path,
+      label: scan.label || "",
+      rootNode: JSON.parse(JSON.stringify(payload.rootNode))
+    });
+    if (payload.tokens) state.tokens = payload.tokens;
+    const title = `${scan.index + 1} · ${scan.path}` + (scan.label ? ` — ${scan.label}` : "");
+    const pagePayload = {
+      ...payload,
+      board: false,
+      createAsComponent: false,
+      targetCanvasPosition: { x: state.nextX, y: state.y },
+      sectionTitle: title.slice(0, 300)
+    };
+    const wrapped = (m) => {
+      if (m.type === "RENDER_SUCCESS") {
+        const ids = Array.isArray(m.nodeIds) ? m.nodeIds : [m.nodeId];
+        state.nodeIds.push(...ids);
+        const w = Number(m.width) || widthOf(payload.rootNode);
+        state.nextX += Math.round(w) + GAP;
+        post2({ ...m, scan: { id: scan.id, index: scan.index, total: scan.total, path: scan.path } });
+        return;
+      }
+      post2(m);
+    };
+    await renderNodesCommand(pagePayload, wrapped, log2);
+  }
+  async function finishScan(msg, post2, log2) {
+    const state = scans.get(msg.scanId);
+    scans.delete(msg.scanId);
+    if (!state || !state.pages.length) {
+      post2({ type: "LOG", level: "warn", message: "El escaneo terminó sin páginas recibidas." });
+      return;
+    }
+    let host = "Sitio";
+    try {
+      host = new URL(msg.source?.url || "").hostname.replace(/^www\./, "") || host;
+    } catch (_e) {
+    }
+    const pages = [...state.pages].sort((a, b) => a.index - b.index);
+    if (!msg.board) {
+      post2({
+        type: "RENDER_SUCCESS",
+        nodeId: state.nodeIds[0],
+        nodeIds: state.nodeIds,
+        name: `Mapa del sitio · ${host} (${pages.length} páginas)`,
+        nodeType: "SCAN_MAP",
+        nodeCount: pages.length
+      });
+      post2({ type: "LOG", level: "success", message: `Mapa del sitio listo: ${pages.length} páginas de ${host}.` });
+      return;
+    }
+    let x = 0;
+    let maxH = 0;
+    const children = pages.map((p) => {
+      const node2 = p.rootNode;
+      node2.name = `${p.path}` + (p.label ? ` — ${p.label}` : "");
+      node2.layout = { ...node2.layout, positioning: "ABSOLUTE", x, y: 0 };
+      x += widthOf(node2) + GAP;
+      maxH = Math.max(maxH, heightOf(node2));
+      return node2;
+    });
+    const width = Math.max(1, x - GAP);
+    const bundle = {
+      id: `multi_selection_bundle_scan_${msg.scanId}`,
+      name: `Sitio · ${host}`,
+      type: "FRAME",
+      layout: {
+        mode: "NONE",
+        width,
+        height: maxH,
+        measuredWidth: width,
+        measuredHeight: maxH,
+        padding: { top: 0, right: 0, bottom: 0, left: 0 },
+        itemSpacing: 0
+      },
+      styles: { fills: [] },
+      children
+    };
+    post2({ type: "LOG", level: "info", message: `Armando el tablero del sitio con ${pages.length} páginas…` });
+    try {
+      await renderNodesCommand(
+        { rootNode: bundle, tokens: state.tokens || void 0, board: true, source: msg.source },
+        post2,
+        log2
+      );
+    } catch (err) {
+      log2.error("No se pudo armar el tablero del sitio", { error: String(err?.message || err) });
+      post2({
+        type: "LOG",
+        level: "error",
+        message: `No se pudo armar el tablero del sitio (${err?.message || err}). El mapa del sitio queda como resultado.`
+      });
+      return;
+    }
+    for (const id of state.nodeIds) {
+      try {
+        const n = typeof figma.getNodeByIdAsync === "function" ? await figma.getNodeByIdAsync(id) : figma.getNodeById(id);
+        if (n && !n.removed) n.remove();
+      } catch (_e) {
+      }
+    }
+  }
+
   // packages/figma-plugin/src/code.ts
+  var workQueue = Promise.resolve();
+  function enqueue(task) {
+    workQueue = workQueue.then(task, task);
+    return workQueue;
+  }
   var post = (m) => figma.ui.postMessage(m);
   figma.showUI(__html__, {
     width: 470,
@@ -10419,14 +10559,27 @@ ${g.message}`,
         post({ type: "LOG", message: `Error al convertir a componente: ${convErr.message}`, level: "error" });
       }
     },
-    RENDER_NODES: async (msg) => {
+    // En cola: los renders (y el cierre de un escaneo) se procesan de a uno y en orden. Sin esto,
+    // dos renders asíncronos se intercalaban, y el fin del escaneo podía adelantarse a su última página.
+    RENDER_NODES: (msg) => enqueue(async () => {
       try {
-        await renderNodesCommand(msg.payload, post, log);
+        const payload = msg.payload;
+        if (payload && payload.scan && typeof payload.scan.id === "string") await renderScanPage(payload, post, log);
+        else await renderNodesCommand(payload, post, log);
       } catch (err) {
         log.error("Fallo en RENDER_NODES", { error: err?.message || String(err) });
         post({ type: "RENDER_ERROR", error: err?.message || String(err) });
       }
-    },
+    }),
+    // Fin del escaneo del sitio: tablero con todas las rutas (o el mapa, si el tablero está desactivado)
+    SCAN_FINISH: (msg) => enqueue(async () => {
+      try {
+        await finishScan(msg, post, log);
+      } catch (err) {
+        log.error("Fallo al terminar el escaneo", { error: err?.message || String(err) });
+        post({ type: "RENDER_ERROR", error: err?.message || String(err) });
+      }
+    }),
     GET_AVAILABLE_FONTS: async () => {
       try {
         if (typeof figma.listAvailableFontsAsync === "function") {

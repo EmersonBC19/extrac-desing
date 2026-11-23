@@ -53,6 +53,7 @@ describe('catálogo de mensajes', () => {
       const samples: Record<string, object> = {
         RENDER_NODES: { payload: {} },
         RENDER_CHUNK: { transferId: 't', index: 0, total: 1, data: '{}' },
+        SCAN_FINISH: { scanId: 's', count: 1 },
       };
       const extra = samples[type] || {};
       expect(HubInboundSchema.safeParse({ type, ...extra }).success, type).toBe(true);
@@ -80,7 +81,20 @@ describe('catálogo de mensajes', () => {
     const start = src.indexOf('const MESSAGE_HANDLERS = {');
     const body = src.slice(start, src.indexOf('\n};', start));
     const keys = [...body.matchAll(/^\s{2}([A-Z][A-Z0-9_]+)\s*:/gm)].map(m => m[1]);
-    expect(keys.sort()).toEqual(messageTypesOf('extension').sort());
+    // Lo que el service worker RECIBE (SCAN_PROGRESS va al revés: del service worker al inspector)
+    expect(keys.sort()).toEqual(messageTypesOf('extension', /→ service worker/).sort());
+  });
+
+  it('inspector: atiende lo que le envía el service worker (avance del escaneo)', () => {
+    const src = read('packages/browser-extension/content.js');
+    for (const type of messageTypesOf('extension', /^service worker →/)) expect(src, type).toContain(`'${type}'`);
+  });
+
+  it('escaneo: la lista de enlaces peligrosos es la misma en el service worker y en el extractor', () => {
+    const pick = (src: string, name: string) => src.slice(src.indexOf(name)).split(/\r?\n/)[1].trim();
+    const bg = pick(read('packages/browser-extension/background.js'), 'const SCAN_DANGEROUS =');
+    const ex = pick(read('packages/core-extractor/src/browser/site-routes.ts'), 'const DANGEROUS =');
+    expect(bg.replace(/;$/, '')).toBe(ex.replace(/;$/, ''));
   });
 
   it('sandbox del plugin: atiende todo mensaje de la UI y avisa los desconocidos', async () => {
@@ -166,6 +180,26 @@ describe('resultado del render: plugin → hub → CLI/MCP', () => {
       await new Promise(r => setTimeout(r, 400));
       expect(reopened.msgs.some((m: any) => m.type === 'RENDER_NODES')).toBe(false);
       reopened.close();
+      ext.close();
+    } finally {
+      await hub.stop();
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it('SCAN_FINISH de la extensión llega a los plugins conectados', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ctf-scan-'));
+    const hub = await startHub({ home });
+    try {
+      const code = fs.readFileSync(path.join(home, '.code-to-figma', 'pairing-code'), 'utf8').trim();
+      const plugin = await connectClient(hub.url, 'null');
+      plugin.send({ type: 'REGISTER_CLIENT', clientType: 'FIGMA_PLUGIN', pairingCode: code });
+      await plugin.waitFor((m: any) => m.type === 'AUTH_OK');
+      const ext = await connectClient(hub.url);
+      ext.send({ type: 'SCAN_FINISH', scanId: 'scan_1', count: 3, source: { url: 'https://x.test/' } });
+      const got = await plugin.waitFor((m: any) => m.type === 'SCAN_FINISH');
+      expect(got).toMatchObject({ scanId: 'scan_1', count: 3, source: { url: 'https://x.test/' } });
+      plugin.close();
       ext.close();
     } finally {
       await hub.stop();

@@ -138,6 +138,12 @@ exports.MESSAGE_CATALOG = {
         route: 'plugin → hub → CLI/MCP',
         description: 'Figma terminó de dibujar',
     },
+    SCAN_FINISH: {
+        channel: 'hub',
+        kind: 'command',
+        route: 'extensión → hub → plugin',
+        description: 'Fin del escaneo del sitio: el plugin arma el tablero con todas las rutas',
+    },
     RENDER_ERROR: {
         channel: 'hub',
         kind: 'event',
@@ -337,6 +343,24 @@ exports.MESSAGE_CATALOG = {
         route: 'content → service worker',
         description: 'Estado del hub y del plugin',
     },
+    SCAN_START: {
+        channel: 'extension',
+        kind: 'command',
+        route: 'content → service worker',
+        description: 'Escanear las rutas confirmadas del sitio en una ventana de escaneo',
+    },
+    SCAN_CANCEL: {
+        channel: 'extension',
+        kind: 'command',
+        route: 'content → service worker',
+        description: 'Detener el escaneo en curso y cerrar su ventana',
+    },
+    SCAN_PROGRESS: {
+        channel: 'extension',
+        kind: 'event',
+        route: 'service worker → content',
+        description: 'Avance del escaneo (página actual, terminado, cancelado o error)',
+    },
 };
 /** Tipos de mensaje de un canal (para comprobar en pruebas que todos tienen manejador) */
 function messageTypesOf(channel, route) {
@@ -410,6 +434,12 @@ exports.HubInboundSchema = z.discriminatedUnion('type', [
     })
         .passthrough(),
     z.object({ type: z.literal('RENDER_ERROR'), error: z.string().max(5000).optional() }).passthrough(),
+    z.object({
+        type: z.literal('SCAN_FINISH'),
+        scanId: z.string().min(1).max(64),
+        count: z.number().int().min(0).max(100),
+        source: z.object({ url: z.string().max(4096).optional(), title: z.string().max(1000).optional() }).optional(),
+    }),
     z.object({ type: z.literal('GET_FIGMA_SELECTION'), requestId: z.string().max(64).optional() }).passthrough(),
     z
         .object({

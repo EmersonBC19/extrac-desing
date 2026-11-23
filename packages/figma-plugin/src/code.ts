@@ -1,6 +1,14 @@
 import type { PluginSandboxMessage, PluginUiMessage, PluginUiMessageType } from '@code-to-figma/contracts';
 import { renderNodesCommand } from './render-command';
 import { log } from './log';
+import { finishScan, renderScanPage } from './scan-map';
+
+/** Cola de trabajo del sandbox: una tarea a la vez, en el orden en que llegan */
+let workQueue: Promise<void> = Promise.resolve();
+function enqueue(task: () => Promise<void>): Promise<void> {
+  workQueue = workQueue.then(task, task);
+  return workQueue;
+}
 
 // Code to Figma — plugin de Figma (entrada). Módulos: render, render-command, fonts, paint,
 // text-sizing, board/, validation. Se empaqueta con esbuild en dist/code.js (scripts/build-plugin.mjs).
@@ -188,14 +196,30 @@ const handlers: { [T in PluginUiMessageType]: Handler<T> } = {
     }
   },
 
-  RENDER_NODES: async msg => {
-    try {
-      await renderNodesCommand(msg.payload, post, log);
-    } catch (err: any) {
-      log.error('Fallo en RENDER_NODES', { error: err?.message || String(err) });
-      post({ type: 'RENDER_ERROR', error: err?.message || String(err) });
-    }
-  },
+  // En cola: los renders (y el cierre de un escaneo) se procesan de a uno y en orden. Sin esto,
+  // dos renders asíncronos se intercalaban, y el fin del escaneo podía adelantarse a su última página.
+  RENDER_NODES: msg =>
+    enqueue(async () => {
+      try {
+        const payload: any = msg.payload;
+        if (payload && payload.scan && typeof payload.scan.id === 'string') await renderScanPage(payload, post, log);
+        else await renderNodesCommand(payload, post, log);
+      } catch (err: any) {
+        log.error('Fallo en RENDER_NODES', { error: err?.message || String(err) });
+        post({ type: 'RENDER_ERROR', error: err?.message || String(err) });
+      }
+    }),
+
+  // Fin del escaneo del sitio: tablero con todas las rutas (o el mapa, si el tablero está desactivado)
+  SCAN_FINISH: msg =>
+    enqueue(async () => {
+      try {
+        await finishScan(msg, post, log);
+      } catch (err: any) {
+        log.error('Fallo al terminar el escaneo', { error: err?.message || String(err) });
+        post({ type: 'RENDER_ERROR', error: err?.message || String(err) });
+      }
+    }),
 
   GET_AVAILABLE_FONTS: async () => {
     try {

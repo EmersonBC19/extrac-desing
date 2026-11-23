@@ -122,6 +122,13 @@ export declare const WSRenderPayloadSchema: z.ZodObject<{
     tokens: z.ZodOptional<z.ZodObject<{}, z.core.$loose>>;
     createAsComponent: z.ZodOptional<z.ZodBoolean>;
     board: z.ZodOptional<z.ZodBoolean>;
+    scan: z.ZodOptional<z.ZodObject<{
+        id: z.ZodString;
+        index: z.ZodNumber;
+        total: z.ZodNumber;
+        path: z.ZodString;
+        label: z.ZodOptional<z.ZodString>;
+    }, z.core.$strip>>;
     states: z.ZodOptional<z.ZodArray<z.ZodObject<{
         name: z.ZodString;
         rootNode: z.ZodUnknown;

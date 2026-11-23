@@ -3349,6 +3349,160 @@
     return best;
   }
 
+  // packages/core-extractor/src/browser/site-routes.ts
+  var DANGEROUS = /(^|[/_.\-=?&])(log-?out|sign-?out|salir|cerrar-?sesion|desconectar|delete|eliminar|borrar|remove|destroy|drop|unsubscribe|darse-de-baja|approve|aprobar|reject|rechazar|confirm|confirmar|cancel|cancelar|anular|pay|pagar|checkout|purchase|comprar|transfer|transferir|reset|revoke|revocar|deactivate|desactivar|disable|deshabilitar|archive|archivar|publish|publicar|send|enviar|invite|invitar|admin\/.*\/(edit|delete))([/_.\-=?&]|$)/i;
+  var NOT_A_VIEW = /\.(pdf|zip|rar|7z|gz|tar|dmg|exe|msi|apk|png|jpe?g|gif|webp|avif|svg|ico|mp4|webm|mov|mp3|wav|csv|xlsx?|docx?|pptx?|json|xml|txt|rss|atom)$/i;
+  function genericSegment(seg) {
+    if (/^\d+$/.test(seg)) return "{n}";
+    if (/^\d{4}-\d{2}(-\d{2})?$/.test(seg)) return "{fecha}";
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(seg)) return "{id}";
+    if (/^[0-9a-z]{16,}$/i.test(seg) && /\d/.test(seg)) return "{id}";
+    return seg;
+  }
+  function routePattern(url) {
+    const segs = url.pathname.split("/").filter(Boolean).map(genericSegment);
+    const params = [.../* @__PURE__ */ new Set([...url.searchParams.keys()])].sort();
+    return "/" + segs.join("/") + (params.length ? "?" + params.join("&") : "");
+  }
+  function collectSiteRoutes(links, pageUrl) {
+    const base = new URL(pageUrl);
+    const routes = [];
+    const excluded = [];
+    const byPattern = /* @__PURE__ */ new Map();
+    const seenExcluded = /* @__PURE__ */ new Set();
+    const add = (href, text, isCurrent = false) => {
+      let u;
+      try {
+        u = new URL(href, base);
+      } catch (_e) {
+        return;
+      }
+      if (!/^https?:$/.test(u.protocol) || u.origin !== base.origin) return;
+      u.hash = "";
+      const path = decodeURIComponent(u.pathname + u.search);
+      if (NOT_A_VIEW.test(u.pathname)) return;
+      if (DANGEROUS.test(path)) {
+        if (!seenExcluded.has(path)) {
+          seenExcluded.add(path);
+          excluded.push({ url: u.href, path, reason: "puede ejecutar una acción con tu sesión" });
+        }
+        return;
+      }
+      const pattern = routePattern(u);
+      const existing = byPattern.get(pattern);
+      if (existing) {
+        if (existing.url !== u.href) existing.grouped++;
+        if (!existing.label && text) existing.label = text;
+        return;
+      }
+      const route = {
+        url: u.href,
+        path: pattern.includes("{") ? pattern : path || "/",
+        label: (text || "").replace(/\s+/g, " ").trim().slice(0, 60) || (isCurrent ? "Página actual" : ""),
+        grouped: 1
+      };
+      byPattern.set(pattern, route);
+      routes.push(route);
+    };
+    add(pageUrl, "", true);
+    for (const l of links) add(l.href, l.text || "");
+    return { routes, excluded };
+  }
+  function parseSitemap(xml) {
+    return [...String(xml || "").matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)].map((m) => m[1]).slice(0, 2e3);
+  }
+
+  // packages/core-extractor/src/browser/scan.ts
+  var sleep2 = (ms) => new Promise((r) => setTimeout(r, ms));
+  async function waitForStable(quietMs = 700, maxMs = 1e4) {
+    const t0 = Date.now();
+    if (document.readyState !== "complete") {
+      await new Promise((r) => {
+        const done = () => r();
+        window.addEventListener("load", done, { once: true });
+        setTimeout(done, maxMs);
+      });
+    }
+    let last = Date.now();
+    const touch = () => last = Date.now();
+    const mo = new MutationObserver(touch);
+    mo.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
+    let resources = performance.getEntriesByType("resource").length;
+    try {
+      while (Date.now() - t0 < maxMs) {
+        await sleep2(100);
+        const now = performance.getEntriesByType("resource").length;
+        if (now !== resources) {
+          resources = now;
+          touch();
+        }
+        if (Date.now() - last >= quietMs) return { stable: true, waitedMs: Date.now() - t0 };
+      }
+      return { stable: false, waitedMs: Date.now() - t0 };
+    } finally {
+      mo.disconnect();
+    }
+  }
+  async function prescrollPage(maxSteps = 260, stepDelayMs = 220) {
+    document.querySelectorAll("img").forEach((img) => {
+      if (img.loading === "lazy") img.loading = "eager";
+    });
+    const step = Math.max(200, window.innerHeight * 0.8);
+    const total = Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0);
+    const steps = Math.min(maxSteps, Math.ceil(total / step));
+    for (let i = 0; i < steps; i++) {
+      window.scrollTo({ left: 0, top: i * step, behavior: "instant" });
+      await sleep2(stepDelayMs);
+    }
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" });
+    await sleep2(350);
+    const pending = Array.from(document.images).filter((img) => !img.complete);
+    if (pending.length) {
+      await Promise.race([
+        Promise.all(
+          pending.map(
+            (img) => new Promise((r) => {
+              img.addEventListener("load", r, { once: true });
+              img.addEventListener("error", r, { once: true });
+            })
+          )
+        ),
+        sleep2(3e3)
+      ]);
+    }
+  }
+  async function collectRoutesFromPage(withSitemap = true) {
+    const links = Array.from(document.querySelectorAll("a[href]")).map((a) => ({
+      href: a.href,
+      text: (a.textContent || "").trim()
+    }));
+    if (withSitemap) {
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 2e3);
+        const res = await fetch(new URL("/sitemap.xml", location.href).href, {
+          signal: ctrl.signal,
+          credentials: "include"
+        });
+        clearTimeout(timer);
+        if (res.ok && /xml/.test(res.headers.get("content-type") || "")) {
+          for (const loc of parseSitemap(await res.text())) links.push({ href: loc, text: "" });
+        }
+      } catch (_e) {
+      }
+    }
+    return collectSiteRoutes(links, location.href);
+  }
+  async function scanCurrentPage(options = {}) {
+    const { stable } = await waitForStable();
+    if (options.prescroll !== false) await prescrollPage();
+    const root = document.body || document.documentElement;
+    if (typeof window.__codeToFigmaExtract !== "function") throw new Error("Extractor no cargado");
+    const res = await window.__codeToFigmaExtract(root);
+    if (!res) throw new Error("No se pudo extraer la página");
+    return { url: location.href, title: document.title, rootNode: res.rootNode, tokens: res.tokens, stable };
+  }
+
   // packages/core-extractor/src/browser/export-html.ts
   var SVG_NS = "http://www.w3.org/2000/svg";
   var IDX = "data-ctf-i";
@@ -4850,6 +5004,20 @@ ${js.replace(/<\/script/gi, "<\\/script")}<\/script>
       return res ? { rootNode: res.rootNode, rules: emulation.rules, unreadableSheets: emulation.unreadableSheets, transition } : null;
     } finally {
       emulation.undo();
+    }
+  };
+  window.__codeToFigmaScan = {
+    collectRoutes: collectRoutesFromPage,
+    scanPage: async (options) => {
+      if (typeof window.__codeToFigmaCaptureRegions !== "function" && typeof chrome !== "undefined" && chrome.runtime) {
+        window.__codeToFigmaCaptureRegions = (rects) => new Promise(
+          (resolve) => chrome.runtime.sendMessage(
+            { type: "CAPTURE_REGIONS", rects, viewportWidth: innerWidth },
+            (res) => resolve(chrome.runtime.lastError || !res || !res.success ? [] : res.crops)
+          )
+        );
+      }
+      return scanCurrentPage(options);
     }
   };
   window.__codeToFigmaPayload = { measurePayload, heavyPayloadReasons, withoutImages, formatBytes };

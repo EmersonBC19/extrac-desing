@@ -27,8 +27,8 @@ async function hasAllSites() {
   }
 }
 
-async function openPermissionPage(active) {
-  if (permissionPageShown) return;
+async function openPermissionPage(active, force = false) {
+  if (permissionPageShown && !force) return;
   permissionPageShown = true;
   try {
     await chrome.tabs.create({ url: chrome.runtime.getURL(PERMISSIONS_PAGE), active });
@@ -336,6 +336,8 @@ function buildRenderMessage(data) {
           responsive: data.responsive && Array.isArray(data.responsive.variants) ? data.responsive : undefined,
           // QA de diseño: comparar con un frame de Figma en lugar de dibujar (Función B)
           compare: data.compare && typeof data.compare.targetNodeId === 'string' ? data.compare : undefined,
+          // Página de un escaneo del sitio: va al mapa del sitio
+          scan: data.scan && typeof data.scan.id === 'string' ? data.scan : undefined,
           clearPage: false,
         }
       : { rootNode: data, clearPage: false };
@@ -356,7 +358,7 @@ function chunkMessages(text) {
   );
 }
 
-function sendToWebSocketHub(data, hubUrl = HUB_URL) {
+function sendToWebSocketHub(data, hubUrl = HUB_URL, message = null) {
   return new Promise((resolve, reject) => {
     let ws;
     try {
@@ -395,7 +397,7 @@ function sendToWebSocketHub(data, hubUrl = HUB_URL) {
     ws.onopen = async () => {
       clearTimeout(connectTimeout);
       try {
-        const text = JSON.stringify(buildRenderMessage(data));
+        const text = JSON.stringify(message || buildRenderMessage(data));
         let parts = 1;
         if (text.length > CHUNK_THRESHOLD_BYTES) {
           const messages = chunkMessages(text);
@@ -424,6 +426,217 @@ function sendToWebSocketHub(data, hubUrl = HUB_URL) {
   });
 }
 // ── Envío al hub (fin) ────────────────────────────────────────────────────────────────────
+
+// ── Escaneo del sitio (inicio) ───────────────────────────────────────────────────────────────
+// Recorre las rutas que el usuario confirmó en una VENTANA DE ESCANEO visible (las pestañas
+// ocultas no permiten captura de pantalla y frenan las cargas diferidas), con su sesión. Cada página
+// va al hub como un render con `scan` (el plugin la pone en el mapa del sitio) y al final SCAN_FINISH
+// (el plugin arma el tablero con todas). Las rutas se vuelven a validar aquí: no se confía en la página.
+const SCAN_LIMIT = 15;
+const SCAN_PAUSE_MS = 800;
+const SCAN_NAV_TIMEOUT_MS = 30000;
+// Misma lista que packages/core-extractor/src/browser/site-routes.ts (una prueba verifica que coincidan)
+const SCAN_DANGEROUS =
+  /(^|[/_.\-=?&])(log-?out|sign-?out|salir|cerrar-?sesion|desconectar|delete|eliminar|borrar|remove|destroy|drop|unsubscribe|darse-de-baja|approve|aprobar|reject|rechazar|confirm|confirmar|cancel|cancelar|anular|pay|pagar|checkout|purchase|comprar|transfer|transferir|reset|revoke|revocar|deactivate|desactivar|disable|deshabilitar|archive|archivar|publish|publicar|send|enviar|invite|invitar|admin\/.*\/(edit|delete))([/_.\-=?&]|$)/i;
+
+function createSiteScanner(deps) {
+  const { chrome: api, sendRender, sendHubMessage, hasPermission, askPermission, sleep } = deps;
+  let active = null;
+
+  const safePath = url => {
+    try {
+      const u = new URL(url);
+      return decodeURIComponent(u.pathname + u.search);
+    } catch (_e) {
+      return null;
+    }
+  };
+
+  /** Rutas válidas: mismo origen que la pestaña, http(s), ninguna peligrosa, sin repetir, máximo SCAN_LIMIT */
+  function validateRoutes(routes, originUrl) {
+    const origin = new URL(originUrl).origin;
+    const seen = new Set();
+    const out = [];
+    for (const r of Array.isArray(routes) ? routes : []) {
+      let u;
+      try {
+        u = new URL(String(r && r.url));
+      } catch (_e) {
+        continue;
+      }
+      u.hash = '';
+      const path = safePath(u.href);
+      if (!/^https?:$/.test(u.protocol) || u.origin !== origin || !path || SCAN_DANGEROUS.test(path)) continue;
+      if (seen.has(u.href)) continue;
+      seen.add(u.href);
+      out.push({
+        url: u.href,
+        path: String((r && r.path) || path).slice(0, 2000),
+        label: String((r && r.label) || '').slice(0, 200),
+      });
+      if (out.length >= SCAN_LIMIT) break;
+    }
+    return out;
+  }
+
+  /** Navega la pestaña y espera a que termine de cargar (con tope de tiempo) */
+  function navigate(tabId, url) {
+    return new Promise(resolve => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        api.tabs.onUpdated.removeListener(onUpdated);
+        clearTimeout(timer);
+        resolve();
+      };
+      const onUpdated = (id, info, tab) => {
+        if (id === tabId && info.status === 'complete' && tab && tab.url && tab.url !== 'about:blank') finish();
+      };
+      api.tabs.onUpdated.addListener(onUpdated);
+      const timer = setTimeout(finish, SCAN_NAV_TIMEOUT_MS);
+      Promise.resolve(api.tabs.update(tabId, { url })).catch(finish);
+    });
+  }
+
+  async function run(scan, routes, originTab) {
+    const origin = new URL(originTab.url).origin;
+    const progress = data => {
+      try {
+        Promise.resolve(
+          api.tabs.sendMessage(originTab.id, { type: 'SCAN_PROGRESS', scanId: scan.id, total: routes.length, ...data }),
+        ).catch(() => {});
+      } catch (_e) {}
+    };
+    const badge = text => {
+      try {
+        Promise.resolve(api.action.setBadgeText({ text })).catch(() => {});
+      } catch (_e) {}
+    };
+    let sent = 0;
+    try {
+      let size = {};
+      try {
+        const w = await api.windows.get(originTab.windowId);
+        size = { width: w.width, height: w.height };
+      } catch (_e) {}
+      const win = await api.windows.create({ url: 'about:blank', focused: true, type: 'normal', ...size });
+      scan.windowId = win.id;
+      const tabId = win.tabs[0].id;
+      for (let i = 0; i < routes.length && !scan.cancelled; i++) {
+        const route = routes[i];
+        progress({ status: 'page', index: i, path: route.path });
+        badge(`${i + 1}/${routes.length}`);
+        try {
+          await navigate(tabId, route.url);
+          if (scan.cancelled) break;
+          // Una redirección puede sacar del sitio (login externo) o llevar a una ruta peligrosa
+          const tab = await api.tabs.get(tabId);
+          const finalPath = safePath(tab.url);
+          if (!tab.url || new URL(tab.url).origin !== origin || !finalPath || SCAN_DANGEROUS.test(finalPath)) {
+            progress({
+              status: 'skip',
+              index: i,
+              path: route.path,
+              reason: 'la página redirigió fuera de las rutas permitidas',
+            });
+            continue;
+          }
+          await api.scripting.executeScript({ target: { tabId }, files: ['extractor.js'] });
+          const [res] = await api.scripting.executeScript({
+            target: { tabId },
+            func: () => window.__codeToFigmaScan.scanPage(),
+          });
+          const page = res && res.result;
+          if (!page || !page.rootNode) throw new Error('la página no devolvió contenido');
+          if (scan.cancelled) break;
+          await sendRender({
+            rootNode: page.rootNode,
+            tokens: page.tokens,
+            source: { url: page.url, title: page.title },
+            scan: {
+              id: scan.id,
+              index: i,
+              total: routes.length,
+              path: route.path,
+              label: route.label || page.title || '',
+            },
+          });
+          sent++;
+        } catch (err) {
+          progress({ status: 'error', index: i, path: route.path, error: String((err && err.message) || err) });
+        }
+        if (i < routes.length - 1 && !scan.cancelled) await sleep(SCAN_PAUSE_MS);
+      }
+      // Con lo que llegó (también si se canceló a la mitad) el plugin arma el tablero
+      if (sent > 0) {
+        await sendHubMessage({
+          type: 'SCAN_FINISH',
+          scanId: scan.id,
+          count: sent,
+          source: { url: originTab.url, title: originTab.title || '' },
+        });
+      }
+      progress({ status: scan.cancelled ? 'cancelled' : 'done', sent });
+    } catch (err) {
+      progress({ status: 'failed', sent, error: String((err && err.message) || err) });
+    } finally {
+      if (scan.windowId !== null && scan.windowId !== undefined) {
+        try {
+          await api.windows.remove(scan.windowId);
+        } catch (_e) {}
+      }
+      badge('');
+      active = null;
+    }
+  }
+
+  // Cerrar la ventana de escaneo a mano = cancelar
+  if (api.windows && api.windows.onRemoved) {
+    api.windows.onRemoved.addListener(windowId => {
+      if (active && active.windowId === windowId) {
+        active.cancelled = true;
+        active.windowId = null;
+      }
+    });
+  }
+
+  return {
+    async start(routes, originTab) {
+      if (active) throw new Error('Ya hay un escaneo en curso');
+      if (!originTab || !originTab.url) throw new Error('Pestaña de origen desconocida');
+      const valid = validateRoutes(routes, originTab.url);
+      if (!valid.length) throw new Error('No hay rutas válidas para escanear');
+      if (!(await hasPermission())) {
+        askPermission();
+        throw new Error(
+          'El escaneo necesita permiso para abrir las páginas del sitio. Concédelo en la pestaña que se abrió y vuelve a intentarlo.',
+        );
+      }
+      const scan = { id: 'scan_' + Date.now().toString(36), cancelled: false, windowId: null };
+      active = scan;
+      run(scan, valid, originTab); // en segundo plano: el avance llega por SCAN_PROGRESS
+      return { scanId: scan.id, total: valid.length };
+    },
+    cancel() {
+      if (!active) return { cancelled: false };
+      active.cancelled = true;
+      return { cancelled: true };
+    },
+    isActive: () => !!active,
+    validateRoutes,
+  };
+}
+// ── Escaneo del sitio (fin) ──────────────────────────────────────────────────────────────────
+
+const siteScanner = createSiteScanner({
+  chrome,
+  sendRender: data => sendToWebSocketHub(data),
+  sendHubMessage: message => sendToWebSocketHub(null, HUB_URL, message),
+  hasPermission: hasAllSites,
+  askPermission: () => openPermissionPage(true, true),
+  sleep: ms => new Promise(resolve => setTimeout(resolve, ms)),
+});
 
 /**
  * QA de diseño: abre una conexión con el hub como cliente (recibe las respuestas), envía `messages`
@@ -618,6 +831,11 @@ const MESSAGE_HANDLERS = {
   },
 
   CHECK_FIGMA_STATUS: () => checkHubStatus().then(status => ({ status })),
+
+  // Escaneo del sitio: la pestaña de origen la da Chrome (sender), no el mensaje
+  SCAN_START: (message, sender) => siteScanner.start(message.routes, sender && sender.tab),
+
+  SCAN_CANCEL: () => Promise.resolve(siteScanner.cancel()),
 
   // QA de diseño: qué frame hay seleccionado en Figma, y la comparación con su resumen
   QUERY_FIGMA_SELECTION: async () => {

@@ -27,4 +27,13 @@ function loadHubSender() {
   )(require('ws'));
 }
 
-module.exports = { loadImageFetchPolicy, loadHubSender, read, ROOT };
+/** Orquestador del escaneo del sitio (background.js), para probarlo con un `chrome` falso */
+function loadSiteScanner() {
+  const src = read('packages/browser-extension/background.js');
+  const a = src.indexOf('// ── Escaneo del sitio (inicio)');
+  const b = src.indexOf('// ── Escaneo del sitio (fin)');
+  if (a < 0 || b < 0) throw new Error('background.js sin el bloque del escaneo');
+  return new Function(src.slice(a, b) + '\nreturn { createSiteScanner, SCAN_DANGEROUS, SCAN_LIMIT };')();
+}
+
+module.exports = { loadImageFetchPolicy, loadHubSender, loadSiteScanner, read, ROOT };

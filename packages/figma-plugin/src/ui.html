@@ -1805,6 +1805,12 @@
     // ── WebSocket Handler ──
     // Un manejador por mensaje del hub (catálogo: packages/contracts/src/messages.ts, canal "hub")
     const progressLines = new Map(); // transferId → renglón del log
+    let toSandbox = Promise.resolve();
+    function queueToSandbox(task) {
+      toSandbox = toSandbox.then(task, task);
+      return toSandbox;
+    }
+
     const HUB_HANDLERS = {
       AUTH_REQUIRED() {
         hubAuthRequired = true;
@@ -1856,13 +1862,14 @@
         // Tablero design system (fase 6.3): la extensión propone, el ajuste del usuario decide
         if (settings.boardMode === 'ALWAYS') payloadToSend.board = true;
         else if (settings.boardMode === 'NEVER') payloadToSend.board = false;
+        if (payloadToSend.scan) payloadToSend.board = false;
 
         // Ajustar imágenes a lo que acepta figma.createImage antes de dibujar: también las de los
         // estados y las de cada ancho y tema (breakpoints), que viajan en otros árboles
         const trees = [payloadToSend.rootNode];
         for (const s of payloadToSend.states || []) trees.push(s && s.rootNode);
         for (const v of (payloadToSend.responsive && payloadToSend.responsive.variants) || []) trees.push(v && v.rootNode, v && v.dark);
-        normalizeTreeImages({ children: trees.filter(Boolean) }).then((imgStats) => {
+        queueToSandbox(() => normalizeTreeImages({ children: trees.filter(Boolean) }).then((imgStats) => {
           if (imgStats.total > 0) {
             log(`Imágenes: ${imgStats.total} recibidas, ${imgStats.converted} ajustadas a formato/tamaño Figma` + (imgStats.failed ? `, ${imgStats.failed} ilegibles` : ''), imgStats.failed ? 'warn' : 'info');
           }
@@ -1872,6 +1879,19 @@
               payload: withRenderSettings(payloadToSend)
             }
           }, '*');
+        }));
+      },
+      // Fin del escaneo del sitio: el sandbox arma el tablero con todas las rutas ("Tablero: nunca"
+      // en Ajustes deja solo el mapa del sitio)
+      SCAN_FINISH(msg) {
+        const settings = loadPluginSettings();
+        const board = settings.boardMode !== 'NEVER';
+        log(`Escaneo del sitio terminado: ${msg.count} páginas.` + (board ? ' Armando el tablero…' : ''), 'info');
+        queueToSandbox(() => {
+          parent.postMessage(
+            { pluginMessage: { type: 'SCAN_FINISH', scanId: msg.scanId, board, source: msg.source } },
+            '*',
+          );
         });
       },
       EXTRACT_PROGRESS(msg) {
@@ -2016,6 +2036,10 @@
       },
       RENDER_SUCCESS(msg) {
         renderProgressLine = null;
+        if (msg.scan) {
+          log(`Mapa del sitio: ${msg.scan.index + 1} de ${msg.scan.total} · ${msg.scan.path}`, 'success');
+          return;
+        }
         const measuredDuration = (msg.durationMs !== undefined && msg.durationMs >= 0) 
           ? msg.durationMs 
           : Math.round(performance.now() - lastRenderStartTime);

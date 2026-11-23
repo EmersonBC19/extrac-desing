@@ -125,6 +125,12 @@ export declare const MESSAGE_CATALOG: {
         readonly route: "plugin → hub → CLI/MCP";
         readonly description: "Figma terminó de dibujar";
     };
+    readonly SCAN_FINISH: {
+        readonly channel: "hub";
+        readonly kind: "command";
+        readonly route: "extensión → hub → plugin";
+        readonly description: "Fin del escaneo del sitio: el plugin arma el tablero con todas las rutas";
+    };
     readonly RENDER_ERROR: {
         readonly channel: "hub";
         readonly kind: "event";
@@ -347,6 +353,24 @@ export declare const MESSAGE_CATALOG: {
         readonly route: "content → service worker";
         readonly description: "Estado del hub y del plugin";
     };
+    readonly SCAN_START: {
+        readonly channel: "extension";
+        readonly kind: "command";
+        readonly route: "content → service worker";
+        readonly description: "Escanear las rutas confirmadas del sitio en una ventana de escaneo";
+    };
+    readonly SCAN_CANCEL: {
+        readonly channel: "extension";
+        readonly kind: "command";
+        readonly route: "content → service worker";
+        readonly description: "Detener el escaneo en curso y cerrar su ventana";
+    };
+    readonly SCAN_PROGRESS: {
+        readonly channel: "extension";
+        readonly kind: "event";
+        readonly route: "service worker → content";
+        readonly description: "Avance del escaneo (página actual, terminado, cancelado o error)";
+    };
 };
 export type MessageType = keyof typeof MESSAGE_CATALOG;
 /** Tipos de mensaje de un canal (para comprobar en pruebas que todos tienen manejador) */
@@ -422,6 +446,14 @@ export declare const HubInboundSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodLiteral<"RENDER_ERROR">;
     error: z.ZodOptional<z.ZodString>;
 }, z.core.$loose>, z.ZodObject<{
+    type: z.ZodLiteral<"SCAN_FINISH">;
+    scanId: z.ZodString;
+    count: z.ZodNumber;
+    source: z.ZodOptional<z.ZodObject<{
+        url: z.ZodOptional<z.ZodString>;
+        title: z.ZodOptional<z.ZodString>;
+    }, z.core.$strip>>;
+}, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"GET_FIGMA_SELECTION">;
     requestId: z.ZodOptional<z.ZodString>;
 }, z.core.$loose>, z.ZodObject<{
@@ -479,6 +511,14 @@ export type HubOutboundMessage = {
         received: number;
         total: number;
         bytes: number;
+    };
+} | {
+    type: 'SCAN_FINISH';
+    scanId: string;
+    count: number;
+    source?: {
+        url?: string;
+        title?: string;
     };
 } | {
     type: 'RENDER_SUCCESS';
@@ -542,6 +582,14 @@ export type PluginUiMessage = {
     type: 'GET_SETTINGS';
 } | {
     type: 'GET_HISTORY';
+} | {
+    type: 'SCAN_FINISH';
+    scanId: string;
+    board: boolean;
+    source?: {
+        url?: string;
+        title?: string;
+    };
 } | {
     type: 'SET_HISTORY';
     items: unknown[];

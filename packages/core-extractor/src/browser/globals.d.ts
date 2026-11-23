@@ -13,6 +13,11 @@ interface Window {
     unreadableSheets: number;
     transition: { durationMs: number; easing: string } | null;
   } | null>;
+  /** Escaneo del sitio: rutas y extracción de la página completa */
+  __codeToFigmaScan?: {
+    collectRoutes: () => Promise<any>;
+    scanPage: (options?: { prescroll?: boolean }) => Promise<any>;
+  };
   /** Peso de una extracción y versión sin imágenes (contracts/payload-stats) */
   __codeToFigmaPayload?: Record<string, (...args: any[]) => any>;
   /** Lo define content.js: recorta regiones de una captura de pantalla de la pestaña */

@@ -1504,9 +1504,7 @@
                 const cTag = c.tagName.toLowerCase();
                 const cId = c.id ? `#${c.id}` : '';
                 const cCls =
-                  c.className && typeof c.className === 'string'
-                    ? `.${c.className.trim().split(/\s+/)[0]}`
-                    : '';
+                  c.className && typeof c.className === 'string' ? `.${c.className.trim().split(/\s+/)[0]}` : '';
                 const label = `${cTag}${cId || (cCls !== '.' ? cCls : '')}`;
                 return `<button class="hud-crumb-btn" data-crumb-idx="${i}">&lt;${escapeHtml(label)}&gt;</button><span class="hud-crumb-sep">›</span>`;
               })
@@ -1821,14 +1819,23 @@
                 }
               } catch (capErr) {
                 console.warn('[CodeToFigma] Breakpoints/tema no capturados:', capErr);
-                captureNotes = [`Breakpoints y tema no capturados (${capErr?.message || capErr}); se envía el bloque normal.`];
+                captureNotes = [
+                  `Breakpoints y tema no capturados (${capErr?.message || capErr}); se envía el bloque normal.`,
+                ];
               }
             }
-            if (!responsive && !wantsBoard && this.extractHover && window.__codeToFigmaExtractState && er.width * er.height <= innerWidth * innerHeight) {
+            if (
+              !responsive &&
+              !wantsBoard &&
+              this.extractHover &&
+              window.__codeToFigmaExtractState &&
+              er.width * er.height <= innerWidth * innerHeight
+            ) {
               try {
                 const hover = await window.__codeToFigmaExtractState(el, 'hover');
                 if (hover && hover.rootNode && JSON.stringify(hover.rootNode) !== JSON.stringify(rootNode)) {
-                  states = [{ name: 'Hover', rootNode: hover.rootNode }];
+                  // transition: duración y curva CSS del cambio → Smart Animate en Figma
+                  states = [{ name: 'Hover', rootNode: hover.rootNode, transition: hover.transition || null }];
                 }
               } catch (_e) {}
             }
@@ -2128,7 +2135,11 @@
       if (this.selectedElements.length === 0) return;
       if (!extensionAlive()) return this.retire();
       if (!window.__codeToFigmaExportHtml) {
-        this.showToast(`${ICONS.warning} Exportar HTML`, 'Motor de extracción no cargado en la página. Recárgala.', 4500);
+        this.showToast(
+          `${ICONS.warning} Exportar HTML`,
+          'Motor de extracción no cargado en la página. Recárgala.',
+          4500,
+        );
         return;
       }
       if (this.selectedElements.length > 1) {
@@ -2150,7 +2161,9 @@
         let res;
         const relift = await this.suspendLift();
         try {
-          await this.prepareForExtraction(this.selectedElements, pct => setBtn(`${ICONS.spinner} Recorriendo… ${pct}%`));
+          await this.prepareForExtraction(this.selectedElements, pct =>
+            setBtn(`${ICONS.spinner} Recorriendo… ${pct}%`),
+          );
           setBtn(`${ICONS.spinner} Copiando reglas y verificando…`);
           res = await window.__codeToFigmaExportHtml(this.selectedElements[0]);
         } finally {
@@ -2170,7 +2183,11 @@
           this.showToast(`${ICONS.check} HTML descargado`, `${res.baseName}.html (CSS y JS dentro del archivo).`, 4000);
         } else if (choice === 'copy') {
           await navigator.clipboard.writeText(res.singleFile);
-          this.showToast(`${ICONS.copy} HTML copiado`, 'Un solo archivo con el CSS y el JS dentro, listo para pegar.', 3500);
+          this.showToast(
+            `${ICONS.copy} HTML copiado`,
+            'Un solo archivo con el CSS y el JS dentro, listo para pegar.',
+            3500,
+          );
         }
       } catch (err) {
         console.error('[CodeToFigma] Error exportando HTML:', err);
@@ -2210,7 +2227,8 @@
       setBtn(`${ICONS.spinner} Preguntando a Figma…`);
       try {
         const { selection } = await ask('QUERY_FIGMA_SELECTION');
-        if (!selection) throw new Error('En Figma, selecciona el frame de diseño con el que comparar y vuelve a pulsar.');
+        if (!selection)
+          throw new Error('En Figma, selecciona el frame de diseño con el que comparar y vuelve a pulsar.');
         const el = this.selectedElements[0];
         const fullWidth = el.getBoundingClientRect().width >= innerWidth - 24;
         let rootNode;
@@ -2246,7 +2264,12 @@
         const { qa } = await ask('COMPARE_IN_FIGMA', {
           payload: {
             rootNode,
-            compare: { targetNodeId: selection.id, width: selection.width, viewportWidth: Math.round(innerWidth), fullWidth },
+            compare: {
+              targetNodeId: selection.id,
+              width: selection.width,
+              viewportWidth: Math.round(innerWidth),
+              fullWidth,
+            },
             source: { url: location.href, title: document.title },
           },
         });
@@ -2336,7 +2359,8 @@
     renderFrameToken() {
       return new Promise((resolve, reject) => {
         chrome.runtime.sendMessage({ type: 'RENDER_FRAME_TOKEN' }, res => {
-          if (chrome.runtime.lastError || !res || !res.success) reject(new Error('El service worker no dio token de render'));
+          if (chrome.runtime.lastError || !res || !res.success)
+            reject(new Error('El service worker no dio token de render'));
           else resolve(res.token);
         });
       });
@@ -2609,7 +2633,8 @@
         el.style.setProperty('animation', 'none', 'important');
         el.style.setProperty('opacity', String(rec.opacity), 'important');
         if (rec.visibility !== cs.visibility) el.style.setProperty('visibility', rec.visibility, 'important');
-        if (rec.transform && rec.transform !== cs.transform) el.style.setProperty('transform', rec.transform, 'important');
+        if (rec.transform && rec.transform !== cs.transform)
+          el.style.setProperty('transform', rec.transform, 'important');
         if (rec.filter && rec.filter !== cs.filter) el.style.setProperty('filter', rec.filter, 'important');
         overrides.push({ el, saved });
       }

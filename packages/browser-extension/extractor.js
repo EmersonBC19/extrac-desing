@@ -3310,6 +3310,39 @@
       return () => style.remove();
     }
   }
+  function parseTimes(list) {
+    return String(list || "").split(",").map((t) => t.trim()).map((t) => t.endsWith("ms") ? parseFloat(t) : parseFloat(t) * 1e3).map((v) => isFinite(v) ? v : 0);
+  }
+  function splitTopLevel(list) {
+    const out = [];
+    let depth = 0, cur = "";
+    for (const ch of String(list || "")) {
+      if (ch === "(") depth++;
+      if (ch === ")") depth--;
+      if (ch === "," && depth === 0) {
+        out.push(cur.trim());
+        cur = "";
+      } else cur += ch;
+    }
+    if (cur.trim()) out.push(cur.trim());
+    return out;
+  }
+  function readTransition(root) {
+    let best = null;
+    const nodes = [root, ...Array.from(root.querySelectorAll("*")).slice(0, 400)];
+    for (const el of nodes) {
+      const cs = window.getComputedStyle(el);
+      const durations = parseTimes(cs.transitionDuration);
+      if (!durations.some((d) => d > 0)) continue;
+      const easings = splitTopLevel(cs.transitionTimingFunction);
+      durations.forEach((d, i) => {
+        if (d > 0 && (!best || d > best.durationMs)) {
+          best = { durationMs: Math.round(d), easing: easings[i % Math.max(1, easings.length)] || "ease" };
+        }
+      });
+    }
+    return best;
+  }
 
   // packages/core-extractor/src/browser/export-html.ts
   var SVG_NS = "http://www.w3.org/2000/svg";
@@ -4804,11 +4837,12 @@ ${js.replace(/<\/script/gi, "<\\/script")}<\/script>
   };
   window.__codeToFigmaExtractState = async function(rootElement, state) {
     if (!rootElement || typeof window.__codeToFigmaExtract !== "function") return null;
+    const transition = readTransition(rootElement);
     const emulation = emulateState(rootElement, state);
     if (!emulation) return null;
     try {
       const res = await window.__codeToFigmaExtract(rootElement);
-      return res ? { rootNode: res.rootNode, rules: emulation.rules, unreadableSheets: emulation.unreadableSheets } : null;
+      return res ? { rootNode: res.rootNode, rules: emulation.rules, unreadableSheets: emulation.unreadableSheets, transition } : null;
     } finally {
       emulation.undo();
     }

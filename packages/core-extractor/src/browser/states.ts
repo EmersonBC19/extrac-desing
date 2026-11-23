@@ -131,3 +131,58 @@ function addSheet(cssText: string): () => void {
     return () => style.remove();
   }
 }
+
+/** Transición CSS que anima el cambio de estado: la más larga del elemento y su contenido */
+export interface StateTransition {
+  durationMs: number;
+  /** Curva CSS tal cual: "ease", "ease-out", "cubic-bezier(…)", "steps(…)"… */
+  easing: string;
+}
+
+/** "0.3s, 150ms" → [300, 150] */
+function parseTimes(list: string): number[] {
+  return String(list || '')
+    .split(',')
+    .map(t => t.trim())
+    .map(t => (t.endsWith('ms') ? parseFloat(t) : parseFloat(t) * 1000))
+    .map(v => (isFinite(v) ? v : 0));
+}
+
+/** Divide una lista CSS por comas fuera de paréntesis (cubic-bezier(…) lleva comas) */
+function splitTopLevel(list: string): string[] {
+  const out: string[] = [];
+  let depth = 0,
+    cur = '';
+  for (const ch of String(list || '')) {
+    if (ch === '(') depth++;
+    if (ch === ')') depth--;
+    if (ch === ',' && depth === 0) {
+      out.push(cur.trim());
+      cur = '';
+    } else cur += ch;
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out;
+}
+
+/**
+ * Lee la transición que anima el estado. Se llama ANTES de emular el estado (la emulación
+ * congela las transiciones). Recorre el elemento y hasta 400 descendientes; devuelve la de mayor
+ * duración (la que marca el tiempo del cambio) o null si no hay ninguna.
+ */
+export function readTransition(root: Element): StateTransition | null {
+  let best: StateTransition | null = null;
+  const nodes = [root, ...Array.from(root.querySelectorAll('*')).slice(0, 400)];
+  for (const el of nodes) {
+    const cs = window.getComputedStyle(el);
+    const durations = parseTimes(cs.transitionDuration);
+    if (!durations.some(d => d > 0)) continue;
+    const easings = splitTopLevel(cs.transitionTimingFunction);
+    durations.forEach((d, i) => {
+      if (d > 0 && (!best || d > best.durationMs)) {
+        best = { durationMs: Math.round(d), easing: easings[i % Math.max(1, easings.length)] || 'ease' };
+      }
+    });
+  }
+  return best;
+}

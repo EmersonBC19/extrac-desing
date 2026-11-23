@@ -126,6 +126,37 @@ function createFigma(opts = {}) {
     get cornerRadius() {
       return this._cr ?? 0;
     }
+    // Interacciones de prototipo, con las reglas que valida Figma
+    async setReactionsAsync(reactions) {
+      const TRIGGERS = ['ON_CLICK', 'ON_HOVER', 'ON_PRESS', 'ON_DRAG'];
+      const EASINGS = ['EASE_IN', 'EASE_OUT', 'EASE_IN_AND_OUT', 'LINEAR', 'CUSTOM_CUBIC_BEZIER'];
+      for (const r of reactions) {
+        if (!r.trigger || !TRIGGERS.includes(r.trigger.type)) throw new Error('trigger inválido');
+        for (const a of r.actions || []) {
+          if (a.type !== 'NODE') continue;
+          const dest = byId.get(a.destinationId);
+          if (!dest || dest.removed) throw new Error('destino inexistente');
+          if (a.navigation === 'CHANGE_TO') {
+            const okVariant = n => n.type === 'COMPONENT' && n.parent && n.parent.type === 'COMPONENT_SET';
+            if (!okVariant(this) || !okVariant(dest) || this.parent !== dest.parent)
+              throw new Error('CHANGE_TO solo entre variantes del mismo set');
+          }
+          const t = a.transition;
+          if (t) {
+            if (!['DISSOLVE', 'SMART_ANIMATE', 'SCROLL_ANIMATE'].includes(t.type))
+              throw new Error('transición inválida');
+            if (!(typeof t.duration === 'number' && t.duration > 0 && t.duration <= 10))
+              throw new Error('duración inválida');
+            if (!t.easing || !EASINGS.includes(t.easing.type)) throw new Error('easing inválido');
+            if (t.easing.type === 'CUSTOM_CUBIC_BEZIER') {
+              const b = t.easing.easingFunctionCubicBezier;
+              if (!b || !(b.x1 >= 0 && b.x1 <= 1 && b.x2 >= 0 && b.x2 <= 1)) throw new Error('bezier inválida');
+            }
+          }
+        }
+      }
+      this.reactions = reactions;
+    }
     setBoundVariable(field, variable) {
       const NUM = [
         'itemSpacing',
@@ -285,7 +316,8 @@ function createFigma(opts = {}) {
       return current;
     },
     set currentPage(p) {
-      if (opts.dynamicPage) throw new Error('dynamic-page: figma.currentPage = ... síncrono no permitido, usa setCurrentPageAsync');
+      if (opts.dynamicPage)
+        throw new Error('dynamic-page: figma.currentPage = ... síncrono no permitido, usa setCurrentPageAsync');
       current = p;
     },
     setCurrentPageAsync: async p => {
@@ -375,7 +407,8 @@ function createFigma(opts = {}) {
       return s;
     },
     getLocalPaintStyles: () => {
-      if (opts.dynamicPage) throw new Error('dynamic-page: getLocalPaintStyles síncrono no permitido, usa getLocalPaintStylesAsync');
+      if (opts.dynamicPage)
+        throw new Error('dynamic-page: getLocalPaintStyles síncrono no permitido, usa getLocalPaintStylesAsync');
       return styles.paint;
     },
     getLocalPaintStylesAsync: async () => styles.paint,
@@ -395,12 +428,16 @@ function createFigma(opts = {}) {
             collections,
             all,
             getLocalVariableCollections: () => {
-              if (opts.dynamicPage) throw new Error('dynamic-page: getLocalVariableCollections síncrono no permitido, usa getLocalVariableCollectionsAsync');
+              if (opts.dynamicPage)
+                throw new Error(
+                  'dynamic-page: getLocalVariableCollections síncrono no permitido, usa getLocalVariableCollectionsAsync',
+                );
               return collections;
             },
             getLocalVariableCollectionsAsync: async () => collections,
             getLocalVariables: type => {
-              if (opts.dynamicPage) throw new Error('dynamic-page: getLocalVariables síncrono no permitido, usa getLocalVariablesAsync');
+              if (opts.dynamicPage)
+                throw new Error('dynamic-page: getLocalVariables síncrono no permitido, usa getLocalVariablesAsync');
               return all.filter(v => !type || v.resolvedType === type);
             },
             getLocalVariablesAsync: async type => all.filter(v => !type || v.resolvedType === type),
@@ -419,7 +456,8 @@ function createFigma(opts = {}) {
                 },
                 // opts.maxModes: límite del plan (Starter: 1 modo por colección)
                 addMode(modeName) {
-                  if (this.modes.length >= (opts.maxModes || 4)) throw new Error('Limited to ' + this.modes.length + ' modes');
+                  if (this.modes.length >= (opts.maxModes || 4))
+                    throw new Error('Limited to ' + this.modes.length + ' modes');
                   const id = 'm' + (this.modes.length + 1);
                   this.modes.push({ modeId: id, name: modeName });
                   return id;

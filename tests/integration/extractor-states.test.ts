@@ -79,4 +79,50 @@ describe('en Figma: State=Default / State=Hover', () => {
     expect(set.children.map((c: any) => c.name)).toEqual(['State=Default', 'State=Hover']);
     expect(figma.logs.some((m: any) => m.type === 'RENDER_SUCCESS')).toBe(true);
   });
+
+  it('la transición CSS del hover (0,3 s) se lee y queda como Smart Animate en Figma', async () => {
+    const page = await open();
+    const [normal, hover] = await page.evaluate(async () => {
+      const el = document.getElementById('btn');
+      return [
+        (await (window as any).__codeToFigmaExtract(el)).rootNode,
+        await (window as any).__codeToFigmaExtractState(el, 'hover'),
+      ];
+    });
+    // .btn { transition: background 0.3s } → curva por defecto de CSS: "ease"
+    expect(hover.transition).toEqual({ durationMs: 300, easing: 'ease' });
+    const figma = await runPlugin({
+      rootNode: normal,
+      states: [{ name: 'Hover', rootNode: hover.rootNode, transition: hover.transition }],
+    });
+    const set = figma.currentPage.children.find((n: any) => n.type === 'COMPONENT_SET');
+    const [def, hov] = set.children;
+    expect(def.reactions).toHaveLength(1);
+    const [reaction] = def.reactions;
+    expect(reaction.trigger).toEqual({ type: 'ON_HOVER' });
+    expect(reaction.actions[0]).toMatchObject({
+      destinationId: hov.id,
+      navigation: 'CHANGE_TO',
+      transition: { type: 'SMART_ANIMATE', duration: 0.3, easing: { type: 'CUSTOM_CUBIC_BEZIER' } },
+    });
+  });
+
+  it('sin transición en la tarjeta: Smart Animate con 300 ms ease-out por defecto', async () => {
+    const page = await open();
+    const hover = await extractState(page, 'card');
+    expect(hover.transition).toBeNull();
+    const normal = await page.evaluate(
+      async () => (await (window as any).__codeToFigmaExtract(document.getElementById('card'))).rootNode,
+    );
+    const figma = await runPlugin({
+      rootNode: normal,
+      states: [{ name: 'Hover', rootNode: hover.rootNode, transition: null }],
+    });
+    const set = figma.currentPage.children.find((n: any) => n.type === 'COMPONENT_SET');
+    expect(set.children[0].reactions[0].actions[0].transition).toEqual({
+      type: 'SMART_ANIMATE',
+      easing: { type: 'EASE_OUT' },
+      duration: 0.3,
+    });
+  });
 });

@@ -1,5 +1,5 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { consoleSink, createLogger, HubInboundSchema, parseLogLevel, validateRenderPayload, } from '@code-to-figma/contracts';
+import { consoleSink, createLogger, HUB_PROTOCOL, HubInboundSchema, parseLogLevel, validateRenderPayload, } from '@code-to-figma/contracts';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -42,6 +42,8 @@ function defaultLogger() {
 export class FigmaWsHub {
     wss = null;
     figmaSockets = new Set();
+    /** HUB_PROTOCOL que anunció cada plugin al registrarse (1 si no lo anunció: versión anterior) */
+    pluginProtocols = new Map();
     otherClients = new Set();
     /** QA de diseño: consultas de selección en curso (requestId → quién preguntó) */
     pendingSelections = new Map();
@@ -156,6 +158,7 @@ export class FigmaWsHub {
             state.chunks.clear();
             if (state.isFigma) {
                 this.figmaSockets.delete(ws);
+                this.pluginProtocols.delete(ws);
                 this.log.info(`Plugin de Figma desconectado. Restantes: ${this.figmaSockets.size}`);
             }
             else {
@@ -183,8 +186,11 @@ export class FigmaWsHub {
             let finalPayload = msg.payload;
             // Optimización semántica opcional con Gemini Flash si hay API Key disponible
             const geminiKey = msg.payload?.geminiApiKey || this.pluginGeminiApiKey || process.env.GEMINI_API_KEY;
-            const shouldOptimize = msg.payload?.optimizeWithAi === true ||
-                (msg.payload?.optimizeWithAi !== false && this.pluginAiOptimization === true && Boolean(geminiKey));
+            // QA y variantes miden los árboles tal como salieron del navegador: no se reescriben con IA
+            const measured = Boolean(msg.payload?.compare || msg.payload?.responsive);
+            const shouldOptimize = !measured &&
+                (msg.payload?.optimizeWithAi === true ||
+                    (msg.payload?.optimizeWithAi !== false && this.pluginAiOptimization === true && Boolean(geminiKey)));
             const geminiModel = msg.payload?.geminiModel ||
                 this.pluginGeminiModel ||
                 process.env.GEMINI_MODEL ||
@@ -311,6 +317,11 @@ export class FigmaWsHub {
                 this.send(ws, { type: 'FIGMA_SELECTION', requestId, error: 'El plugin de Figma no está abierto' });
                 return;
             }
+            // Un plugin anterior no conoce esta consulta: la ignoraría y la extensión esperaría en vano
+            if (this.pluginProtocol() < HUB_PROTOCOL) {
+                this.send(ws, { type: 'FIGMA_SELECTION', requestId, error: 'El plugin de Figma es de una versión anterior: ciérralo y vuelve a abrirlo en Figma' });
+                return;
+            }
             const timer = setTimeout(() => {
                 if (!this.pendingSelections.has(requestId))
                     return;
@@ -339,8 +350,21 @@ export class FigmaWsHub {
     sendStatus(ws) {
         this.send(ws, {
             type: 'STATUS_RESPONSE',
-            payload: { connected: true, figmaConnected: this.figmaSockets.size > 0, figmaCount: this.figmaSockets.size },
+            payload: {
+                connected: true,
+                figmaConnected: this.figmaSockets.size > 0,
+                figmaCount: this.figmaSockets.size,
+                protocol: HUB_PROTOCOL,
+                pluginProtocol: this.pluginProtocol(),
+            },
         });
+    }
+    /** La versión más alta entre los plugins conectados (0 si no hay ninguno) */
+    pluginProtocol() {
+        let best = 0;
+        for (const ws of this.figmaSockets)
+            best = Math.max(best, this.pluginProtocols.get(ws) ?? 1);
+        return best;
     }
     onRegister(ws, state, msg) {
         if (!state.authenticated) {
@@ -367,6 +391,8 @@ export class FigmaWsHub {
         if (isFigmaPlugin) {
             state.isFigma = true;
             this.figmaSockets.add(ws);
+            const protocol = msg.protocol;
+            this.pluginProtocols.set(ws, typeof protocol === 'number' && protocol >= 1 ? protocol : 1);
             if (typeof msg.geminiApiKey === 'string') {
                 const k = msg.geminiApiKey.trim();
                 this.pluginGeminiApiKey = k.length > 0 ? k : null;

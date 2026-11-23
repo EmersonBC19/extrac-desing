@@ -7,7 +7,12 @@ interface Window {
   __codeToFigmaExtractState?: (
     element: Element,
     state: 'hover' | 'focus',
-  ) => Promise<{ rootNode: any; rules: number; unreadableSheets: number } | null>;
+  ) => Promise<{
+    rootNode: any;
+    rules: number;
+    unreadableSheets: number;
+    transition: { durationMs: number; easing: string } | null;
+  } | null>;
   /** Peso de una extracción y versión sin imágenes (contracts/payload-stats) */
   __codeToFigmaPayload?: Record<string, (...args: any[]) => any>;
   /** Lo define content.js: recorta regiones de una captura de pantalla de la pestaña */

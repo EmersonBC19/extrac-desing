@@ -6,6 +6,8 @@ export interface FigmaWsHubOptions {
 export declare class FigmaWsHub {
     private wss;
     private figmaSockets;
+    /** HUB_PROTOCOL que anunció cada plugin al registrarse (1 si no lo anunció: versión anterior) */
+    private pluginProtocols;
     private otherClients;
     /** QA de diseño: consultas de selección en curso (requestId → quién preguntó) */
     private pendingSelections;
@@ -22,6 +24,8 @@ export declare class FigmaWsHub {
     private onConnection;
     private handlers;
     private sendStatus;
+    /** La versión más alta entre los plugins conectados (0 si no hay ninguno) */
+    private pluginProtocol;
     private onRegister;
     /**
      * Renderizar una vista del catálogo. Antes los datos del mensaje se interpolaban en un

@@ -13,7 +13,7 @@
 import { extractNodeTree } from './extract-node';
 import { resolvePendingImages } from './images';
 import { extractDesignTokens } from './tokens';
-import { emulateState, type InteractionState } from './states';
+import { emulateState, readTransition, type InteractionState } from './states';
 import { buildZip, exportBlock, exportFiles, type ExportOptions } from './export-html';
 import { captureVariants, extractAtWidth, type CaptureOptions } from './responsive';
 // Desde la fuente (no desde el paquete): solo funciones puras, sin arrastrar Zod al bundle
@@ -36,12 +36,14 @@ window.__codeToFigmaExtract = async function (rootElement: Element) {
  */
 window.__codeToFigmaExtractState = async function (rootElement: Element, state: InteractionState) {
   if (!rootElement || typeof window.__codeToFigmaExtract !== 'function') return null;
+  // La transición se lee ANTES de emular: la emulación las congela
+  const transition = readTransition(rootElement);
   const emulation = emulateState(rootElement, state);
   if (!emulation) return null;
   try {
     const res = await window.__codeToFigmaExtract(rootElement);
     return res
-      ? { rootNode: res.rootNode, rules: emulation.rules, unreadableSheets: emulation.unreadableSheets }
+      ? { rootNode: res.rootNode, rules: emulation.rules, unreadableSheets: emulation.unreadableSheets, transition }
       : null;
   } finally {
     emulation.undo();

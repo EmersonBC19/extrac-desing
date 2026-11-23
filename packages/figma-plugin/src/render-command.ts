@@ -13,6 +13,7 @@ import { buildDesignBoard } from './board/board';
 import { setBoardCtx } from './board/context';
 import { guardRenderPayload } from './validation';
 import { cssTokensToVariables, variablesAvailable } from './board/variables';
+import { hoverReaction } from './prototype';
 import { buildResponsiveVariants } from './theme-variants';
 import { runDesignQa } from './qa-run';
 
@@ -178,9 +179,10 @@ export async function renderNodesCommand(
     } catch (_varErr) {}
   }
   if (payload.tokens?.colors && !createdTokensCount && typeof figma.createPaintStyle === 'function') {
-    const localStyles = typeof (figma as any).getLocalPaintStylesAsync === 'function'
-      ? await (figma as any).getLocalPaintStylesAsync()
-      : figma.getLocalPaintStyles();
+    const localStyles =
+      typeof (figma as any).getLocalPaintStylesAsync === 'function'
+        ? await (figma as any).getLocalPaintStylesAsync()
+        : figma.getLocalPaintStyles();
     for (const [tokenName, rgba] of Object.entries(payload.tokens.colors as Record<string, any>)) {
       try {
         const cleanName = 'Token / ' + tokenName.replace(/^--/, '');
@@ -434,6 +436,18 @@ async function buildStateVariants(payload: any, log: Logger): Promise<SceneNode 
     set.counterAxisAlignItems = 'CENTER';
     set.itemSpacing = 40;
     set.paddingTop = set.paddingBottom = set.paddingLeft = set.paddingRight = 32;
+    // al pasar el ratón, Default → Hover con Smart Animate y la transición CSS real
+    const hoverIndex = states.findIndex(st => /^hover$/i.test(String(st?.name || '')));
+    if (hoverIndex >= 0) {
+      try {
+        const reaction = hoverReaction(built[hoverIndex + 1].id, states[hoverIndex].transition);
+        const node: any = built[0];
+        if (typeof node.setReactionsAsync === 'function') await node.setReactionsAsync([reaction]);
+        else node.reactions = [reaction];
+      } catch (err: any) {
+        log.warn('Variantes creadas, pero sin la interacción de hover', { error: String(err?.message || err) });
+      }
+    }
     return set;
   } catch (err: any) {
     log.warn('No se pudieron unir los estados como variantes', { error: String(err?.message || err) });

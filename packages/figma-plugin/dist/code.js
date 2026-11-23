@@ -8722,6 +8722,62 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     return result.ok ? null : result.error;
   }
 
+  // packages/figma-plugin/src/prototype.ts
+  var DEFAULT_HOVER = { durationMs: 300, easing: "ease-out" };
+  var NAMED_BEZIER = {
+    ease: [0.25, 0.1, 0.25, 1]
+  };
+  var NAMED_FIGMA = {
+    "ease-in": "EASE_IN",
+    "ease-out": "EASE_OUT",
+    "ease-in-out": "EASE_IN_AND_OUT",
+    linear: "LINEAR"
+  };
+  function cssEasingToFigma(css) {
+    const e = String(css || "ease").trim().toLowerCase();
+    if (/^steps?\b|^step-(start|end)$/.test(e)) return null;
+    if (NAMED_FIGMA[e]) return { type: NAMED_FIGMA[e] };
+    if (e.startsWith("linear(")) return { type: "LINEAR" };
+    let bezier = NAMED_BEZIER[e];
+    const m = e.match(/^cubic-bezier\(\s*([^,]+),\s*([^,]+),\s*([^,]+),\s*([^)]+)\)$/);
+    if (m) bezier = [m[1], m[2], m[3], m[4]].map(Number);
+    if (bezier && bezier.every((v) => isFinite(v))) {
+      const [x1, y1, x2, y2] = bezier;
+      return {
+        type: "CUSTOM_CUBIC_BEZIER",
+        easingFunctionCubicBezier: {
+          x1: Math.min(1, Math.max(0, x1)),
+          y1,
+          x2: Math.min(1, Math.max(0, x2)),
+          y2
+        }
+      };
+    }
+    return { type: "EASE_OUT" };
+  }
+  function smartAnimateFrom(t) {
+    const css = t && t.durationMs > 0 ? t : t ? null : DEFAULT_HOVER;
+    if (!css) return null;
+    const easing = cssEasingToFigma(css.easing);
+    if (!easing) return null;
+    const duration2 = Math.min(10, Math.max(0.01, Math.round(css.durationMs) / 1e3));
+    return { type: "SMART_ANIMATE", easing, duration: duration2 };
+  }
+  function hoverReaction(destinationId, t) {
+    return {
+      trigger: { type: "ON_HOVER" },
+      actions: [
+        {
+          type: "NODE",
+          destinationId,
+          navigation: "CHANGE_TO",
+          transition: smartAnimateFrom(t),
+          resetVideoPosition: false
+        }
+      ]
+    };
+  }
+
   // packages/figma-plugin/src/theme-variants.ts
   var isSolid = (f) => !!f && (!f.type || f.type === "SOLID") && typeof f.r === "number";
   var rgba = (f) => ({ r: f.r, g: f.g, b: f.b, a: f.a !== void 0 ? f.a : 1 });
@@ -10167,6 +10223,17 @@ ${g.message}`, regular, 12, SEVERITY_COLOR[g.severity]);
       set.counterAxisAlignItems = "CENTER";
       set.itemSpacing = 40;
       set.paddingTop = set.paddingBottom = set.paddingLeft = set.paddingRight = 32;
+      const hoverIndex = states.findIndex((st) => /^hover$/i.test(String(st?.name || "")));
+      if (hoverIndex >= 0) {
+        try {
+          const reaction = hoverReaction(built[hoverIndex + 1].id, states[hoverIndex].transition);
+          const node2 = built[0];
+          if (typeof node2.setReactionsAsync === "function") await node2.setReactionsAsync([reaction]);
+          else node2.reactions = [reaction];
+        } catch (err) {
+          log2.warn("Variantes creadas, pero sin la interacción de hover", { error: String(err?.message || err) });
+        }
+      }
       return set;
     } catch (err) {
       log2.warn("No se pudieron unir los estados como variantes", { error: String(err?.message || err) });

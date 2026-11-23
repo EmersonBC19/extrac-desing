@@ -9,6 +9,7 @@
 import type { Logger, PluginSandboxMessage } from '@code-to-figma/contracts';
 import { compareTrees, hex, type CompareResult, type Finding } from './qa-compare';
 import { buildFigmaNode } from './render';
+import { base64ToBytes } from './paint';
 import { loadFontSafely, prewarmFonts } from './fonts';
 import { variablesAvailable } from './board/variables';
 
@@ -139,6 +140,40 @@ async function reportFrame(title: string, subtitle: string, result: CompareResul
   return frame;
 }
 
+/**
+ * Imágenes: el hash de Figma de cada una de producción (createImage no duplica: es el mismo que tendrá
+ * al dibujarla) y la proporción del archivo de todas, para saber si es otra imagen.
+ */
+async function imageInfo(target: SceneNode, prodRoot: any) {
+  const prodImageHashes = new Map<string, string>();
+  const hashes = new Set<string>();
+  (function walk(n: any) {
+    if (!n) return;
+    if (typeof n.imageData === 'string' && n.imageData) {
+      try {
+        const h = figma.createImage(base64ToBytes(n.imageData)).hash;
+        prodImageHashes.set(String(n.id), h);
+        hashes.add(h);
+      } catch (_e) {}
+    }
+    for (const c of n.children || []) walk(c);
+  })(prodRoot);
+  (function walk(n: any) {
+    const fills = 'fills' in n && Array.isArray(n.fills) ? n.fills : [];
+    for (const f of fills) if (f && f.type === 'IMAGE' && f.imageHash) hashes.add(f.imageHash);
+    if ('children' in n) for (const c of n.children) walk(c);
+  })(target);
+  const imageRatios = new Map<string, number>();
+  for (const h of hashes) {
+    try {
+      const img = figma.getImageByHash(h);
+      const size = img ? await img.getSizeAsync() : null;
+      if (size && size.width > 0 && size.height > 0) imageRatios.set(h, size.width / size.height);
+    } catch (_e) {}
+  }
+  return { prodImageHashes, imageRatios };
+}
+
 export async function runDesignQa(payload: any, post: (m: PluginSandboxMessage) => void, log: Logger): Promise<void> {
   const t0 = Date.now();
   const targetId = String(payload.compare?.targetNodeId || '');
@@ -148,7 +183,10 @@ export async function runDesignQa(payload: any, post: (m: PluginSandboxMessage) 
   }
   const prodRoot = payload.rootNode;
 
-  const result = compareTrees(target, prodRoot, { variableColors: await variableColors() });
+  const result = compareTrees(target, prodRoot, {
+    variableColors: await variableColors(),
+    ...(await imageInfo(target, prodRoot)),
+  });
   // Pantalla completa capturada a otro ancho de ventana (no debería pasar: la extensión usa el del frame)
   const viewport = Number(payload.compare?.viewportWidth) || 0;
   if (viewport && Math.abs(viewport - (target as any).width) > 2 && payload.compare?.fullWidth) {

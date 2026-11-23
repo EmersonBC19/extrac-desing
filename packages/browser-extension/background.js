@@ -343,6 +343,15 @@ function buildRenderMessage(data) {
  * el plugin muestra el progreso y el hub valida el conjunto al completarlo.
  * El tiempo límite cubre solo la conexión; un envío grande puede tardar lo que necesite.
  */
+/** Un render grande como mensajes RENDER_CHUNK (el hub los junta y valida el conjunto) */
+function chunkMessages(text) {
+  const chunks = splitIntoChunks(text, CHUNK_SIZE_CHARS);
+  const transferId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  return chunks.map((data, index) =>
+    JSON.stringify({ type: 'RENDER_CHUNK', transferId, index, total: chunks.length, data }),
+  );
+}
+
 function sendToWebSocketHub(data, hubUrl = HUB_URL) {
   return new Promise((resolve, reject) => {
     let ws;
@@ -385,14 +394,11 @@ function sendToWebSocketHub(data, hubUrl = HUB_URL) {
         const text = JSON.stringify(buildRenderMessage(data));
         let parts = 1;
         if (text.length > CHUNK_THRESHOLD_BYTES) {
-          const chunks = splitIntoChunks(text, CHUNK_SIZE_CHARS);
-          const transferId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-          parts = chunks.length;
-          for (let index = 0; index < chunks.length; index++) {
+          const messages = chunkMessages(text);
+          parts = messages.length;
+          for (const m of messages) {
             if (ws.readyState !== WebSocket.OPEN) throw new Error('El hub cerró la conexión durante el envío');
-            ws.send(
-              JSON.stringify({ type: 'RENDER_CHUNK', transferId, index, total: chunks.length, data: chunks[index] }),
-            );
+            ws.send(m);
             await drained(2 * CHUNK_SIZE_CHARS);
           }
         } else {
@@ -471,11 +477,8 @@ async function queryFigmaSelection() {
 
 async function compareInFigma(payload) {
   const text = JSON.stringify(buildRenderMessage(payload));
-  if (text.length > CHUNK_THRESHOLD_BYTES) {
-    throw new Error('La selección es demasiado grande para comparar: elige un componente más pequeño');
-  }
   const reply = await hubRequest(
-    [text],
+    text.length > CHUNK_THRESHOLD_BYTES ? chunkMessages(text) : [text],
     m => m.type === 'RENDER_ERROR' || (m.type === 'RENDER_SUCCESS' && m.qa),
     120000,
   );

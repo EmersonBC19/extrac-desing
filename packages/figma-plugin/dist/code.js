@@ -9018,6 +9018,7 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
       font: null,
       opacity: 1,
       shadow: null,
+      image: null,
       textIds: /* @__PURE__ */ new Set(),
       subtree: 1
     };
@@ -9041,6 +9042,10 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     const fills = Array.isArray(node2.fills) ? node2.fills : [];
     const kind = type === "TEXT" ? "TEXT" : VECTOR_TYPES.has(type) ? "VECTOR" : fills.some((f) => f && f.type === "IMAGE" && f.visible !== false) ? "IMAGE" : "FRAME";
     const q = emptyNode(String(node2.id), kind, String(node2.name || ""), parent);
+    if (kind === "IMAGE") {
+      const f = fills.find((x) => x && x.type === "IMAGE" && x.visible !== false);
+      q.image = { hash: f.imageHash || null, scaleMode: f.scaleMode || "FILL" };
+    }
     q.w = Number(node2.width) || 0;
     q.h = Number(node2.height) || 0;
     q.opacity = typeof node2.opacity === "number" ? node2.opacity : 1;
@@ -9095,6 +9100,7 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     q.h = Number(L.measuredHeight ?? (typeof L.height === "number" ? L.height : 0)) || 0;
     const S = node2.styles || {};
     q.opacity = typeof S.opacity === "number" ? S.opacity : 1;
+    if (kind === "IMAGE") q.image = { hash: null, scaleMode: S.imageScaleMode || "FILL" };
     const fill = (S.fills || []).find(isSolid2);
     q.fill = fill ? rgba2(fill) : null;
     if (kind === "TEXT" && node2.textData) {
@@ -9251,6 +9257,38 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     walk(D);
     return { pairs, contentDiff, dTexts, pTexts };
   }
+  var FIT_NAMES = {
+    FILL: "cubrir (cover)",
+    FIT: "contener (contain)",
+    CROP: "recorte",
+    TILE: "mosaico"
+  };
+  function ratioText(r) {
+    const common = [
+      [1, 1],
+      [4, 3],
+      [3, 2],
+      [16, 9],
+      [21, 9],
+      [5, 4],
+      [3, 4],
+      [2, 3],
+      [9, 16],
+      [4, 5]
+    ];
+    for (const [a, b] of common) if (Math.abs(r / (a / b) - 1) < 0.015) return `${a}:${b}`;
+    return `${(Math.round(r * 100) / 100).toString().replace(".", ",")}:1`;
+  }
+  function imageInside(n) {
+    if (n.kind === "IMAGE") return n;
+    for (const c of n.children) {
+      if (Math.abs(c.w - n.w) <= 2 && Math.abs(c.h - n.h) <= 2) {
+        const r = imageInside(c);
+        if (r) return r;
+      }
+    }
+    return null;
+  }
   var hasVisualBox = (n) => !!(n.fill && n.fill.a > 0.01) || !!n.stroke || n.kind === "IMAGE";
   function labelOf(d, p) {
     const n = d || p;
@@ -9261,6 +9299,9 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
   function compareTrees(design, production, opts = {}) {
     const D = designModel(design);
     const P = prodModel(production);
+    if (opts.prodImageHashes) {
+      for (const p of flatten(P)) if (p.image) p.image.hash = opts.prodImageHashes.get(p.id) ?? null;
+    }
     const { pairs, contentDiff, dTexts, pTexts } = matchTrees(D, P);
     const findings = [];
     const add = (severity, category, d, p, message) => findings.push({ severity, category, designId: d?.id, prodId: p?.id, label: labelOf(d, p), message });
@@ -9278,6 +9319,39 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
         p,
         `${what}: ${hex2(pc)} en producción${token}, ${hex2(dc)} en el diseño`
       );
+    };
+    const comparedImages = /* @__PURE__ */ new Set();
+    const ratios = opts.imageRatios;
+    const imageFindings = (d, p) => {
+      if (comparedImages.has(d) || comparedImages.has(p)) return;
+      comparedImages.add(d);
+      comparedImages.add(p);
+      if (!d.image || !p.image) return;
+      if (d.image.hash && p.image.hash && d.image.hash !== p.image.hash) {
+        const rd = ratios?.get(d.image.hash);
+        const rp = ratios?.get(p.image.hash);
+        if (rd && rp && Math.abs(rd / rp - 1) > 0.02) {
+          add(
+            "media",
+            "imagen",
+            d,
+            p,
+            `Imagen distinta: proporción ${ratioText(rp)} en producción, ${ratioText(rd)} en el diseño`
+          );
+        } else {
+          add("info", "imagen", d, p, "Imagen: no es el mismo archivo que en el diseño (puede ser la misma exportada de otra forma)");
+        }
+      }
+      if (d.image.scaleMode !== p.image.scaleMode) {
+        const name = (m) => FIT_NAMES[m] || m;
+        add(
+          "baja",
+          "imagen",
+          d,
+          p,
+          `Ajuste de la imagen: ${name(p.image.scaleMode)} en producción, ${name(d.image.scaleMode)} en el diseño`
+        );
+      }
     };
     for (const [d, p] of pairs) {
       if (d.kind === "TEXT" && p.kind === "TEXT") {
@@ -9315,6 +9389,16 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
         continue;
       }
       if (d.kind === "TEXT" || p.kind === "TEXT") continue;
+      const di = imageInside(d);
+      const pi = imageInside(p);
+      if (di && pi) imageFindings(di, pi);
+      else if (d.kind === "IMAGE" && !pi && p.kind === "FRAME" && d.w * d.h >= 64) {
+        comparedImages.add(d);
+        add("media", "imagen", d, p, "Imagen: el diseño tiene una imagen aquí y producción no");
+      } else if (p.kind === "IMAGE" && !di && d.kind === "FRAME" && p.w * p.h >= 64) {
+        comparedImages.add(p);
+        add("media", "imagen", d, p, "Imagen: producción tiene una imagen aquí y el diseño no");
+      }
       if (hasVisualBox(d) && hasVisualBox(p)) {
         const dw = Math.abs(d.w - p.w);
         const dh = Math.abs(d.h - p.h);
@@ -9429,8 +9513,12 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
           `Está en producción pero no en el diseño: ${labelOf(null, p).split(" › ").pop()}`
         );
     for (const p of flatten(P)) {
-      if (p.kind === "IMAGE" && !matchedProd.has(p) && p.w * p.h >= 64)
+      if (p.kind === "IMAGE" && !matchedProd.has(p) && !comparedImages.has(p) && p.w * p.h >= 64)
         add("media", "sobrante", null, p, "Imagen en producción que no está en el diseño");
+    }
+    for (const d of flatten(D)) {
+      if (d.kind === "IMAGE" && !pairs.has(d) && !comparedImages.has(d) && d.w * d.h >= 64)
+        add("media", "faltante", d, null, "Falta en producción: una imagen");
     }
     const order = { alta: 0, media: 1, baja: 2, info: 3 };
     findings.sort((a, b) => order[a.severity] - order[b.severity]);
@@ -9566,6 +9654,37 @@ ${f.message}`,
       text("Sin diferencias medibles: producción coincide con el diseño.", regular, 13, { r: 0.05, g: 0.55, b: 0.3 });
     return frame;
   }
+  async function imageInfo(target, prodRoot) {
+    const prodImageHashes = /* @__PURE__ */ new Map();
+    const hashes = /* @__PURE__ */ new Set();
+    (function walk(n) {
+      if (!n) return;
+      if (typeof n.imageData === "string" && n.imageData) {
+        try {
+          const h = figma.createImage(base64ToBytes(n.imageData)).hash;
+          prodImageHashes.set(String(n.id), h);
+          hashes.add(h);
+        } catch (_e) {
+        }
+      }
+      for (const c of n.children || []) walk(c);
+    })(prodRoot);
+    (function walk(n) {
+      const fills = "fills" in n && Array.isArray(n.fills) ? n.fills : [];
+      for (const f of fills) if (f && f.type === "IMAGE" && f.imageHash) hashes.add(f.imageHash);
+      if ("children" in n) for (const c of n.children) walk(c);
+    })(target);
+    const imageRatios = /* @__PURE__ */ new Map();
+    for (const h of hashes) {
+      try {
+        const img = figma.getImageByHash(h);
+        const size = img ? await img.getSizeAsync() : null;
+        if (size && size.width > 0 && size.height > 0) imageRatios.set(h, size.width / size.height);
+      } catch (_e) {
+      }
+    }
+    return { prodImageHashes, imageRatios };
+  }
   async function runDesignQa(payload, post2, log2) {
     const t0 = Date.now();
     const targetId = String(payload.compare?.targetNodeId || "");
@@ -9574,7 +9693,10 @@ ${f.message}`,
       throw new Error("El frame de diseño ya no existe: selecciónalo de nuevo en Figma y vuelve a comparar");
     }
     const prodRoot = payload.rootNode;
-    const result = compareTrees(target, prodRoot, { variableColors: await variableColors() });
+    const result = compareTrees(target, prodRoot, {
+      variableColors: await variableColors(),
+      ...await imageInfo(target, prodRoot)
+    });
     const viewport = Number(payload.compare?.viewportWidth) || 0;
     if (viewport && Math.abs(viewport - target.width) > 2 && payload.compare?.fullWidth) {
       result.findings.unshift({

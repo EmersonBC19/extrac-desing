@@ -1857,8 +1857,12 @@
         if (settings.boardMode === 'ALWAYS') payloadToSend.board = true;
         else if (settings.boardMode === 'NEVER') payloadToSend.board = false;
 
-        // Ajustar imágenes a lo que acepta figma.createImage antes de dibujar
-        normalizeTreeImages(payloadToSend.rootNode).then((imgStats) => {
+        // Ajustar imágenes a lo que acepta figma.createImage antes de dibujar: también las de los
+        // estados y las de cada ancho y tema (breakpoints), que viajan en otros árboles
+        const trees = [payloadToSend.rootNode];
+        for (const s of payloadToSend.states || []) trees.push(s && s.rootNode);
+        for (const v of (payloadToSend.responsive && payloadToSend.responsive.variants) || []) trees.push(v && v.rootNode, v && v.dark);
+        normalizeTreeImages({ children: trees.filter(Boolean) }).then((imgStats) => {
           if (imgStats.total > 0) {
             log(`Imágenes: ${imgStats.total} recibidas, ${imgStats.converted} ajustadas a formato/tamaño Figma` + (imgStats.failed ? `, ${imgStats.failed} ilegibles` : ''), imgStats.failed ? 'warn' : 'info');
           }

@@ -95,6 +95,9 @@
    */
   const MAX_PRESCROLL_STEPS = 260;
 
+  /** QA de diseño: por encima de este peso la comparación se envía sin imágenes (Figma tardaría) */
+  const COMPARE_MAX_BYTES = 30 * 1024 * 1024;
+
   /**
    * ¿Sigue viva la extensión que inyectó este script? (QA-6) Al recargar o actualizar la extensión,
    * la copia vieja de content.js queda en la pestaña sin contexto: chrome.runtime.id desaparece y
@@ -2229,7 +2232,16 @@
           if (this.isElevated) relift();
         }
         if (!rootNode) throw new Error('No se pudo extraer el bloque');
-        if (window.__codeToFigmaPayload?.withoutImages) rootNode = window.__codeToFigmaPayload.withoutImages(rootNode);
+        // Con imágenes, para verlas en "Producción" y comparar cuáles son. Sin ellas si el usuario
+        // desmarcó "Imágenes" o si pesan tanto que Figma tardaría en dibujarlas.
+        const api = window.__codeToFigmaPayload;
+        let imageNote = '';
+        if (api?.withoutImages && !this.includeImages) {
+          rootNode = api.withoutImages(rootNode);
+        } else if (api?.withoutImages && api.measurePayload && api.measurePayload(rootNode).bytes > COMPARE_MAX_BYTES) {
+          rootNode = api.withoutImages(rootNode);
+          imageNote = ' Se comparó sin imágenes: pesaban demasiado.';
+        }
         setBtn(`${ICONS.spinner} Comparando en Figma…`);
         const { qa } = await ask('COMPARE_IN_FIGMA', {
           payload: {
@@ -2243,7 +2255,11 @@
           ? `${total} diferencia${total === 1 ? '' : 's'} con "${selection.name}" (${qa.alta || 0} altas, ${qa.media || 0} medias, ${qa.baja || 0} bajas)`
           : `Sin diferencias medibles con "${selection.name}"`;
         const top = (qa.top || []).slice(0, 3).join(' · ');
-        this.showToast(`${ICONS.compare} QA de diseño`, `${head}. ${top ? top + ' · ' : ''}Informe completo en Figma.`, 9000);
+        this.showToast(
+          `${ICONS.compare} QA de diseño`,
+          `${head}. ${top ? top + ' · ' : ''}Informe completo en Figma.${imageNote}`,
+          9000,
+        );
       } catch (err) {
         this.showToast(`${ICONS.warning} Comparar con Figma`, String((err && err.message) || err), 6000);
       } finally {

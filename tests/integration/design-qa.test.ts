@@ -121,6 +121,60 @@ describe('QA de diseño contra producción', () => {
   });
 });
 
+describe('QA de diseño: imágenes', () => {
+  const trees: Record<string, any> = {};
+  beforeAll(async () => {
+    const page = await B.page('synthetic/qa-images.html');
+    for (const id of ['design', 'prod-other', 'prod-none', 'prod-same'])
+      trees[id] = (await extract(page, `document.getElementById('${id}')`)).rootNode;
+    await page.context().close();
+  });
+
+  async function compare(prodId: string) {
+    const figma = loadPlugin({}, quiet);
+    await figma.ui.onmessage({ type: 'RENDER_NODES', payload: { rootNode: JSON.parse(JSON.stringify(trees.design)) } });
+    const target = figma.currentPage.children[figma.currentPage.children.length - 1];
+    target.name = 'Tarjeta';
+    const before = figma.logs.length;
+    await figma.ui.onmessage({
+      type: 'RENDER_NODES',
+      payload: { rootNode: JSON.parse(JSON.stringify(trees[prodId])), compare: { targetNodeId: target.id, width: 312 } },
+    });
+    const logs = figma.logs.slice(before);
+    const report = figma.currentPage.children.find((n: any) => /^QA · /.test(n.name));
+    const rows = (report?.children || []).filter((n: any) => n.type === 'TEXT').map((t: any) => t.characters);
+    const prod = figma.currentPage.children.find((n: any) => n.name === 'Producción · Tarjeta');
+    return { logs, all: rows.join('\n'), prod, success: logs.find((m: any) => m.type === 'RENDER_SUCCESS') };
+  }
+  const hasImageFill = (n: any): boolean =>
+    (Array.isArray(n.fills) && n.fills.some((f: any) => f.type === 'IMAGE')) || (n.children || []).some(hasImageFill);
+
+  it('la extracción trae las imágenes (no se quitan para comparar)', () => {
+    expect(JSON.stringify(trees['prod-other'])).toMatch(/"imageData":"data:image\/png;base64,/);
+  });
+
+  it('otra imagen: proporción y ajuste distintos, y producción se dibuja con su imagen', async () => {
+    const r = await compare('prod-other');
+    expect(r.logs.filter((m: any) => m.type === 'RENDER_ERROR')).toEqual([]);
+    expect(r.all).toMatch(/Imagen distinta: proporción 16:9 en producción, 4:3 en el diseño/);
+    expect(r.all).toMatch(/Ajuste de la imagen: contener \(contain\) en producción, cubrir \(cover\) en el diseño/);
+    // El envoltorio de producción no la convierte en "imagen de más"
+    expect(r.all).not.toMatch(/Imagen en producción que no está en el diseño|Falta en producción/);
+    expect(hasImageFill(r.prod)).toBe(true);
+  });
+
+  it('sin imagen en producción → se marca', async () => {
+    const r = await compare('prod-none');
+    expect(r.all).toMatch(/Imagen: el diseño tiene una imagen aquí y producción no|Falta en producción: una imagen/);
+  });
+
+  it('la misma imagen → sin diferencias', async () => {
+    const r = await compare('prod-same');
+    expect(r.all).not.toMatch(/[Ii]magen/);
+    expect(r.success.qa.total).toBe(0);
+  });
+});
+
 describe('selección de Figma: extensión → hub → plugin → extensión', () => {
   it('la extensión pregunta qué frame está seleccionado y recibe la respuesta del plugin', async () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ctf-qa-'));

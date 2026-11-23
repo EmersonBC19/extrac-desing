@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>QA de diseño: imágenes</title>
+    <!--
+      QA de diseño con imágenes (tests/integration/design-qa.test.ts). #design lleva una foto 4:3 en
+      modo cover. #prod-other: otra foto (16:9), en contain y dentro de un envoltorio; #prod-none: sin
+      foto; #prod-same: la misma foto, igual que el diseño.
+    -->
+    <style>
+      body { margin: 0; padding: 24px; display: flex; gap: 32px; align-items: flex-start; font-family: Inter, sans-serif; }
+      .card { width: 280px; display: flex; flex-direction: column; gap: 12px; padding: 16px; background: #fff; border-radius: 12px; }
+      .card img, .media { display: block; width: 280px; height: 160px; }
+      .cover { object-fit: cover; }
+      .contain { object-fit: contain; }
+      .ph { width: 280px; height: 160px; background: #e2e8f0; }
+      h3 { margin: 0; font: 600 16px/24px Inter, sans-serif; color: #0f172a; }
+    </style>
+  </head>
+  <body>
+    <div class="card" id="design"><img class="cover" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAeCAIAAADRv8uKAAAALElEQVR4nO3NMQ0AAAgDMMxMGfIxgQw4mvRvpedEicVisVgsFovFYrE4b+MF7tbLa/AJBdcAAAAASUVORK5CYII=" alt="" /><h3>Montañas al amanecer</h3></div>
+    <div class="card" id="prod-other"><div class="media"><img class="contain" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAAkCAIAAAC2bqvFAAAAVUlEQVR4nO3PQQ0AIBDAMAQg8Pw/UYEIHg3Jkgno1pn9dYsLGtCCBrSgAS1oQAsa0IIGtKABLWhACxrQgga0oAEtaEALGtCCBrSgAS1oQAsaGI94GbicS76mu+FbzAAAAABJRU5ErkJggg==" alt="" /></div><h3>Montañas al amanecer</h3></div>
+    <div class="card" id="prod-none"><div class="ph"></div><h3>Montañas al amanecer</h3></div>
+    <div class="card" id="prod-same"><img class="cover" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAeCAIAAADRv8uKAAAALElEQVR4nO3NMQ0AAAgDMMxMGfIxgQw4mvRvpedEicVisVgsFovFYrE4b+MF7tbLa/AJBdcAAAAASUVORK5CYII=" alt="" /><h3>Montañas al amanecer</h3></div>
+  </body>
+</html>

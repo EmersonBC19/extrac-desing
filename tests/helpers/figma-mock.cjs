@@ -13,6 +13,7 @@ function createFigma(opts = {}) {
   const fk = f => f.family + '|' + f.style;
   const logs = [];
   const styles = { text: [], paint: [] };
+  const images = new Map(); // hash → bytes (createImage)
   const byId = new Map();
   let current;
 
@@ -336,7 +337,22 @@ function createFigma(opts = {}) {
     createNodeFromSvg: () => add(new Node('FRAME')),
     createImage: bytes => {
       if (!bytes || !bytes.length) throw new Error('imagen vacía');
-      return { hash: 'h' + bytes.length };
+      const hash = 'h' + bytes.length;
+      images.set(hash, bytes);
+      return { hash };
+    },
+    // Tamaño del archivo: de la cabecera PNG (IHDR); otros formatos, desconocido
+    getImageByHash: hash => {
+      const bytes = images.get(hash);
+      if (!bytes) return null;
+      return {
+        hash,
+        getSizeAsync: async () => {
+          const png = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes.length > 24;
+          const u32 = o => ((bytes[o] << 24) | (bytes[o + 1] << 16) | (bytes[o + 2] << 8) | bytes[o + 3]) >>> 0;
+          return png ? { width: u32(16), height: u32(20) } : { width: 0, height: 0 };
+        },
+      };
     },
     createTextStyle: () => {
       const s = {

@@ -44,6 +44,8 @@ export interface QNode {
   font: { family: string; weight: number; size: number; lineHeight: number | null; letterSpacing: number } | null;
   opacity: number;
   shadow: { blur: number; x: number; y: number } | null;
+  /** Imagen: hash de Figma (null si no se conoce) y ajuste (FILL = cover, FIT = contain…) */
+  image: { hash: string | null; scaleMode: string } | null;
   /** Ids de las parejas de texto que contiene (para emparejar contenedores) */
   textIds: Set<number>;
   subtree: number;
@@ -180,6 +182,7 @@ function emptyNode(id: string, kind: Kind, name: string, parent: QNode | null): 
     font: null,
     opacity: 1,
     shadow: null,
+    image: null,
     textIds: new Set(),
     subtree: 1,
   };
@@ -216,6 +219,10 @@ export function designModel(node: any, parent: QNode | null = null): QNode {
           ? 'IMAGE'
           : 'FRAME';
   const q = emptyNode(String(node.id), kind, String(node.name || ''), parent);
+  if (kind === 'IMAGE') {
+    const f = fills.find((x: any) => x && x.type === 'IMAGE' && x.visible !== false);
+    q.image = { hash: f.imageHash || null, scaleMode: f.scaleMode || 'FILL' };
+  }
   q.w = Number(node.width) || 0;
   q.h = Number(node.height) || 0;
   q.opacity = typeof node.opacity === 'number' ? node.opacity : 1;
@@ -285,6 +292,8 @@ export function prodModel(node: any, parent: QNode | null = null): QNode {
   q.h = Number(L.measuredHeight ?? (typeof L.height === 'number' ? L.height : 0)) || 0;
   const S = node.styles || {};
   q.opacity = typeof S.opacity === 'number' ? S.opacity : 1;
+  // El hash lo pone compareTrees (opts.prodImageHashes): calcularlo necesita la API de Figma
+  if (kind === 'IMAGE') q.image = { hash: null, scaleMode: S.imageScaleMode || 'FILL' };
   const fill = (S.fills || []).find(isSolid);
   q.fill = fill ? rgba(fill) : null;
   if (kind === 'TEXT' && node.textData) {
@@ -470,6 +479,38 @@ export function matchTrees(D: QNode, P: QNode) {
 export interface CompareOptions {
   /** Colores de las Variables del archivo (hex sin #, mayúsculas): para avisar valores fuera del sistema */
   variableColors?: Set<string>;
+  /** Hash de Figma de cada imagen de producción, por id de UINode (el que tendrá al dibujarse) */
+  prodImageHashes?: Map<string, string>;
+  /** Proporción (ancho / alto) del archivo de cada imagen, por hash */
+  imageRatios?: Map<string, number>;
+}
+
+const FIT_NAMES: Record<string, string> = {
+  FILL: 'cubrir (cover)',
+  FIT: 'contener (contain)',
+  CROP: 'recorte',
+  TILE: 'mosaico',
+};
+
+/** 1.777 → "16:9"; si no es una proporción habitual, "1,78:1" */
+function ratioText(r: number): string {
+  const common: Array<[number, number]> = [
+    [1, 1], [4, 3], [3, 2], [16, 9], [21, 9], [5, 4], [3, 4], [2, 3], [9, 16], [4, 5],
+  ];
+  for (const [a, b] of common) if (Math.abs(r / (a / b) - 1) < 0.015) return `${a}:${b}`;
+  return `${(Math.round(r * 100) / 100).toString().replace('.', ',')}:1`;
+}
+
+/** La imagen que ocupa la caja: ella misma o un descendiente del mismo tamaño (envoltorios) */
+function imageInside(n: QNode): QNode | null {
+  if (n.kind === 'IMAGE') return n;
+  for (const c of n.children) {
+    if (Math.abs(c.w - n.w) <= 2 && Math.abs(c.h - n.h) <= 2) {
+      const r = imageInside(c);
+      if (r) return r;
+    }
+  }
+  return null;
 }
 
 const hasVisualBox = (n: QNode) => !!(n.fill && n.fill.a > 0.01) || !!n.stroke || n.kind === 'IMAGE';
@@ -484,6 +525,9 @@ function labelOf(d: QNode | null, p: QNode | null): string {
 export function compareTrees(design: any, production: any, opts: CompareOptions = {}): CompareResult {
   const D = designModel(design);
   const P = prodModel(production);
+  if (opts.prodImageHashes) {
+    for (const p of flatten(P)) if (p.image) p.image.hash = opts.prodImageHashes.get(p.id) ?? null;
+  }
   const { pairs, contentDiff, dTexts, pTexts } = matchTrees(D, P);
   const findings: Finding[] = [];
   const add = (severity: Severity, category: string, d: QNode | null, p: QNode | null, message: string) =>
@@ -503,6 +547,42 @@ export function compareTrees(design: any, production: any, opts: CompareOptions 
       p,
       `${what}: ${hex(pc)} en producción${token}, ${hex(dc)} en el diseño`,
     );
+  };
+
+  // Imágenes: la misma (hash), otra proporción (otra imagen o recortada) y el ajuste. Un envoltorio y
+  // la imagen que llena pueden emparejarse a distinto nivel en cada lado: se compara la imagen una vez.
+  const comparedImages = new Set<QNode>();
+  const ratios = opts.imageRatios;
+  const imageFindings = (d: QNode, p: QNode) => {
+    if (comparedImages.has(d) || comparedImages.has(p)) return;
+    comparedImages.add(d);
+    comparedImages.add(p);
+    if (!d.image || !p.image) return;
+    if (d.image.hash && p.image.hash && d.image.hash !== p.image.hash) {
+      const rd = ratios?.get(d.image.hash);
+      const rp = ratios?.get(p.image.hash);
+      if (rd && rp && Math.abs(rd / rp - 1) > 0.02) {
+        add(
+          'media',
+          'imagen',
+          d,
+          p,
+          `Imagen distinta: proporción ${ratioText(rp)} en producción, ${ratioText(rd)} en el diseño`,
+        );
+      } else {
+        add('info', 'imagen', d, p, 'Imagen: no es el mismo archivo que en el diseño (puede ser la misma exportada de otra forma)');
+      }
+    }
+    if (d.image.scaleMode !== p.image.scaleMode) {
+      const name = (m: string) => FIT_NAMES[m] || m;
+      add(
+        'baja',
+        'imagen',
+        d,
+        p,
+        `Ajuste de la imagen: ${name(p.image.scaleMode)} en producción, ${name(d.image.scaleMode)} en el diseño`,
+      );
+    }
   };
 
   for (const [d, p] of pairs) {
@@ -542,6 +622,17 @@ export function compareTrees(design: any, production: any, opts: CompareOptions 
       continue;
     }
     if (d.kind === 'TEXT' || p.kind === 'TEXT') continue;
+
+    const di = imageInside(d);
+    const pi = imageInside(p);
+    if (di && pi) imageFindings(di, pi);
+    else if (d.kind === 'IMAGE' && !pi && p.kind === 'FRAME' && d.w * d.h >= 64) {
+      comparedImages.add(d);
+      add('media', 'imagen', d, p, 'Imagen: el diseño tiene una imagen aquí y producción no');
+    } else if (p.kind === 'IMAGE' && !di && d.kind === 'FRAME' && p.w * p.h >= 64) {
+      comparedImages.add(p);
+      add('media', 'imagen', d, p, 'Imagen: producción tiene una imagen aquí y el diseño no');
+    }
 
     // Tamaño: solo cajas visibles (los envoltorios transparentes difieren sin que se note)
     if (hasVisualBox(d) && hasVisualBox(p)) {
@@ -669,8 +760,12 @@ export function compareTrees(design: any, production: any, opts: CompareOptions 
         `Está en producción pero no en el diseño: ${labelOf(null, p).split(' › ').pop()}`,
       );
   for (const p of flatten(P)) {
-    if (p.kind === 'IMAGE' && !matchedProd.has(p) && p.w * p.h >= 64)
+    if (p.kind === 'IMAGE' && !matchedProd.has(p) && !comparedImages.has(p) && p.w * p.h >= 64)
       add('media', 'sobrante', null, p, 'Imagen en producción que no está en el diseño');
+  }
+  for (const d of flatten(D)) {
+    if (d.kind === 'IMAGE' && !pairs.has(d) && !comparedImages.has(d) && d.w * d.h >= 64)
+      add('media', 'faltante', d, null, 'Falta en producción: una imagen');
   }
 
   const order: Record<Severity, number> = { alta: 0, media: 1, baja: 2, info: 3 };

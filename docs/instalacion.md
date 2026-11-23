@@ -91,9 +91,21 @@ Si la página no tiene modo oscuro, se avisa y se envía solo el tema actual.
 
 ### Revisar si la web respeta el diseño
 
-1. En Figma, con el plugin abierto, selecciona el frame del diseño.
-2. En el navegador, selecciona el mismo componente y pulsa **Comparar con Figma**.
-3. En segundos, junto al diseño aparecen la versión de producción y un informe "QA · …" con cada diferencia (por ejemplo, "Padding: 20 px en producción, 24 px en el diseño"). Las capas con diferencias quedan anotadas en Dev Mode.
+Sirve para comprobar si lo que se programó coincide con lo que se diseñó, sin medir a mano.
+
+1. En Figma, con el plugin abierto, selecciona el frame del diseño (el original).
+2. En el navegador, selecciona el mismo componente en la web y pulsa **Comparar con Figma**.
+3. La extensión captura el componente de la web, con sus imágenes, y lo envía a Figma. Tu diseño no se modifica. Al lado aparecen tres cosas:
+   * **"Producción · …"**: el componente tal como está en la web, dibujado para verlo junto al diseño.
+   * **"QA · …"**: un informe con cada diferencia, de la más grave a la menos grave. Por ejemplo: "Padding: 20 px en producción, 24 px en el diseño" o "Imagen distinta: proporción 16:9 en producción, 4:3 en el diseño".
+   * **Anotaciones en Dev Mode** sobre las capas del diseño que tienen diferencias. Si vuelves a comparar, se reemplazan.
+
+Se comparan tamaños, espaciados, radios, colores, bordes, sombras, tipografía, los textos que faltan o sobran y las imágenes:
+* que falte o sobre una imagen;
+* que sea otra imagen;
+* que se ajuste distinto, por ejemplo cubrir frente a contener.
+
+Las capas no tienen que llamarse igual que las clases CSS.
 
 ### Exportar como HTML + CSS + JS
 

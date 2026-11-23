@@ -133,6 +133,9 @@ ventana del ancho del frame; un componente, tal como se ve) y el plugin entrega:
 - un informe en el lienzo ("QA · …") con cada diferencia medible, de la más grave a la menos: tamaño, padding, gap,
   radio, rellenos, bordes, sombras, opacidad y tipografía (familia, peso, tamaño, interlineado), más lo que está en un
   lado y no en el otro y los colores que no son ninguna Variable del archivo;
+- imágenes: la web se envía con ellas (por partes si pesan; sin ellas solo si superan 30 MB o si se desmarcó
+  "Imágenes"). Se marca la que falta o sobra, la que es otra imagen (proporción distinta del archivo; con la misma
+  proporción y otro archivo, como aviso informativo) y el ajuste distinto (cover/contain);
 - anotaciones de Dev Mode sobre las capas del diseño (al volver a comparar se reemplazan);
 - el bloque de producción dibujado al lado, y un resumen en la extensión.
 

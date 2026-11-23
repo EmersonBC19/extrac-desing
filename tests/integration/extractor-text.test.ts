@@ -95,3 +95,20 @@ describe('texto (synthetic/text.html)', () => {
     expect(label.textData.noWrap).toBe(true);
   });
 });
+
+describe('interlineado normal', () => {
+  it('line-height: normal → se envía el interlineado medido (el título no crece en Figma sobre el párrafo)', async () => {
+    const page = await B.page('synthetic/text.html');
+    const web = await page.evaluate(() => {
+      const el = document.getElementById('lh-normal')!;
+      const r = document.createRange();
+      r.selectNodeContents(el);
+      const tops = [...new Set(Array.from(r.getClientRects()).map(x => Math.round(x.top)))].sort((a, b) => a - b);
+      return { gap: tops[1] - tops[0], lines: tops.length };
+    });
+    expect(web.lines).toBeGreaterThanOrEqual(2);
+    const root = (await extract(page, `document.getElementById('lh-normal')`)).rootNode;
+    const [t] = textOf(root);
+    expect(Math.abs(t.textData.lineHeight - web.gap)).toBeLessThanOrEqual(1);
+  });
+});

@@ -739,7 +739,39 @@ export function extractNodeTree(
     if (ts.length) out.textShadow = ts;
     const blend = BLEND_MODES[style.mixBlendMode];
     if (blend) out.blendMode = blend;
+    // -webkit-text-stroke: texto con contorno (letras huecas, neón de línea)
+    const sw = parseFloat((style as any).webkitTextStrokeWidth) || 0;
+    const sc = sw > 0 ? parseColor((style as any).webkitTextStrokeColor, style.color) : null;
+    if (sc && sc.a > 0.01) out.textStroke = { color: sc, width: Math.round(sw * 100) / 100 };
     return out;
+  }
+
+  /** ¿El fondo se recorta a las letras? (background-clip: text: degradados, neón, texturas) */
+  function clipsToText(style: CSSStyleDeclaration): boolean {
+    return /\btext\b/.test(`${style.backgroundClip || ''} ${(style as any).webkitBackgroundClip || ''}`);
+  }
+
+  /**
+   * Relleno de un texto. El color visible de las letras es -webkit-text-fill-color (si no se define,
+   * vale lo mismo que color). Si es transparente y el fondo de ese elemento, o de un antepasado
+   * cercano, se recorta a las letras (background-clip: text), las letras llevan ese fondo: el
+   * degradado va EN el texto, no en una caja detrás.
+   */
+  function textFills(element: Element, style: CSSStyleDeclaration, fallback: Rgba): any[] {
+    const own = parseColor((style as any).webkitTextFillColor) || parseColor(style.color);
+    if (own && own.a >= 0.05) return [own];
+    let el: Element | null = element;
+    for (let depth = 0; el && depth < 6; depth++, el = el.parentElement) {
+      const cs = el === element ? style : window.getComputedStyle(el);
+      if (!clipsToText(cs)) continue;
+      const bg = parseColor(cs.backgroundColor);
+      const grads = parseAllGradients(cs.backgroundImage);
+      const fills = [...(bg && bg.a > 0.01 ? [bg] : []), ...grads];
+      if (fills.length) return fills;
+      // Textura de imagen recortada al texto: sin equivalente editable, un color neutro visible
+      return [{ r: 0.45, g: 0.45, b: 0.5, a: 1 }];
+    }
+    return [own || fallback];
   }
 
   // ── 3.5 Pseudo-element (::before / ::after) Extractor ──
@@ -858,7 +890,7 @@ export function extractNodeTree(
             height: 'HUG',
             positioning: isPosAbs ? 'ABSOLUTE' : 'AUTO',
           },
-          styles: { fills: [tc] },
+          styles: { fills: textFills(element, style, tc), ...textEffects(style) },
           textData: {
             characters: rawText,
             fontSize: Math.round(parseFloat(style.fontSize) || 14),
@@ -1606,10 +1638,12 @@ export function extractNodeTree(
   // ── 8. Fills & Gradients ──
   // Capas CSS: background-color (abajo) + url() + degradados. Se conservan todas;
   // el plugin coloca la imagen entre el color base y los degradados (overlays).
+  // background-clip: text → el fondo pinta las letras (textFills), no la caja
+  const bgClipText = clipsToText(style);
   const fills = [];
-  const grads = parseAllGradients(style.backgroundImage);
-  const pendingBgSrc = extractBgUrl(style.backgroundImage);
-  const bgColor = parseColor(style.backgroundColor);
+  const grads = bgClipText ? [] : parseAllGradients(style.backgroundImage);
+  const pendingBgSrc = bgClipText ? null : extractBgUrl(style.backgroundImage);
+  const bgColor = bgClipText ? null : parseColor(style.backgroundColor);
   if (bgColor && bgColor.a > 0.01) fills.push(bgColor);
   if (grads.length > 0) fills.push(...grads);
 
@@ -1958,6 +1992,18 @@ export function extractNodeTree(
       if (!isNaN(lhVal)) {
         parsedLineHeight = style.lineHeight.endsWith('px') ? Math.round(lhVal) : Math.round(lhVal * fontSize);
       }
+    } else if (rich.linesPreserved && measuredH > 0) {
+      // line-height: normal depende de la fuente: el "automático" de Figma con la fuente sustituta
+      // suele ser más alto y un título de varias líneas crecía y se montaba sobre el párrafo de
+      // abajo. Se envía el interlineado que midió el navegador (distancia entre líneas).
+      const tops = (rich.lineTops || []).filter((t: unknown): t is number => typeof t === 'number');
+      const gaps = tops
+        .slice(1)
+        .map((t, i) => t - tops[i])
+        .filter(g => g > 0)
+        .sort((a, b) => a - b);
+      const measuredLh = gaps.length ? gaps[Math.floor(gaps.length / 2)] : rich.lines === 1 ? measuredH : 0;
+      if (measuredLh >= fontSize * 0.8 && measuredLh <= fontSize * 2.5) parsedLineHeight = Math.round(measuredLh);
     }
     const effLineHeight = parsedLineHeight || Math.round(fontSize * 1.3);
 
@@ -2017,7 +2063,7 @@ export function extractNodeTree(
         x: relX,
         y: relY,
       },
-      styles: { fills: [tc], ...textEffects(style) },
+      styles: { fills: textFills(element, style, tc), ...textEffects(style) },
       textData: {
         characters: rawText,
         fontSize: Math.round(fontSize),
@@ -2245,8 +2291,10 @@ export function extractNodeTree(
   if (blendMode) node.styles.blendMode = blendMode;
   // Cuadrícula / puntos de fondo como mosaico (antes de decidir el rasterizado: si el mosaico ya
   // reproduce todas las capas repetidas, no hace falta una captura que se lleve el contenido)
-  const gridTile = generateGridPatternTile(style.backgroundImage, style.backgroundSize);
+  const gridTile = bgClipText ? null : generateGridPatternTile(style.backgroundImage, style.backgroundSize);
   let rasterReason = effectsNeedingRaster(style, filterInfo);
+  // Un degradado repetido recortado al texto va en las letras: no se rasteriza el texto
+  if (bgClipText && rasterReason === 'degradado repetido') rasterReason = null;
   if (rasterReason === 'degradado repetido' && gridTile) {
     const repeating = splitCssList(style.backgroundImage)
       .map((l, i) => (/^\s*repeating-/i.test(l) ? i : -1))
@@ -2449,7 +2497,7 @@ export function extractNodeTree(
           x: 0,
           y: 0,
         },
-        styles: { fills: [tc] },
+        styles: { fills: textFills(element, style, tc), ...textEffects(style) },
         textData: {
           characters: txt,
           fontSize: Math.round(parseFloat(style.fontSize) || 14),
@@ -2573,7 +2621,10 @@ export function extractNodeTree(
               x: tx,
               y: ty,
             },
-            styles: { fills: [tc] },
+            styles: {
+              fills: textFills(parentEl && parentEl !== element ? parentEl : element, style, tc),
+              ...textEffects(style),
+            },
             textData: {
               characters: raw,
               fontSize: Math.round(nodeFontSize),

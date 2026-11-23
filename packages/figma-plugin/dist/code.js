@@ -6394,8 +6394,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     /** Página de un escaneo del sitio: va al mapa del sitio, en fila con las demás rutas */
     scan: object({
       id: string2().min(1).max(64),
-      index: number2().int().min(0).max(100),
-      total: number2().int().min(1).max(100),
+      index: number2().int().min(0).max(1999),
+      total: number2().int().min(1).max(2e3),
       path: string2().max(2e3),
       label: string2().max(200).optional()
     }).optional(),
@@ -6507,9 +6507,16 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     }).passthrough(),
     object({ type: literal("RENDER_ERROR"), error: string2().max(5e3).optional() }).passthrough(),
     object({
+      type: literal("CLIENT_LOG"),
+      source: _enum(["plugin", "extension"]),
+      level: _enum(["info", "warn", "error"]),
+      message: string2().max(2e3),
+      context: string2().max(4e3).optional()
+    }),
+    object({
       type: literal("SCAN_FINISH"),
       scanId: string2().min(1).max(64),
-      count: number2().int().min(0).max(100),
+      count: number2().int().min(0).max(2e3),
       source: object({ url: string2().max(4096).optional(), title: string2().max(1e3).optional() }).optional()
     }),
     object({ type: literal("GET_FIGMA_SELECTION"), requestId: string2().max(64).optional() }).passthrough(),
@@ -8183,11 +8190,18 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
         }
         if (nodeData.styles?.fills && nodeData.styles.fills.length > 0) {
           try {
-            textNode.fills = nodeData.styles.fills.map((f) => ({
-              type: "SOLID",
-              color: { r: f.r, g: f.g, b: f.b },
-              opacity: f.a !== void 0 ? f.a : 1
-            }));
+            const tw = nodeData.layout?.measuredWidth || textNode.width;
+            const th = nodeData.layout?.measuredHeight || textNode.height;
+            textNode.fills = nodeData.styles.fills.map((f) => cssFillToPaint(f, tw, th));
+          } catch (_e) {
+          }
+        }
+        const ts = nodeData.styles?.textStroke;
+        if (ts && ts.color && ts.width > 0) {
+          try {
+            textNode.strokes = [cssFillToPaint(ts.color)];
+            textNode.strokeWeight = ts.width;
+            textNode.strokeAlign = "CENTER";
           } catch (_e) {
           }
         }
@@ -8713,11 +8727,9 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
           fb.characters = nodeData.textData.characters || " ";
           fb.fontSize = nodeData.textData.fontSize || 14;
           if (nodeData.styles?.fills && nodeData.styles.fills.length > 0) {
-            fb.fills = nodeData.styles.fills.map((f) => ({
-              type: "SOLID",
-              color: { r: f.r, g: f.g, b: f.b },
-              opacity: f.a !== void 0 ? f.a : 1
-            }));
+            fb.fills = nodeData.styles.fills.map(
+              (f) => cssFillToPaint(f, nodeData.layout?.measuredWidth || fb.width, nodeData.layout?.measuredHeight || fb.height)
+            );
           } else {
             fb.fills = [{ type: "SOLID", color: { r: 0.95, g: 0.95, b: 0.95 }, opacity: 1 }];
           }

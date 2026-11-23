@@ -60,9 +60,14 @@ export function isInlineTextRoot(el: Element) {
       if (cs.display === 'none') continue;
       if (isVisuallyHidden(cs, c.getBoundingClientRect())) continue;
       if (cs.display !== 'inline') return false;
-      // Fondos/bordes en un inline (chips, badges) necesitan su propia capa
+      // Fondos/bordes en un inline (chips, badges) necesitan su propia capa. Un fondo recortado a
+      // las letras (background-clip: text) no es una caja: es el color de esas palabras
       const bg = cs.backgroundColor;
-      if ((bg && bg !== 'transparent' && !/rgba\([^)]*,\s*0\)$/.test(bg)) || cs.backgroundImage !== 'none')
+      const clipText = /\btext\b/.test(`${cs.backgroundClip || ''} ${(cs as any).webkitBackgroundClip || ''}`);
+      if (
+        !clipText &&
+        ((bg && bg !== 'transparent' && !/rgba\([^)]*,\s*0\)$/.test(bg)) || cs.backgroundImage !== 'none')
+      )
         return false;
       if (parseFloat(cs.borderTopWidth) > 0 && cs.borderTopStyle !== 'none') return false;
       if (!check(c)) return false;
@@ -77,6 +82,33 @@ export function cssColorToRgba(str: string | null | undefined): Rgba | null {
   if (!m) return null;
   const a = m[4] === undefined ? 1 : m[4].endsWith('%') ? parseFloat(m[4]) / 100 : parseFloat(m[4]);
   return { r: +m[1] / 255, g: +m[2] / 255, b: +m[3] / 255, a };
+}
+
+/**
+ * Color visible de las letras de un tramo: -webkit-text-fill-color (igual a color si no se define).
+ * Si es transparente porque el fondo se recorta a las letras (background-clip: text):
+ *  - recorte en la raíz del texto o más arriba: null (el relleno del nodo ya lleva el degradado);
+ *  - recorte en un tramo interior (<span> con degradado en un título): el color medio del degradado,
+ *    porque Figma no tiene degradados por rango de caracteres.
+ */
+export function visibleTextColor(el: Element, cs: CSSStyleDeclaration, root: Element): Rgba | null {
+  const own = cssColorToRgba((cs as any).webkitTextFillColor) || cssColorToRgba(cs.color);
+  if (!own || own.a >= 0.05) return own;
+  let cur: Element | null = el;
+  for (let depth = 0; cur && depth < 6; depth++, cur = cur.parentElement) {
+    const c = cur === el ? cs : window.getComputedStyle(cur);
+    if (!/\btext\b/.test(`${c.backgroundClip || ''} ${(c as any).webkitBackgroundClip || ''}`)) continue;
+    if (cur === root || cur.contains(root)) return null;
+    const stops = [...String(c.backgroundImage || '').matchAll(/rgba?\([^)]*\)/g)]
+      .map(m => cssColorToRgba(m[0]))
+      .filter((x): x is Rgba => !!x && x.a > 0.05);
+    const bg = cssColorToRgba(c.backgroundColor);
+    const colors = stops.length ? stops : bg && bg.a > 0.05 ? [bg] : [];
+    if (!colors.length) return { r: 0.45, g: 0.45, b: 0.5, a: 1 };
+    const avg = (k: 'r' | 'g' | 'b') => colors.reduce((t, x) => t + x[k], 0) / colors.length;
+    return { r: avg('r'), g: avg('g'), b: avg('b'), a: 1 };
+  }
+  return own;
 }
 
 // Superíndices/subíndices: Figma no permite aplicar vertical-align ni OpenType "sups/numr" por API,
@@ -189,7 +221,7 @@ export function buildRichText(root: Element, rootStyle: CSSStyleDeclaration) {
       fontWeight: cs.fontWeight || 400,
       fontSize: Math.round((parseFloat(cs.fontSize) || rootFs) * 10) / 10,
       italic: cs.fontStyle === 'italic' || cs.fontStyle === 'oblique',
-      color: cssColorToRgba(cs.color),
+      color: visibleTextColor(el, cs, root),
       underline: (cs.textDecorationLine || '').includes('underline'),
       strike: (cs.textDecorationLine || '').includes('line-through'),
       baseline: scriptPosition(el, root),

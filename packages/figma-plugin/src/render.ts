@@ -143,14 +143,21 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
         } catch (_e) {}
       }
 
-      // 10. Fills de texto
+      // 10. Fills de texto: color o degradado en las letras (background-clip: text)
       if (nodeData.styles?.fills && nodeData.styles.fills.length > 0) {
         try {
-          textNode.fills = nodeData.styles.fills.map((f: any) => ({
-            type: 'SOLID',
-            color: { r: f.r, g: f.g, b: f.b },
-            opacity: f.a !== undefined ? f.a : 1,
-          }));
+          const tw = nodeData.layout?.measuredWidth || textNode.width;
+          const th = nodeData.layout?.measuredHeight || textNode.height;
+          textNode.fills = nodeData.styles.fills.map((f: any) => cssFillToPaint(f, tw, th));
+        } catch (_e) {}
+      }
+      // 10a. -webkit-text-stroke: contorno de las letras (centrado, como en CSS)
+      const ts = (nodeData.styles as any)?.textStroke;
+      if (ts && ts.color && ts.width > 0) {
+        try {
+          textNode.strokes = [cssFillToPaint(ts.color)];
+          textNode.strokeWeight = ts.width;
+          textNode.strokeAlign = 'CENTER';
         } catch (_e) {}
       }
 
@@ -787,11 +794,9 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
         fb.characters = nodeData.textData.characters || ' ';
         fb.fontSize = nodeData.textData.fontSize || 14;
         if (nodeData.styles?.fills && nodeData.styles.fills.length > 0) {
-          fb.fills = nodeData.styles.fills.map((f: any) => ({
-            type: 'SOLID',
-            color: { r: f.r, g: f.g, b: f.b },
-            opacity: f.a !== undefined ? f.a : 1,
-          }));
+          fb.fills = nodeData.styles.fills.map((f: any) =>
+            cssFillToPaint(f, nodeData.layout?.measuredWidth || fb.width, nodeData.layout?.measuredHeight || fb.height),
+          );
         } else {
           fb.fills = [{ type: 'SOLID', color: { r: 0.95, g: 0.95, b: 0.95 }, opacity: 1 }];
         }

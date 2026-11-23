@@ -121,6 +121,13 @@
       .replace(/'/g, '&#39;');
   }
 
+  /** Texto de un título con iconos SVG (para el log) */
+  function stripTags(html) {
+    return String(html || '')
+      .replace(/<[^>]*>/g, '')
+      .trim();
+  }
+
   // Leaf and inline tags that usually don't represent a complete component on their own
   const LEAF_TAGS = new Set([
     'span',
@@ -849,6 +856,9 @@
           margin-bottom: 14px;
         }
         .scan-dialog { width: min(560px, 100%); }
+        .scan-tools { display: flex; gap: 6px; margin: 0 0 8px; }
+        .scan-tools input { flex: 1; min-width: 0; padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.06); color: #e2e8f0; font-size: 12px; }
+        .scan-tools button { padding: 6px 10px; font-size: 12px; }
         .scan-list { max-height: 46vh; overflow: auto; margin: 0 0 10px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 6px; }
         .scan-route { display: flex; align-items: baseline; gap: 8px; padding: 4px 6px; border-radius: 6px; cursor: pointer; }
         .scan-route:hover { background: rgba(255,255,255,0.06); }
@@ -2508,6 +2518,8 @@
     }
 
     showToast(title, desc, duration = 3000) {
+      // Los avisos de problema (icono de advertencia) quedan también en el log del hub
+      if (title.includes(ICONS.warning)) this.reportToHub('warn', `${stripTags(title)}: ${desc}`);
       const toast = document.createElement('div');
       toast.className = 'toast-msg';
       toast.innerHTML = `
@@ -2581,9 +2593,13 @@
       this.showScanPanel(`Abriendo la ventana de escaneo… (${res.total} páginas)`);
     }
 
-    /** Lista de rutas con casillas (máx. SCAN_MAX marcadas). Resuelve las elegidas o null */
+    /**
+     * Lista de TODAS las rutas encontradas, con casillas: el usuario decide cuáles escanear (todas
+     * marcadas al abrir; "Todas", "Ninguna" y un filtro para listas largas). Resuelve las elegidas o null.
+     */
     askScanRoutes(routes, excluded) {
-      const SCAN_MAX = 15;
+      // Segundos aproximados por página (carga, espera de estabilidad, recorrido y envío)
+      const SECONDS_PER_PAGE = 12;
       return new Promise(resolve => {
         const backdrop = document.createElement('div');
         backdrop.className = 'heavy-backdrop';
@@ -2591,7 +2607,7 @@
           .map(
             (r, i) => `
               <label class="scan-route">
-                <input type="checkbox" data-idx="${i}" ${i < SCAN_MAX ? 'checked' : ''} />
+                <input type="checkbox" data-idx="${i}" checked />
                 <span class="scan-path">${escapeHtml(r.path)}</span>
                 <span class="scan-label">${escapeHtml(r.label || '')}${r.grouped > 1 ? ` · ${r.grouped} similares, se escanea 1` : ''}</span>
               </label>`,
@@ -2607,6 +2623,15 @@
           <div class="heavy-dialog scan-dialog" role="dialog" aria-modal="true" aria-labelledby="__scan_title">
             <h3 id="__scan_title">${ICONS.layers} Escanear el sitio</h3>
             <p>Se abrirá una ventana que recorre las páginas elegidas con tu sesión, una por una, y las lleva a Figma como un mapa del sitio con su tablero de componentes.</p>
+            ${
+              routes.length > 1
+                ? `<div class="scan-tools">
+                <input type="search" id="__scan_filter" placeholder="Filtrar rutas (ej. /blog)" aria-label="Filtrar rutas" />
+                <button class="btn-secondary" data-pick="all">Todas</button>
+                <button class="btn-secondary" data-pick="none">Ninguna</button>
+              </div>`
+                : ''
+            }
             <div class="scan-list">${rows || '<p>No se encontraron otras páginas en este sitio.</p>'}</div>
             ${ex}
             <div class="heavy-stats"><span id="__scan_count"></span></div>
@@ -2618,9 +2643,10 @@
         const boxes = () => [...backdrop.querySelectorAll('input[type="checkbox"]')];
         const refresh = () => {
           const checked = boxes().filter(b => b.checked).length;
+          const mins = Math.max(1, Math.round((checked * SECONDS_PER_PAGE) / 60));
           backdrop.querySelector('#__scan_count').textContent =
-            `${checked} de ${Math.min(SCAN_MAX, routes.length)} páginas como máximo (${SCAN_MAX})`;
-          boxes().forEach(b => (b.disabled = !b.checked && checked >= SCAN_MAX));
+            `${checked} de ${routes.length} páginas · unos ${mins} min` +
+            (checked > 40 ? ' · con muchas páginas el tablero de Figma tarda más en armarse' : '');
           const go = backdrop.querySelector('#__scan_go');
           go.disabled = checked === 0;
           go.textContent = `Escanear ${checked} página${checked === 1 ? '' : 's'}`;
@@ -2631,7 +2657,25 @@
           resolve(value);
         };
         backdrop.addEventListener('change', refresh);
+        // Filtro: oculta las filas que no coinciden; "Todas/Ninguna" actúa solo sobre las visibles
+        const filter = backdrop.querySelector('#__scan_filter');
+        const visibleBoxes = () => boxes().filter(b => b.closest('.scan-route').style.display !== 'none');
+        if (filter) {
+          filter.addEventListener('input', () => {
+            const q = filter.value.trim().toLowerCase();
+            backdrop.querySelectorAll('.scan-route').forEach(row => {
+              row.style.display = !q || row.textContent.toLowerCase().includes(q) ? '' : 'none';
+            });
+          });
+        }
         backdrop.addEventListener('click', e => {
+          const pick = e.target.closest ? e.target.closest('[data-pick]') : null;
+          if (pick) {
+            const on = pick.getAttribute('data-pick') === 'all';
+            visibleBoxes().forEach(b => (b.checked = on));
+            refresh();
+            return;
+          }
           const t = e.target.closest ? e.target.closest('[data-choice]') : null;
           if (t && t.getAttribute('data-choice') === 'scan') {
             close(
@@ -2661,6 +2705,17 @@
         this.shadow.appendChild(this.scanPanel);
       }
       this.scanPanel.querySelector('.scan-panel-text').textContent = text;
+    }
+
+    /** Aviso al log del hub (~/.code-to-figma/hub.log) a través del service worker */
+    reportToHub(level, message) {
+      try {
+        if (!extensionAlive()) return;
+        chrome.runtime.sendMessage(
+          { type: 'REPORT_TO_HUB', level, message: String(message || '').slice(0, 2000) },
+          () => void chrome.runtime.lastError,
+        );
+      } catch (_e) {}
     }
 
     hideScanPanel() {

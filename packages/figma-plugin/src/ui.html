@@ -2093,11 +2093,26 @@
       RENDER_ERROR(msg) {
         renderProgressLine = null;
         log(`Error al renderizar en Figma: ${msg.error}`, 'error');
+        notifyHub({
+          type: 'CLIENT_LOG',
+          source: 'plugin',
+          level: 'error',
+          message: `Error al renderizar: ${String(msg.error || '').slice(0, 1900)}`,
+        });
         // Avisar al Hub para que el CLI/MCP que pidió el render se entere
         notifyHub({ type: 'RENDER_ERROR', error: String(msg.error || 'Error desconocido').slice(0, 5000) });
       },
       LOG(msg) {
         log(msg.message, msg.level || 'info');
+        // Avisos y errores de Figma quedan también en el log del hub (~/.code-to-figma/hub.log)
+        if (msg.level === 'warn' || msg.level === 'error') {
+          notifyHub({
+            type: 'CLIENT_LOG',
+            source: 'plugin',
+            level: msg.level,
+            message: String(msg.message || '').slice(0, 2000),
+          });
+        }
       },
       AVAILABLE_FONTS(msg) {
         availableFigmaFonts = Array.isArray(msg.fonts) ? msg.fonts : [];

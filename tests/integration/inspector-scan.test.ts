@@ -96,6 +96,40 @@ describe('escanear el sitio desde el inspector', () => {
     expect(await page.evaluate(() => (window as any).__codeToFigmaInstance.scanPanel)).toBeNull();
   });
 
+  it('todas las rutas marcadas al abrir; filtro, "Ninguna" y "Todas" sobre las visibles', async () => {
+    const page = await openAt('synthetic/scan/index.html');
+    await page.keyboard.press('s');
+    await dialogOpen(page);
+    const state = () =>
+      page.evaluate(() => {
+        const sh = (window as any).__codeToFigmaInstance.shadow;
+        return {
+          checked: [...sh.querySelectorAll('.scan-route input')].filter((b: any) => b.checked).length,
+          disabled: [...sh.querySelectorAll('.scan-route input')].some((b: any) => b.disabled),
+          count: sh.querySelector('#__scan_count').textContent,
+        };
+      });
+    expect(await state()).toMatchObject({ checked: 4, disabled: false });
+    expect((await state()).count).toMatch(/4 de 4 páginas · unos 1 min/);
+    await page.evaluate(() => (window as any).__codeToFigmaInstance.shadow.querySelector('[data-pick="none"]').click());
+    expect((await state()).checked).toBe(0);
+    // Filtrar por "blog" y marcar solo esas
+    await page.evaluate(() => {
+      const f = (window as any).__codeToFigmaInstance.shadow.querySelector('#__scan_filter');
+      f.value = 'blog';
+      f.dispatchEvent(new Event('input', { bubbles: true }));
+      (window as any).__codeToFigmaInstance.shadow.querySelector('[data-pick="all"]').click();
+    });
+    expect((await state()).checked).toBe(1);
+    await page.evaluate(() => (window as any).__codeToFigmaInstance.shadow.querySelector('#__scan_go').click());
+    const start = await page.waitForFunction(() =>
+      (window as any).__toWorker.find((m: any) => m.type === 'SCAN_START'),
+    );
+    const msg: any = await start.jsonValue();
+    expect(msg.routes).toHaveLength(1);
+    expect(msg.routes[0].path).toMatch(/blog/);
+  });
+
   it('cancelar la lista no envía nada', async () => {
     const page = await openAt('synthetic/scan/index.html');
     await page.keyboard.press('s');

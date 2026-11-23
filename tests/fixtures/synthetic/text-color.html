@@ -1,0 +1,62 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Textos con degradado, neón y contorno</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 40px;
+        background: #0b0b14;
+        font:
+          16px Arial,
+          sans-serif;
+        color: #eee;
+      }
+      .grad {
+        background: linear-gradient(90deg, #ff00cc, #3333ff);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      .fill {
+        background-image: linear-gradient(90deg, #ffb000, #ff3d00);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+      .neon {
+        color: #e8ffff;
+        text-shadow:
+          0 0 8px #00ffff,
+          0 0 20px #00ffff;
+      }
+      .outline {
+        color: transparent;
+        -webkit-text-stroke: 2px #ff00ff;
+      }
+      .pill {
+        display: inline-block;
+        padding: 12px 24px;
+        border: 1px solid #ff00cc;
+      }
+      h1,
+      h2,
+      p {
+        margin: 0 0 24px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1 id="grad" class="grad">Degradado en las letras</h1>
+    <h2 id="fill" class="fill">Con text-fill-color</h2>
+    <h2 id="mixed">Título con <span class="grad">palabra de color</span> en medio</h2>
+    <p id="wrap" style="width: 320px">
+      Un párrafo largo que ocupa varias líneas con una <span class="grad">palabra de color</span> y más texto que sigue
+      para partir la línea otra vez
+    </p>
+    <div id="nested" class="grad"><strong>Hola</strong> mundo</div>
+    <p id="neon" class="neon">Texto neón</p>
+    <p id="outline" class="outline">Contorno</p>
+    <span id="pill" class="pill grad">Botón con borde</span>
+  </body>
+</html>

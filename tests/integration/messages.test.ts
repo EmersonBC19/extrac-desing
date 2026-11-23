@@ -54,6 +54,7 @@ describe('catálogo de mensajes', () => {
         RENDER_NODES: { payload: {} },
         RENDER_CHUNK: { transferId: 't', index: 0, total: 1, data: '{}' },
         SCAN_FINISH: { scanId: 's', count: 1 },
+        CLIENT_LOG: { source: 'plugin', level: 'warn', message: 'aviso' },
       };
       const extra = samples[type] || {};
       expect(HubInboundSchema.safeParse({ type, ...extra }).success, type).toBe(true);
@@ -180,6 +181,36 @@ describe('resultado del render: plugin → hub → CLI/MCP', () => {
       await new Promise(r => setTimeout(r, 400));
       expect(reopened.msgs.some((m: any) => m.type === 'RENDER_NODES')).toBe(false);
       reopened.close();
+      ext.close();
+    } finally {
+      await hub.stop();
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it('CLIENT_LOG: los avisos del plugin y la extensión quedan en ~/.code-to-figma/hub.log', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ctf-log-'));
+    // Fuera de las pruebas (sin VITEST) el hub escribe siempre su log en la carpeta del usuario
+    const hub = await startHub({ home, env: { VITEST: '' } });
+    try {
+      const ext = await connectClient(hub.url);
+      ext.send({
+        type: 'CLIENT_LOG',
+        source: 'extension',
+        level: 'error',
+        message: 'Escaneo: falló la página 2',
+        context: 'sitio: https://x.test',
+      });
+      ext.send({ type: 'CLIENT_LOG', source: 'plugin', level: 'warn', message: 'Fuente sustituida' });
+      const file = path.join(home, '.code-to-figma', 'hub.log');
+      let text = '';
+      for (let i = 0; i < 40 && !/Fuente sustituida/.test(text); i++) {
+        await new Promise(r => setTimeout(r, 100));
+        text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+      }
+      expect(text).toMatch(/\[extension\] Escaneo: falló la página 2/);
+      expect(text).toMatch(/sitio: https:\/\/x\.test/);
+      expect(text).toMatch(/\[plugin\] Fuente sustituida/);
       ext.close();
     } finally {
       await hub.stop();

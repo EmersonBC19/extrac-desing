@@ -26,9 +26,11 @@ const MAX_PAYLOAD_BYTES = 64 * 1024 * 1024;
 const PAIRING_TIMEOUT_MS = 10_000;
 function defaultLogger() {
     const sinks = [consoleSink()];
-    const defaultLogFile = process.env.CTF_STANDALONE === '1'
-        ? path.join(process.env.HOME || process.env.USERPROFILE || '.', '.code-to-figma', 'hub.log')
-        : undefined;
+    // Siempre a ~/.code-to-figma/hub.log (también en desarrollo): lo que pasa en Figma y en la
+    // extensión llega aquí con CLIENT_LOG y se puede revisar después. En las pruebas, solo si se pide.
+    const defaultLogFile = process.env.VITEST
+        ? undefined
+        : path.join(process.env.CTF_PAIRING_DIR || path.join(os.homedir(), '.code-to-figma'), 'hub.log');
     const logFile = process.env.CTF_LOG_FILE || defaultLogFile;
     if (logFile) {
         try {
@@ -307,6 +309,25 @@ export class FigmaWsHub {
             this.broadcastToClients({ type: 'RENDER_ERROR', error: String(msg.error || 'Error desconocido') });
         },
         // Fin del escaneo del sitio: el plugin arma el tablero con todas las rutas recibidas
+        CLIENT_LOG: (_ws, state, msg) => {
+            // Tope por conexión: un cliente con un error en bucle no llena el disco
+            const now = Date.now();
+            const rl = (state.clientLogWindow ||= { start: now, count: 0 });
+            if (now - rl.start > 60_000) {
+                rl.start = now;
+                rl.count = 0;
+            }
+            if (++rl.count > 120)
+                return;
+            const text = `[${msg.source}] ${msg.message}`;
+            const data = msg.context ? { context: msg.context } : undefined;
+            if (msg.level === 'error')
+                this.log.error(text, data);
+            else if (msg.level === 'warn')
+                this.log.warn(text, data);
+            else
+                this.log.info(text, data);
+        },
         SCAN_FINISH: (_ws, _state, msg) => {
             this.log.info(`Escaneo del sitio terminado (${msg.count} rutas)`, { scanId: msg.scanId });
             this.broadcastToPlugins({ type: 'SCAN_FINISH', scanId: msg.scanId, count: msg.count, source: msg.source });

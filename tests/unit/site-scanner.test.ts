@@ -98,9 +98,9 @@ function setup(pages: Record<string, PageSpec> = {}, opts: { permission?: boolea
 const route = (path: string) => ({ url: ORIGIN + path, path, label: '' });
 
 describe('escaneo del sitio: validación', () => {
-  it('descarta otros sitios, enlaces peligrosos y repetidos, y limita a 15', () => {
+  it('descarta otros sitios, enlaces peligrosos y repetidos; sin tope de producto (el usuario elige)', () => {
     const { scanner } = setup();
-    const many = Array.from({ length: 30 }, (_, i) => route(`/p${i}`));
+    const many = Array.from({ length: 60 }, (_, i) => route(`/p${i}`));
     const valid = scanner.validateRoutes(
       [
         route('/precios'),
@@ -113,8 +113,11 @@ describe('escaneo del sitio: validación', () => {
       ],
       ORIGIN_TAB.url,
     );
-    expect(SCAN_LIMIT).toBe(15);
-    expect(valid).toHaveLength(15);
+    expect(valid).toHaveLength(61); // /precios + las 60, todas
+    // Solo un techo técnico, igual al de los esquemas del hub
+    expect(SCAN_LIMIT).toBe(2000);
+    const huge = Array.from({ length: 2100 }, (_, i) => route(`/q${i}`));
+    expect(scanner.validateRoutes(huge, ORIGIN_TAB.url)).toHaveLength(2000);
     expect(valid[0].path).toBe('/precios');
     expect(valid.some((r: any) => /logout|cancelar|otro\.com/.test(r.url))).toBe(false);
   });

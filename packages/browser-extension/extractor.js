@@ -177,7 +177,8 @@
         if (isVisuallyHidden(cs, c.getBoundingClientRect())) continue;
         if (cs.display !== "inline") return false;
         const bg = cs.backgroundColor;
-        if (bg && bg !== "transparent" && !/rgba\([^)]*,\s*0\)$/.test(bg) || cs.backgroundImage !== "none")
+        const clipText = /\btext\b/.test(`${cs.backgroundClip || ""} ${cs.webkitBackgroundClip || ""}`);
+        if (!clipText && (bg && bg !== "transparent" && !/rgba\([^)]*,\s*0\)$/.test(bg) || cs.backgroundImage !== "none"))
           return false;
         if (parseFloat(cs.borderTopWidth) > 0 && cs.borderTopStyle !== "none") return false;
         if (!check(c)) return false;
@@ -191,6 +192,23 @@
     if (!m) return null;
     const a = m[4] === void 0 ? 1 : m[4].endsWith("%") ? parseFloat(m[4]) / 100 : parseFloat(m[4]);
     return { r: +m[1] / 255, g: +m[2] / 255, b: +m[3] / 255, a };
+  }
+  function visibleTextColor(el, cs, root) {
+    const own = cssColorToRgba(cs.webkitTextFillColor) || cssColorToRgba(cs.color);
+    if (!own || own.a >= 0.05) return own;
+    let cur = el;
+    for (let depth = 0; cur && depth < 6; depth++, cur = cur.parentElement) {
+      const c = cur === el ? cs : window.getComputedStyle(cur);
+      if (!/\btext\b/.test(`${c.backgroundClip || ""} ${c.webkitBackgroundClip || ""}`)) continue;
+      if (cur === root || cur.contains(root)) return null;
+      const stops = [...String(c.backgroundImage || "").matchAll(/rgba?\([^)]*\)/g)].map((m) => cssColorToRgba(m[0])).filter((x) => !!x && x.a > 0.05);
+      const bg = cssColorToRgba(c.backgroundColor);
+      const colors = stops.length ? stops : bg && bg.a > 0.05 ? [bg] : [];
+      if (!colors.length) return { r: 0.45, g: 0.45, b: 0.5, a: 1 };
+      const avg = (k) => colors.reduce((t, x) => t + x[k], 0) / colors.length;
+      return { r: avg("r"), g: avg("g"), b: avg("b"), a: 1 };
+    }
+    return own;
   }
   var SUP_MAP = {
     "0": "⁰",
@@ -281,7 +299,7 @@
         fontWeight: cs.fontWeight || 400,
         fontSize: Math.round((parseFloat(cs.fontSize) || rootFs) * 10) / 10,
         italic: cs.fontStyle === "italic" || cs.fontStyle === "oblique",
-        color: cssColorToRgba(cs.color),
+        color: visibleTextColor(el, cs, root),
         underline: (cs.textDecorationLine || "").includes("underline"),
         strike: (cs.textDecorationLine || "").includes("line-through"),
         baseline: scriptPosition(el, root),
@@ -1386,7 +1404,28 @@
       if (ts.length) out.textShadow = ts;
       const blend = BLEND_MODES[style2.mixBlendMode];
       if (blend) out.blendMode = blend;
+      const sw = parseFloat(style2.webkitTextStrokeWidth) || 0;
+      const sc = sw > 0 ? parseColor(style2.webkitTextStrokeColor, style2.color) : null;
+      if (sc && sc.a > 0.01) out.textStroke = { color: sc, width: Math.round(sw * 100) / 100 };
       return out;
+    }
+    function clipsToText(style2) {
+      return /\btext\b/.test(`${style2.backgroundClip || ""} ${style2.webkitBackgroundClip || ""}`);
+    }
+    function textFills(element2, style2, fallback) {
+      const own = parseColor(style2.webkitTextFillColor) || parseColor(style2.color);
+      if (own && own.a >= 0.05) return [own];
+      let el = element2;
+      for (let depth = 0; el && depth < 6; depth++, el = el.parentElement) {
+        const cs = el === element2 ? style2 : window.getComputedStyle(el);
+        if (!clipsToText(cs)) continue;
+        const bg = parseColor(cs.backgroundColor);
+        const grads2 = parseAllGradients(cs.backgroundImage);
+        const fills2 = [...bg && bg.a > 0.01 ? [bg] : [], ...grads2];
+        if (fills2.length) return fills2;
+        return [{ r: 0.45, g: 0.45, b: 0.5, a: 1 }];
+      }
+      return [own || fallback];
     }
     function extractPseudoElement(element2, pseudo, parentRect2, parentLayout2, counter2) {
       try {
@@ -1485,7 +1524,7 @@
               height: "HUG",
               positioning: isPosAbs ? "ABSOLUTE" : "AUTO"
             },
-            styles: { fills: [tc] },
+            styles: { fills: textFills(element2, style2, tc), ...textEffects(style2) },
             textData: {
               characters: rawText,
               fontSize: Math.round(parseFloat(style2.fontSize) || 14),
@@ -2053,10 +2092,11 @@
       imgNode._vpRect = vpRectOf(boxRect);
       return imgNode;
     }
+    const bgClipText = clipsToText(style);
     const fills = [];
-    const grads = parseAllGradients(style.backgroundImage);
-    const pendingBgSrc = extractBgUrl(style.backgroundImage);
-    const bgColor = parseColor(style.backgroundColor);
+    const grads = bgClipText ? [] : parseAllGradients(style.backgroundImage);
+    const pendingBgSrc = bgClipText ? null : extractBgUrl(style.backgroundImage);
+    const bgColor = bgClipText ? null : parseColor(style.backgroundColor);
     if (bgColor && bgColor.a > 0.01) fills.push(bgColor);
     if (grads.length > 0) fills.push(...grads);
     const topW = Math.round(parseFloat(style.borderTopWidth) || 0);
@@ -2287,6 +2327,11 @@
         if (!isNaN(lhVal)) {
           parsedLineHeight = style.lineHeight.endsWith("px") ? Math.round(lhVal) : Math.round(lhVal * fontSize);
         }
+      } else if (rich.linesPreserved && measuredH2 > 0) {
+        const tops = (rich.lineTops || []).filter((t) => typeof t === "number");
+        const gaps = tops.slice(1).map((t, i) => t - tops[i]).filter((g) => g > 0).sort((a, b) => a - b);
+        const measuredLh = gaps.length ? gaps[Math.floor(gaps.length / 2)] : rich.lines === 1 ? measuredH2 : 0;
+        if (measuredLh >= fontSize * 0.8 && measuredLh <= fontSize * 2.5) parsedLineHeight = Math.round(measuredLh);
       }
       const effLineHeight = parsedLineHeight || Math.round(fontSize * 1.3);
       const isMultiline = rich.lines > 1 || measuredH2 > effLineHeight * 1.35 || rawText.includes("\n");
@@ -2337,7 +2382,7 @@
           x: relX,
           y: relY
         },
-        styles: { fills: [tc], ...textEffects(style) },
+        styles: { fills: textFills(element, style, tc), ...textEffects(style) },
         textData: {
           characters: rawText,
           fontSize: Math.round(fontSize),
@@ -2503,8 +2548,9 @@
     if (filterInfo.opacity < 1) node.styles.opacity = Math.round(node.styles.opacity * filterInfo.opacity * 1e3) / 1e3;
     const blendMode = BLEND_MODES[style.mixBlendMode];
     if (blendMode) node.styles.blendMode = blendMode;
-    const gridTile = generateGridPatternTile(style.backgroundImage, style.backgroundSize);
+    const gridTile = bgClipText ? null : generateGridPatternTile(style.backgroundImage, style.backgroundSize);
     let rasterReason = effectsNeedingRaster(style, filterInfo);
+    if (bgClipText && rasterReason === "degradado repetido") rasterReason = null;
     if (rasterReason === "degradado repetido" && gridTile) {
       const repeating = splitCssList(style.backgroundImage).map((l, i) => /^\s*repeating-/i.test(l) ? i : -1).filter((i) => i >= 0);
       if (repeating.every((i) => gridTile.layers.includes(i))) rasterReason = null;
@@ -2664,7 +2710,7 @@
             x: 0,
             y: 0
           },
-          styles: { fills: [tc] },
+          styles: { fills: textFills(element, style, tc), ...textEffects(style) },
           textData: {
             characters: txt,
             fontSize: Math.round(parseFloat(style.fontSize) || 14),
@@ -2769,7 +2815,10 @@
                 x: tx,
                 y: ty
               },
-              styles: { fills: [tc] },
+              styles: {
+                fills: textFills(parentEl && parentEl !== element ? parentEl : element, style2, tc),
+                ...textEffects(style2)
+              },
               textData: {
                 characters: raw,
                 fontSize: Math.round(nodeFontSize),

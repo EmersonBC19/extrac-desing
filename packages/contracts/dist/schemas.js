@@ -159,8 +159,8 @@ exports.WSRenderPayloadSchema = z
     scan: z
         .object({
         id: z.string().min(1).max(64),
-        index: z.number().int().min(0).max(100),
-        total: z.number().int().min(1).max(100),
+        index: z.number().int().min(0).max(1999),
+        total: z.number().int().min(1).max(2000),
         path: z.string().max(2000),
         label: z.string().max(200).optional(),
     })

@@ -131,6 +131,12 @@ export declare const MESSAGE_CATALOG: {
         readonly route: "extensión → hub → plugin";
         readonly description: "Fin del escaneo del sitio: el plugin arma el tablero con todas las rutas";
     };
+    readonly CLIENT_LOG: {
+        readonly channel: "hub";
+        readonly kind: "event";
+        readonly route: "plugin/extensión → hub";
+        readonly description: "Aviso o error de un cliente: queda en el log del hub (~/.code-to-figma/hub.log)";
+    };
     readonly RENDER_ERROR: {
         readonly channel: "hub";
         readonly kind: "event";
@@ -359,6 +365,12 @@ export declare const MESSAGE_CATALOG: {
         readonly route: "content → service worker";
         readonly description: "Escanear las rutas confirmadas del sitio en una ventana de escaneo";
     };
+    readonly REPORT_TO_HUB: {
+        readonly channel: "extension";
+        readonly kind: "event";
+        readonly route: "content → service worker";
+        readonly description: "Aviso o error del inspector: el service worker lo deja en el log del hub (CLIENT_LOG)";
+    };
     readonly SCAN_CANCEL: {
         readonly channel: "extension";
         readonly kind: "command";
@@ -446,6 +458,19 @@ export declare const HubInboundSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodLiteral<"RENDER_ERROR">;
     error: z.ZodOptional<z.ZodString>;
 }, z.core.$loose>, z.ZodObject<{
+    type: z.ZodLiteral<"CLIENT_LOG">;
+    source: z.ZodEnum<{
+        plugin: "plugin";
+        extension: "extension";
+    }>;
+    level: z.ZodEnum<{
+        error: "error";
+        info: "info";
+        warn: "warn";
+    }>;
+    message: z.ZodString;
+    context: z.ZodOptional<z.ZodString>;
+}, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"SCAN_FINISH">;
     scanId: z.ZodString;
     count: z.ZodNumber;

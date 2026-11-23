@@ -427,12 +427,38 @@ function sendToWebSocketHub(data, hubUrl = HUB_URL, message = null) {
 }
 // ── Envío al hub (fin) ────────────────────────────────────────────────────────────────────
 
+/**
+ * Aviso o error de la extensión al log del hub (~/.code-to-figma/hub.log), para revisarlo después.
+ * Sin hub abierto se pierde sin molestar: el usuario ya vio el aviso en la página.
+ */
+function reportToHub(level, message, context) {
+  const msg = {
+    type: 'CLIENT_LOG',
+    source: 'extension',
+    level: level === 'error' || level === 'warn' ? level : 'info',
+    message: String(message || '').slice(0, 2000),
+  };
+  if (context) msg.context = String(context).slice(0, 4000);
+  sendToWebSocketHub(null, HUB_URL, msg).catch(() => {});
+}
+
+/** Solo el sitio de la página (sin ruta ni parámetros): el log no guarda datos de la sesión */
+function originOf(url) {
+  try {
+    return new URL(url).origin;
+  } catch (_e) {
+    return '';
+  }
+}
+
 // ── Escaneo del sitio (inicio) ───────────────────────────────────────────────────────────────
 // Recorre las rutas que el usuario confirmó en una VENTANA DE ESCANEO visible (las pestañas
 // ocultas no permiten captura de pantalla y frenan las cargas diferidas), con su sesión. Cada página
 // va al hub como un render con `scan` (el plugin la pone en el mapa del sitio) y al final SCAN_FINISH
 // (el plugin arma el tablero con todas). Las rutas se vuelven a validar aquí: no se confía en la página.
-const SCAN_LIMIT = 15;
+// Sin tope de producto: el usuario elige cuántas rutas escanear. Solo un techo técnico, igual al
+// máximo de URL que se leen del sitemap (y al de los esquemas del hub)
+const SCAN_LIMIT = 2000;
 const SCAN_PAUSE_MS = 800;
 const SCAN_NAV_TIMEOUT_MS = 30000;
 // Misma lista que packages/core-extractor/src/browser/site-routes.ts (una prueba verifica que coincidan)
@@ -441,6 +467,7 @@ const SCAN_DANGEROUS =
 
 function createSiteScanner(deps) {
   const { chrome: api, sendRender, sendHubMessage, hasPermission, askPermission, sleep } = deps;
+  const report = typeof deps.report === 'function' ? deps.report : () => {};
   let active = null;
 
   const safePath = url => {
@@ -452,7 +479,7 @@ function createSiteScanner(deps) {
     }
   };
 
-  /** Rutas válidas: mismo origen que la pestaña, http(s), ninguna peligrosa, sin repetir, máximo SCAN_LIMIT */
+  /** Rutas válidas: mismo origen que la pestaña, http(s), ninguna peligrosa, sin repetir (techo SCAN_LIMIT) */
   function validateRoutes(routes, originUrl) {
     const origin = new URL(originUrl).origin;
     const seen = new Set();
@@ -564,7 +591,9 @@ function createSiteScanner(deps) {
           });
           sent++;
         } catch (err) {
-          progress({ status: 'error', index: i, path: route.path, error: String((err && err.message) || err) });
+          const error = String((err && err.message) || err);
+          progress({ status: 'error', index: i, path: route.path, error });
+          report('error', `Escaneo: falló la página ${i + 1} de ${routes.length}: ${error}`);
         }
         if (i < routes.length - 1 && !scan.cancelled) await sleep(SCAN_PAUSE_MS);
       }
@@ -579,7 +608,9 @@ function createSiteScanner(deps) {
       }
       progress({ status: scan.cancelled ? 'cancelled' : 'done', sent });
     } catch (err) {
-      progress({ status: 'failed', sent, error: String((err && err.message) || err) });
+      const error = String((err && err.message) || err);
+      progress({ status: 'failed', sent, error });
+      report('error', `Escaneo detenido por un error: ${error}`);
     } finally {
       if (scan.windowId !== null && scan.windowId !== undefined) {
         try {
@@ -633,6 +664,7 @@ const siteScanner = createSiteScanner({
   chrome,
   sendRender: data => sendToWebSocketHub(data),
   sendHubMessage: message => sendToWebSocketHub(null, HUB_URL, message),
+  report: (level, message) => reportToHub(level, message),
   hasPermission: hasAllSites,
   askPermission: () => openPermissionPage(true, true),
   sleep: ms => new Promise(resolve => setTimeout(resolve, ms)),
@@ -837,6 +869,13 @@ const MESSAGE_HANDLERS = {
 
   SCAN_CANCEL: () => Promise.resolve(siteScanner.cancel()),
 
+  // Avisos del inspector al log del hub, con el sitio de la pestaña (lo da Chrome, no el mensaje)
+  REPORT_TO_HUB: (message, sender) => {
+    const site = sender && sender.tab ? originOf(sender.tab.url) : '';
+    reportToHub(message.level, message.message, site ? `sitio: ${site}` : undefined);
+    return Promise.resolve({});
+  },
+
   // QA de diseño: qué frame hay seleccionado en Figma, y la comparación con su resumen
   QUERY_FIGMA_SELECTION: async () => {
     await assertUpToDate();
@@ -886,6 +925,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   Promise.resolve()
     .then(() => handler(message, sender))
     .then(result => sendResponse({ success: true, ...result }))
-    .catch(err => sendResponse({ success: false, error: (err && err.message) || String(err) }));
+    .catch(err => {
+      const error = (err && err.message) || String(err);
+      // Los fallos de cualquier acción también quedan en el log del hub
+      if (type !== 'REPORT_TO_HUB' && type !== 'CHECK_FIGMA_STATUS') {
+        reportToHub(
+          'error',
+          `${type}: ${error}`,
+          sender && sender.tab ? `sitio: ${originOf(sender.tab.url)}` : undefined,
+        );
+      }
+      sendResponse({ success: false, error });
+    });
   return true; // respuesta asíncrona: mantener abierto el canal
 });

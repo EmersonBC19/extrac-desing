@@ -144,6 +144,12 @@ exports.MESSAGE_CATALOG = {
         route: 'extensión → hub → plugin',
         description: 'Fin del escaneo del sitio: el plugin arma el tablero con todas las rutas',
     },
+    CLIENT_LOG: {
+        channel: 'hub',
+        kind: 'event',
+        route: 'plugin/extensión → hub',
+        description: 'Aviso o error de un cliente: queda en el log del hub (~/.code-to-figma/hub.log)',
+    },
     RENDER_ERROR: {
         channel: 'hub',
         kind: 'event',
@@ -349,6 +355,12 @@ exports.MESSAGE_CATALOG = {
         route: 'content → service worker',
         description: 'Escanear las rutas confirmadas del sitio en una ventana de escaneo',
     },
+    REPORT_TO_HUB: {
+        channel: 'extension',
+        kind: 'event',
+        route: 'content → service worker',
+        description: 'Aviso o error del inspector: el service worker lo deja en el log del hub (CLIENT_LOG)',
+    },
     SCAN_CANCEL: {
         channel: 'extension',
         kind: 'command',
@@ -435,9 +447,16 @@ exports.HubInboundSchema = z.discriminatedUnion('type', [
         .passthrough(),
     z.object({ type: z.literal('RENDER_ERROR'), error: z.string().max(5000).optional() }).passthrough(),
     z.object({
+        type: z.literal('CLIENT_LOG'),
+        source: z.enum(['plugin', 'extension']),
+        level: z.enum(['info', 'warn', 'error']),
+        message: z.string().max(2000),
+        context: z.string().max(4000).optional(),
+    }),
+    z.object({
         type: z.literal('SCAN_FINISH'),
         scanId: z.string().min(1).max(64),
-        count: z.number().int().min(0).max(100),
+        count: z.number().int().min(0).max(2000),
         source: z.object({ url: z.string().max(4096).optional(), title: z.string().max(1000).optional() }).optional(),
     }),
     z.object({ type: z.literal('GET_FIGMA_SELECTION'), requestId: z.string().max(64).optional() }).passthrough(),

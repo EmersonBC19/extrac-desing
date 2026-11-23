@@ -175,6 +175,55 @@ describe('QA de diseño: imágenes', () => {
   });
 });
 
+describe('QA de diseño: informe legible', () => {
+  // El de apple.com/co comparado consigo mismo daba 116 "diferencias" en 80 filas: la fuente sustituida
+  // por cada texto, el relleno del contenedor de cada icono, bordes de un lado y nombres con saltos
+  const trees: Record<string, any> = {};
+  beforeAll(async () => {
+    const page = await B.page('synthetic/qa-report.html');
+    for (const id of ['design', 'prod']) trees[id] = (await extract(page, `document.getElementById('${id}')`)).rootNode;
+    await page.context().close();
+  });
+
+  async function compare(prodId: string) {
+    const figma = loadPlugin({}, quiet); // solo Inter instalada: SF Pro se dibuja con Inter
+    await figma.ui.onmessage({ type: 'RENDER_NODES', payload: { rootNode: JSON.parse(JSON.stringify(trees.design)) } });
+    const target = figma.currentPage.children[figma.currentPage.children.length - 1];
+    target.name = 'Menú';
+    const before = figma.logs.length;
+    await figma.ui.onmessage({
+      type: 'RENDER_NODES',
+      payload: { rootNode: JSON.parse(JSON.stringify(trees[prodId])), compare: { targetNodeId: target.id, width: 352 } },
+    });
+    const logs = figma.logs.slice(before);
+    const report = figma.currentPage.children.find((n: any) => /^QA · /.test(n.name));
+    const rows = (report?.children || []).filter((n: any) => n.type === 'TEXT').map((t: any) => t.characters);
+    return { rows, success: logs.find((m: any) => m.type === 'RENDER_SUCCESS'), errors: logs.filter((m: any) => m.type === 'RENDER_ERROR') };
+  }
+
+  it('el mismo bloque: solo la fuente sustituida, en una fila y como diferencia baja', async () => {
+    const r = await compare('design');
+    expect(r.errors).toEqual([]);
+    const findings = r.rows.slice(2);
+    expect(findings.join('\n')).not.toMatch(/Tipografía|Relleno|Borde/);
+    const font = findings.filter((t: string) => /Fuente: SF Pro Text en producción, Inter en el diseño/.test(t));
+    expect(font).toHaveLength(1);
+    expect(font[0]).toMatch(/^● BAJA/);
+    expect(font[0]).toMatch(/\(7 textos\)/);
+    expect(r.success.qa).toMatchObject({ total: 1, alta: 0, media: 0, baja: 1, matchedTexts: 7, designTexts: 7 });
+  });
+
+  it('una misma diferencia en 6 capas es una fila, y los nombres van en una línea', async () => {
+    const r = await compare('prod');
+    const color = r.rows.filter((t: string) => /Color del texto: #CC0000 en producción, #424245 en el diseño/.test(t));
+    expect(color).toHaveLength(1);
+    expect(color[0]).toMatch(/6 capas: «Mac», «iPad», «iPhone»…/);
+    expect(r.rows[1]).toMatch(/^7 diferencias \(6 altas, 0 medias, 1 bajas\) de 2 tipos/);
+    expect(r.success.qa).toMatchObject({ total: 7, groups: 2 });
+    for (const row of r.rows) expect(row.split('\n').length).toBeLessThanOrEqual(2);
+  });
+});
+
 describe('selección de Figma: extensión → hub → plugin → extensión', () => {
   it('la extensión pregunta qué frame está seleccionado y recibe la respuesta del plugin', async () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ctf-qa-'));

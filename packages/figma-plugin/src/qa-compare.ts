@@ -251,7 +251,15 @@ export function designModel(node: any, parent: QNode | null = null): QNode {
     q.fill = solid ? solid.color : null;
     q.fillBound = !!solid?.bound;
     const st = solidOf(node.strokes);
-    const weight = typeof node.strokeWeight === 'number' ? node.strokeWeight : Number(node.strokeTopWeight) || 0;
+    // Bordes por lado (strokeWeight es figma.mixed): el más grueso; uno solo abajo también es borde
+    const weight =
+      typeof node.strokeWeight === 'number'
+        ? node.strokeWeight
+        : Math.max(
+            ...['strokeTopWeight', 'strokeRightWeight', 'strokeBottomWeight', 'strokeLeftWeight'].map(
+              k => Number(node[k]) || 0,
+            ),
+          );
     if (st && weight > 0) q.stroke = { color: st.color, weight };
     if (typeof node.cornerRadius === 'number') q.radius = node.cornerRadius;
     else if (typeof node.topLeftRadius === 'number') q.radius = node.topLeftRadius;
@@ -483,6 +491,11 @@ export interface CompareOptions {
   prodImageHashes?: Map<string, string>;
   /** Proporción (ancho / alto) del archivo de cada imagen, por hash */
   imageRatios?: Map<string, number>;
+  /**
+   * La fuente con la que Figma dibujaría cada texto de producción (por id de UINode). Si la declarada
+   * no está en este Figma, un diseño dibujado aquí lleva la sustituta: no es una diferencia del código.
+   */
+  figmaFonts?: Map<string, { family: string; style: string }>;
 }
 
 const FIT_NAMES: Record<string, string> = {
@@ -515,10 +528,13 @@ function imageInside(n: QNode): QNode | null {
 
 const hasVisualBox = (n: QNode) => !!(n.fill && n.fill.a > 0.01) || !!n.stroke || n.kind === 'IMAGE';
 
+const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim();
+
 function labelOf(d: QNode | null, p: QNode | null): string {
   const n = d || p!;
-  const parent = n.parent && n.parent.parent ? n.parent.name : '';
-  const name = n.kind === 'TEXT' ? `«${n.rawText.slice(0, 40)}${n.rawText.length > 40 ? '…' : ''}»` : n.name;
+  const parent = n.parent && n.parent.parent ? oneLine(n.parent.name) : '';
+  const raw = oneLine(n.rawText);
+  const name = n.kind === 'TEXT' ? `«${raw.slice(0, 40)}${raw.length > 40 ? '…' : ''}»` : oneLine(n.name);
   return parent ? `${parent} › ${name}` : name;
 }
 
@@ -548,6 +564,8 @@ export function compareTrees(design: any, production: any, opts: CompareOptions 
       `${what}: ${hex(pc)} en producción${token}, ${hex(dc)} en el diseño`,
     );
   };
+
+  const substituted = new Map<string, number>(); // "declarada→sustituta" → textos
 
   // Imágenes: la misma (hash), otra proporción (otra imagen o recortada) y el ajuste. Un envoltorio y
   // la imagen que llena pueden emparejarse a distinto nivel en cada lado: se compara la imagen una vez.
@@ -588,13 +606,21 @@ export function compareTrees(design: any, production: any, opts: CompareOptions 
   for (const [d, p] of pairs) {
     if (d.kind === 'TEXT' && p.kind === 'TEXT') {
       if (contentDiff.has(d)) {
-        add('info', 'contenido', d, p, `Contenido distinto: «${p.rawText.slice(0, 60)}» en producción`);
+        add('info', 'contenido', d, p, `Contenido distinto: «${oneLine(p.rawText).slice(0, 60)}» en producción`);
       }
       const df = d.font;
       const pf = p.font;
       if (df && pf) {
-        const fam = df.family.toLowerCase() !== pf.family.toLowerCase();
-        const wt = df.weight !== pf.weight;
+        let fam = df.family.toLowerCase() !== pf.family.toLowerCase();
+        let wt = df.weight !== pf.weight;
+        // La declarada no está en este Figma y el diseño lleva justo la que Figma usaría en su lugar
+        const sub = opts.figmaFonts?.get(p.id);
+        if (fam && sub && sub.family.toLowerCase() === df.family.toLowerCase()) {
+          fam = false;
+          if (wt && styleWeight(sub.style) === df.weight) wt = false;
+          const key = `${pf.family}→${sub.family}`;
+          substituted.set(key, (substituted.get(key) || 0) + 1);
+        }
         const sz = Math.abs(df.size - pf.size) > 0.5;
         const lh = df.lineHeight != null && pf.lineHeight != null && Math.abs(df.lineHeight - pf.lineHeight) > 0.5;
         if (fam || wt || sz || lh) {
@@ -686,8 +712,10 @@ export function compareTrees(design: any, production: any, opts: CompareOptions 
     ) {
       add('media', 'radio', d, p, `Radio de esquina: ${px(p.radius)} en producción, ${px(d.radius)} en el diseño`);
     }
-    // El relleno de una imagen (o su marcador gris cuando se envía sin imágenes) no es un color de diseño
-    if ((d.fill || p.fill) && d.kind !== 'IMAGE' && p.kind !== 'IMAGE') {
+    // El relleno de una imagen (o su marcador gris cuando se envía sin imágenes) no es un color de diseño,
+    // ni el del contenedor de un SVG (lo que se ve son sus trazados)
+    const paintless = (n: QNode) => n.kind === 'IMAGE' || n.kind === 'VECTOR';
+    if ((d.fill || p.fill) && !paintless(d) && !paintless(p)) {
       if (d.fill && p.fill) colorFinding('Relleno', d, p, d.fill, p.fill);
       else if ((d.fill?.a ?? 0) > 0.01 || (p.fill?.a ?? 0) > 0.01) {
         add('media', 'color', d, p, `Relleno: ${hex(p.fill)} en producción, ${hex(d.fill)} en el diseño`);
@@ -766,6 +794,21 @@ export function compareTrees(design: any, production: any, opts: CompareOptions 
   for (const d of flatten(D)) {
     if (d.kind === 'IMAGE' && !pairs.has(d) && !comparedImages.has(d) && d.w * d.h >= 64)
       add('media', 'faltante', d, null, 'Falta en producción: una imagen');
+  }
+
+  for (const [key, n] of substituted) {
+    const [declared, used] = key.split('→');
+    // No se sabe si el diseño lleva la sustituta porque se dibujó en este Figma o porque se eligió: una
+    // sola diferencia (baja) que lo explica, en vez de una "alta" por cada texto
+    findings.push({
+      severity: 'baja',
+      category: 'tipografía',
+      label: oneLine(D.name),
+      message:
+        `Fuente: ${declared} en producción, ${used} en el diseño (${n} texto${n === 1 ? '' : 's'}). ${declared} no ` +
+        `está en este Figma y ${used} es la que pone en su lugar: si el diseño salió así por eso, instala ` +
+        `${declared} y vuelve a dibujarlo; si ${used} se eligió a propósito, es una diferencia`,
+    });
   }
 
   const order: Record<Severity, number> = { alta: 0, media: 1, baja: 2, info: 3 };

@@ -97,7 +97,7 @@ Sirve para comprobar si lo que se programó coincide con lo que se diseñó, sin
 2. En el navegador, selecciona el mismo componente en la web y pulsa **Comparar con Figma**.
 3. La extensión captura el componente de la web, con sus imágenes, y lo envía a Figma. Tu diseño no se modifica. Al lado aparecen tres cosas:
    * **"Producción · …"**: el componente tal como está en la web, dibujado para verlo junto al diseño.
-   * **"QA · …"**: un informe con cada diferencia, de la más grave a la menos grave. Por ejemplo: "Padding: 20 px en producción, 24 px en el diseño" o "Imagen distinta: proporción 16:9 en producción, 4:3 en el diseño".
+   * **"QA · …"**: un informe con cada diferencia, de la más grave a la menos grave. Por ejemplo: "Padding: 20 px en producción, 24 px en el diseño" o "Imagen distinta: proporción 16:9 en producción, 4:3 en el diseño". Si la misma diferencia se repite en muchas capas, sale una sola vez con cuántas son ("6 capas: «Mac», «iPad»…").
    * **Anotaciones en Dev Mode** sobre las capas del diseño que tienen diferencias. Si vuelves a comparar, se reemplazan.
 
 Se comparan tamaños, espaciados, radios, colores, bordes, sombras, tipografía, los textos que faltan o sobran y las imágenes:
@@ -106,6 +106,8 @@ Se comparan tamaños, espaciados, radios, colores, bordes, sombras, tipografía,
 * que se ajuste distinto, por ejemplo cubrir frente a contener.
 
 Las capas no tienen que llamarse igual que las clases CSS.
+
+Si la web usa una fuente que tu Figma no tiene (por ejemplo SF Pro de Apple en Windows), el diseño dibujado con Code to Figma lleva la que Figma pone en su lugar. El informe lo indica en una sola línea; instala la fuente en tu equipo y vuelve a dibujar el diseño si quieres comparar también la familia.
 
 ### Exportar como HTML + CSS + JS
 

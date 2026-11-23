@@ -1566,6 +1566,7 @@
       }
       return null;
     }
+    const oneLineName = (s) => s.replace(/\s+/g, " ").trim();
     function getSemanticName(el, tag, st, r) {
       const customName = el.getAttribute("data-component-name") || el.getAttribute("data-testid");
       if (customName) return customName;
@@ -1832,7 +1833,7 @@
       if (hasAnyRadius(svgRadius)) svgStyles.cornerRadius = svgRadius;
       return {
         id: currentId,
-        name: getSemanticName(element, tagName, style, rect),
+        name: oneLineName(getSemanticName(element, tagName, style, rect)),
         type: "SVG",
         layout: {
           mode: "NONE",
@@ -2262,7 +2263,7 @@
     if (isLayoutShell) {
       mode = "NONE";
     }
-    const semanticName = getSemanticName(element, tagName, style, rect);
+    const semanticName = oneLineName(getSemanticName(element, tagName, style, rect));
     const isDirectText = element.textContent && element.textContent.trim().length > 0 && (element.children.length === 0 || isInlineTextRoot(element));
     const rich = isDirectText && !["input", "textarea", "select"].includes(tagName) ? buildRichText(element, style) : null;
     if (isDirectText && rich && rich.characters && !fills.length && !strokes.length && !pendingBgSrc && padding.top === 0 && padding.bottom === 0 && tagName !== "input" && tagName !== "textarea" && tagName !== "select" && !pseudoHasImage(element, "::before") && !pseudoHasImage(element, "::after")) {

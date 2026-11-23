@@ -2252,7 +2252,7 @@
         });
         const total = qa.total || 0;
         const head = total
-          ? `${total} diferencia${total === 1 ? '' : 's'} con "${selection.name}" (${qa.alta || 0} altas, ${qa.media || 0} medias, ${qa.baja || 0} bajas)`
+          ? `${total} diferencia${total === 1 ? '' : 's'}${qa.groups && qa.groups < total ? ` de ${qa.groups} tipo${qa.groups === 1 ? '' : 's'}` : ''} con "${selection.name}" (${qa.alta || 0} altas, ${qa.media || 0} medias, ${qa.baja || 0} bajas)`
           : `Sin diferencias medibles con "${selection.name}"`;
         const top = (qa.top || []).slice(0, 3).join(' · ');
         this.showToast(

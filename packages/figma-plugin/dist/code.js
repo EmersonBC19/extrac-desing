@@ -9072,7 +9072,11 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
       q.fill = solid ? solid.color : null;
       q.fillBound = !!solid?.bound;
       const st = solidOf(node2.strokes);
-      const weight = typeof node2.strokeWeight === "number" ? node2.strokeWeight : Number(node2.strokeTopWeight) || 0;
+      const weight = typeof node2.strokeWeight === "number" ? node2.strokeWeight : Math.max(
+        ...["strokeTopWeight", "strokeRightWeight", "strokeBottomWeight", "strokeLeftWeight"].map(
+          (k) => Number(node2[k]) || 0
+        )
+      );
       if (st && weight > 0) q.stroke = { color: st.color, weight };
       if (typeof node2.cornerRadius === "number") q.radius = node2.cornerRadius;
       else if (typeof node2.topLeftRadius === "number") q.radius = node2.topLeftRadius;
@@ -9290,10 +9294,12 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     return null;
   }
   var hasVisualBox = (n) => !!(n.fill && n.fill.a > 0.01) || !!n.stroke || n.kind === "IMAGE";
+  var oneLine = (s) => s.replace(/\s+/g, " ").trim();
   function labelOf(d, p) {
     const n = d || p;
-    const parent = n.parent && n.parent.parent ? n.parent.name : "";
-    const name = n.kind === "TEXT" ? `«${n.rawText.slice(0, 40)}${n.rawText.length > 40 ? "…" : ""}»` : n.name;
+    const parent = n.parent && n.parent.parent ? oneLine(n.parent.name) : "";
+    const raw = oneLine(n.rawText);
+    const name = n.kind === "TEXT" ? `«${raw.slice(0, 40)}${raw.length > 40 ? "…" : ""}»` : oneLine(n.name);
     return parent ? `${parent} › ${name}` : name;
   }
   function compareTrees(design, production, opts = {}) {
@@ -9320,6 +9326,7 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
         `${what}: ${hex2(pc)} en producción${token}, ${hex2(dc)} en el diseño`
       );
     };
+    const substituted = /* @__PURE__ */ new Map();
     const comparedImages = /* @__PURE__ */ new Set();
     const ratios = opts.imageRatios;
     const imageFindings = (d, p) => {
@@ -9356,13 +9363,20 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     for (const [d, p] of pairs) {
       if (d.kind === "TEXT" && p.kind === "TEXT") {
         if (contentDiff.has(d)) {
-          add("info", "contenido", d, p, `Contenido distinto: «${p.rawText.slice(0, 60)}» en producción`);
+          add("info", "contenido", d, p, `Contenido distinto: «${oneLine(p.rawText).slice(0, 60)}» en producción`);
         }
         const df = d.font;
         const pf = p.font;
         if (df && pf) {
-          const fam = df.family.toLowerCase() !== pf.family.toLowerCase();
-          const wt = df.weight !== pf.weight;
+          let fam = df.family.toLowerCase() !== pf.family.toLowerCase();
+          let wt = df.weight !== pf.weight;
+          const sub = opts.figmaFonts?.get(p.id);
+          if (fam && sub && sub.family.toLowerCase() === df.family.toLowerCase()) {
+            fam = false;
+            if (wt && styleWeight(sub.style) === df.weight) wt = false;
+            const key = `${pf.family}→${sub.family}`;
+            substituted.set(key, (substituted.get(key) || 0) + 1);
+          }
           const sz = Math.abs(df.size - pf.size) > 0.5;
           const lh = df.lineHeight != null && pf.lineHeight != null && Math.abs(df.lineHeight - pf.lineHeight) > 0.5;
           if (fam || wt || sz || lh) {
@@ -9442,7 +9456,8 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
       if (d.radius != null && p.radius != null && Math.abs(d.radius - p.radius) > 1 && (hasVisualBox(d) || hasVisualBox(p))) {
         add("media", "radio", d, p, `Radio de esquina: ${px(p.radius)} en producción, ${px(d.radius)} en el diseño`);
       }
-      if ((d.fill || p.fill) && d.kind !== "IMAGE" && p.kind !== "IMAGE") {
+      const paintless = (n) => n.kind === "IMAGE" || n.kind === "VECTOR";
+      if ((d.fill || p.fill) && !paintless(d) && !paintless(p)) {
         if (d.fill && p.fill) colorFinding("Relleno", d, p, d.fill, p.fill);
         else if ((d.fill?.a ?? 0) > 0.01 || (p.fill?.a ?? 0) > 0.01) {
           add("media", "color", d, p, `Relleno: ${hex2(p.fill)} en producción, ${hex2(d.fill)} en el diseño`);
@@ -9519,6 +9534,15 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     for (const d of flatten(D)) {
       if (d.kind === "IMAGE" && !pairs.has(d) && !comparedImages.has(d) && d.w * d.h >= 64)
         add("media", "faltante", d, null, "Falta en producción: una imagen");
+    }
+    for (const [key, n] of substituted) {
+      const [declared, used] = key.split("→");
+      findings.push({
+        severity: "baja",
+        category: "tipografía",
+        label: oneLine(D.name),
+        message: `Fuente: ${declared} en producción, ${used} en el diseño (${n} texto${n === 1 ? "" : "s"}). ${declared} no está en este Figma y ${used} es la que pone en su lugar: si el diseño salió así por eso, instala ${declared} y vuelve a dibujarlo; si ${used} se eligió a propósito, es una diferencia`
+      });
     }
     const order = { alta: 0, media: 1, baja: 2, info: 3 };
     findings.sort((a, b) => order[a.severity] - order[b.severity]);
@@ -9605,6 +9629,38 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     }
     return count;
   }
+  var MAX_REPORT_ROWS = 60;
+  function groupFindings(findings) {
+    const byKey = /* @__PURE__ */ new Map();
+    for (const f of findings) {
+      const key = f.severity + "|" + f.message;
+      const g = byKey.get(key) || { severity: f.severity, message: f.message, labels: [] };
+      g.labels.push(f.label);
+      byKey.set(key, g);
+    }
+    return [...byKey.values()].map((g) => {
+      const leaf = (l) => l.split(" › ").pop() || l;
+      const where = g.labels.length === 1 ? g.labels[0] : `${g.labels.length} capas: ${g.labels.slice(0, 3).map(leaf).join(", ")}${g.labels.length > 3 ? "…" : ""}`;
+      return { severity: g.severity, message: g.message, where, count: g.labels.length };
+    });
+  }
+  async function figmaFonts(prodRoot) {
+    const out = /* @__PURE__ */ new Map();
+    const walk = async (n) => {
+      if (!n) return;
+      const td = n.type === "TEXT" ? n.textData : null;
+      if (td) {
+        try {
+          const f = await loadFontSafely(td.fontStack || td.fontFamily || "Inter", td.fontWeight || 400);
+          out.set(String(n.id), { family: f.family, style: f.style });
+        } catch (_e) {
+        }
+      }
+      for (const c of n.children || []) await walk(c);
+    };
+    await walk(prodRoot);
+    return out;
+  }
   async function reportFrame(title, subtitle, result) {
     const bold = await loadFontSafely("Inter", 700);
     const regular = await loadFontSafely("Inter", 400);
@@ -9636,22 +9692,24 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     };
     text(`${QA_PREFIX}${title}`, bold, 18, { r: 0.1, g: 0.1, b: 0.12 });
     text(subtitle, regular, 12, { r: 0.4, g: 0.4, b: 0.45 });
-    const shown = result.findings.slice(0, 80);
-    for (const f of shown) {
-      const row = text(
-        `● ${f.severity.toUpperCase()} · ${f.label}
-${f.message}`,
+    if (!result.findings.some((f) => f.severity !== "info"))
+      text("Sin diferencias medibles: producción coincide con el diseño.", regular, 13, { r: 0.05, g: 0.55, b: 0.3 });
+    const groups = groupFindings(result.findings);
+    const shown = groups.slice(0, MAX_REPORT_ROWS);
+    for (const g of shown) {
+      const row = text(`● ${g.severity.toUpperCase()} · ${g.where}
+${g.message}`, regular, 12, SEVERITY_COLOR[g.severity]);
+      row.name = g.severity;
+    }
+    if (groups.length > shown.length) {
+      const rest = groups.slice(shown.length).reduce((n, g) => n + g.count, 0);
+      text(
+        `…y ${rest} más (${groups.length - shown.length} tipos de diferencia). Cada capa del diseño lleva las suyas en Dev Mode.`,
         regular,
         12,
-        SEVERITY_COLOR[f.severity]
+        SEVERITY_COLOR.info
       );
-      row.name = f.severity;
     }
-    if (result.findings.length > shown.length) {
-      text(`…y ${result.findings.length - shown.length} más`, regular, 12, SEVERITY_COLOR.info);
-    }
-    if (!result.findings.length)
-      text("Sin diferencias medibles: producción coincide con el diseño.", regular, 13, { r: 0.05, g: 0.55, b: 0.3 });
     return frame;
   }
   async function imageInfo(target, prodRoot) {
@@ -9695,6 +9753,7 @@ ${f.message}`,
     const prodRoot = payload.rootNode;
     const result = compareTrees(target, prodRoot, {
       variableColors: await variableColors(),
+      figmaFonts: await figmaFonts(prodRoot),
       ...await imageInfo(target, prodRoot)
     });
     const viewport = Number(payload.compare?.viewportWidth) || 0;
@@ -9725,15 +9784,16 @@ ${f.message}`,
     for (const f of result.findings) counts[f.severity]++;
     const total = counts.alta + counts.media + counts.baja;
     const s = result.stats;
-    const subtitle = `${total} diferencia${total === 1 ? "" : "s"} (${counts.alta} altas, ${counts.media} medias, ${counts.baja} bajas)` + (counts.info ? ` · ${counts.info} avisos` : "") + ` · ${s.matchedTexts}/${s.designTexts} textos y ${s.matchedNodes}/${s.designNodes} capas del diseño emparejadas`;
+    const groups = groupFindings(result.findings).filter((g) => g.severity !== "info");
+    const subtitle = `${total} diferencia${total === 1 ? "" : "s"} (${counts.alta} altas, ${counts.media} medias, ${counts.baja} bajas)` + (total > groups.length ? ` de ${groups.length} tipo${groups.length === 1 ? "" : "s"}` : "") + (counts.info ? ` · ${counts.info} avisos` : "") + ` · ${s.matchedTexts}/${s.designTexts} textos y ${s.matchedNodes}/${s.designNodes} capas del diseño emparejadas`;
     const report = await reportFrame(target.name, subtitle, result);
     page.appendChild(report);
     report.x = Math.round(prod ? prod.x + prod.width + 120 : pos.x + target.width + 120);
     report.y = Math.round(pos.y);
     placed.push(report);
     post2({ type: "LOG", level: total ? "warn" : "success", message: `QA de "${target.name}": ${subtitle}` });
-    for (const f of result.findings.slice(0, 8)) {
-      post2({ type: "LOG", level: f.severity === "alta" ? "error" : "warn", message: `${f.label}: ${f.message}` });
+    for (const g of groups.slice(0, 8)) {
+      post2({ type: "LOG", level: g.severity === "alta" ? "error" : "warn", message: `${g.where}: ${g.message}` });
     }
     if (annotated) post2({ type: "LOG", level: "info", message: `${annotated} capas del diseño anotadas (Dev Mode)` });
     figma.viewport.scrollAndZoomIntoView([target, ...placed]);
@@ -9752,13 +9812,14 @@ ${f.message}`,
       durationMs: Date.now() - t0,
       qa: {
         total,
+        groups: groups.length,
         ...counts,
         annotated,
         matchedTexts: s.matchedTexts,
         designTexts: s.designTexts,
         matchedNodes: s.matchedNodes,
         designNodes: s.designNodes,
-        top: result.findings.filter((f) => f.severity !== "info").slice(0, 5).map((f) => `${f.label}: ${f.message}`)
+        top: groups.slice(0, 5).map((g) => `${g.where}: ${g.message}`)
       }
     });
   }

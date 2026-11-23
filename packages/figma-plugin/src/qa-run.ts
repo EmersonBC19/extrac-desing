@@ -92,6 +92,58 @@ async function annotate(findings: Finding[]): Promise<number> {
   return count;
 }
 
+const MAX_REPORT_ROWS = 60;
+
+export interface FindingGroup {
+  severity: Finding['severity'];
+  message: string;
+  where: string;
+  count: number;
+}
+
+/**
+ * Una fila por diferencia, no por capa: "la misma tipografía distinta en 40 textos" es un problema (una
+ * regla CSS), no 40. Se agrupa por gravedad y mensaje, conservando el orden (más grave primero).
+ */
+export function groupFindings(findings: Finding[]): FindingGroup[] {
+  const byKey = new Map<string, { severity: Finding['severity']; message: string; labels: string[] }>();
+  for (const f of findings) {
+    const key = f.severity + '|' + f.message;
+    const g = byKey.get(key) || { severity: f.severity, message: f.message, labels: [] };
+    g.labels.push(f.label);
+    byKey.set(key, g);
+  }
+  return [...byKey.values()].map(g => {
+    const leaf = (l: string) => l.split(' › ').pop() || l;
+    const where =
+      g.labels.length === 1
+        ? g.labels[0]
+        : `${g.labels.length} capas: ${g.labels.slice(0, 3).map(leaf).join(', ')}${g.labels.length > 3 ? '…' : ''}`;
+    return { severity: g.severity, message: g.message, where, count: g.labels.length };
+  });
+}
+
+/**
+ * La fuente con la que Figma dibujaría cada texto de producción (la misma elección que al dibujar). Un
+ * diseño hecho en este Figma con una fuente que no está lleva esa sustituta, y no es un error del código.
+ */
+async function figmaFonts(prodRoot: any) {
+  const out = new Map<string, { family: string; style: string }>();
+  const walk = async (n: any) => {
+    if (!n) return;
+    const td = n.type === 'TEXT' ? n.textData : null;
+    if (td) {
+      try {
+        const f = await loadFontSafely(td.fontStack || td.fontFamily || 'Inter', td.fontWeight || 400);
+        out.set(String(n.id), { family: f.family, style: f.style });
+      } catch (_e) {}
+    }
+    for (const c of n.children || []) await walk(c);
+  };
+  await walk(prodRoot);
+  return out;
+}
+
 async function reportFrame(title: string, subtitle: string, result: CompareResult): Promise<FrameNode> {
   const bold = await loadFontSafely('Inter', 700);
   const regular = await loadFontSafely('Inter', 400);
@@ -122,21 +174,23 @@ async function reportFrame(title: string, subtitle: string, result: CompareResul
   };
   text(`${QA_PREFIX}${title}`, bold, 18, { r: 0.1, g: 0.1, b: 0.12 });
   text(subtitle, regular, 12, { r: 0.4, g: 0.4, b: 0.45 });
-  const shown = result.findings.slice(0, 80);
-  for (const f of shown) {
-    const row = text(
-      `● ${f.severity.toUpperCase()} · ${f.label}\n${f.message}`,
+  if (!result.findings.some(f => f.severity !== 'info'))
+    text('Sin diferencias medibles: producción coincide con el diseño.', regular, 13, { r: 0.05, g: 0.55, b: 0.3 });
+  const groups = groupFindings(result.findings);
+  const shown = groups.slice(0, MAX_REPORT_ROWS);
+  for (const g of shown) {
+    const row = text(`● ${g.severity.toUpperCase()} · ${g.where}\n${g.message}`, regular, 12, SEVERITY_COLOR[g.severity]);
+    row.name = g.severity;
+  }
+  if (groups.length > shown.length) {
+    const rest = groups.slice(shown.length).reduce((n, g) => n + g.count, 0);
+    text(
+      `…y ${rest} más (${groups.length - shown.length} tipos de diferencia). Cada capa del diseño lleva las suyas en Dev Mode.`,
       regular,
       12,
-      SEVERITY_COLOR[f.severity],
+      SEVERITY_COLOR.info,
     );
-    row.name = f.severity;
   }
-  if (result.findings.length > shown.length) {
-    text(`…y ${result.findings.length - shown.length} más`, regular, 12, SEVERITY_COLOR.info);
-  }
-  if (!result.findings.length)
-    text('Sin diferencias medibles: producción coincide con el diseño.', regular, 13, { r: 0.05, g: 0.55, b: 0.3 });
   return frame;
 }
 
@@ -185,6 +239,7 @@ export async function runDesignQa(payload: any, post: (m: PluginSandboxMessage) 
 
   const result = compareTrees(target, prodRoot, {
     variableColors: await variableColors(),
+    figmaFonts: await figmaFonts(prodRoot),
     ...(await imageInfo(target, prodRoot)),
   });
   // Pantalla completa capturada a otro ancho de ventana (no debería pasar: la extensión usa el del frame)
@@ -219,8 +274,10 @@ export async function runDesignQa(payload: any, post: (m: PluginSandboxMessage) 
   for (const f of result.findings) counts[f.severity]++;
   const total = counts.alta + counts.media + counts.baja;
   const s = result.stats;
+  const groups = groupFindings(result.findings).filter(g => g.severity !== 'info');
   const subtitle =
     `${total} diferencia${total === 1 ? '' : 's'} (${counts.alta} altas, ${counts.media} medias, ${counts.baja} bajas)` +
+    (total > groups.length ? ` de ${groups.length} tipo${groups.length === 1 ? '' : 's'}` : '') +
     (counts.info ? ` · ${counts.info} avisos` : '') +
     ` · ${s.matchedTexts}/${s.designTexts} textos y ${s.matchedNodes}/${s.designNodes} capas del diseño emparejadas`;
   const report = await reportFrame(target.name, subtitle, result);
@@ -230,8 +287,8 @@ export async function runDesignQa(payload: any, post: (m: PluginSandboxMessage) 
   placed.push(report);
 
   post({ type: 'LOG', level: total ? 'warn' : 'success', message: `QA de "${target.name}": ${subtitle}` });
-  for (const f of result.findings.slice(0, 8)) {
-    post({ type: 'LOG', level: f.severity === 'alta' ? 'error' : 'warn', message: `${f.label}: ${f.message}` });
+  for (const g of groups.slice(0, 8)) {
+    post({ type: 'LOG', level: g.severity === 'alta' ? 'error' : 'warn', message: `${g.where}: ${g.message}` });
   }
   if (annotated) post({ type: 'LOG', level: 'info', message: `${annotated} capas del diseño anotadas (Dev Mode)` });
   figma.viewport.scrollAndZoomIntoView([target, ...placed]);
@@ -251,16 +308,14 @@ export async function runDesignQa(payload: any, post: (m: PluginSandboxMessage) 
     durationMs: Date.now() - t0,
     qa: {
       total,
+      groups: groups.length,
       ...counts,
       annotated,
       matchedTexts: s.matchedTexts,
       designTexts: s.designTexts,
       matchedNodes: s.matchedNodes,
       designNodes: s.designNodes,
-      top: result.findings
-        .filter(f => f.severity !== 'info')
-        .slice(0, 5)
-        .map(f => `${f.label}: ${f.message}`),
+      top: groups.slice(0, 5).map(g => `${g.where}: ${g.message}`),
     },
   });
 }

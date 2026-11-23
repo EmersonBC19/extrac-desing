@@ -944,6 +944,9 @@ export function extractNodeTree(
     return null;
   }
 
+  /** Nombre de capa en una línea: textContent trae los saltos y tabulados del HTML ("Descubrir\n\t\t\t") */
+  const oneLineName = (s: string) => s.replace(/\s+/g, ' ').trim();
+
   // ── 4. Clasificador Semántico de Capas ──
   function getSemanticName(el: Element, tag: string, st: CSSStyleDeclaration, r: DOMRect) {
     const customName = el.getAttribute('data-component-name') || el.getAttribute('data-testid');
@@ -1317,7 +1320,7 @@ export function extractNodeTree(
 
     return {
       id: currentId,
-      name: getSemanticName(element, tagName, style, rect),
+      name: oneLineName(getSemanticName(element, tagName, style, rect)),
       type: 'SVG',
       layout: {
         mode: 'NONE',
@@ -1898,7 +1901,7 @@ export function extractNodeTree(
   }
 
   // ── 14. Nombre Semántico ──
-  const semanticName = getSemanticName(element, tagName, style, rect);
+  const semanticName = oneLineName(getSemanticName(element, tagName, style, rect));
 
   // ── 15. Texto Terminal Puro ──
   // Hoja de texto, o raíz "todo inline" (<p>texto <a>link</a><sup>1</sup></p>) → UN solo TEXT

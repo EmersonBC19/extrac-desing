@@ -22,3 +22,7 @@ packages/mcp-server/dist/code-to-figma-hub
 packages/mcp-server/dist/hub-bundle.cjs
 packages/mcp-server/dist/sea-config.json
 packages/mcp-server/dist/sea-prep.blob
+
+# Skills, reglas y workflows de agentes instalados localmente: no van al repo
+.agents/
+skills-lock.json

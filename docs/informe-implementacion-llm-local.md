@@ -308,3 +308,144 @@ Después de cargar un modelo y hacer una consulta larga, verifica **siempre** es
 | Error `CUDA out of memory` | Aplicaciones en segundo plano (juegos, navegadores) consumieron VRAM o contexto demasiado alto | Cierra apps que usen GPU, baja `num_ctx` un escalón (de 32K a 16K, o de 16K a 8K), o usa `Qwen3.5-9B-Q4_K_S` (5.39 GB) / `IQ4_XS` (5.17 GB). |
 | El modelo tarda mucho antes de empezar a escribir en `Qwen3.5` o `Gemma 4` | El modo *Thinking* está generando cientos/miles de tokens internos de razonamiento | Desactiva thinking en consultas rápidas (`--think=false` / `/set nothink` en Ollama o `enable_thinking: false` en plantilla) y resérvalo para lógica/código complejo. |
 | Ollama se queda sin VRAM al cambiar de `Qwen3.5` a `Gemma 4` | Ollama intentó mantener ambos modelos cargados a la vez | Configura `OLLAMA_MAX_LOADED_MODELS=1` en variables de entorno de Windows y reinicia Ollama. |
+
+---
+
+## 9. Evolución a Proyecto Privado "Jarvis": Agente Autónomo, HUD Holográfico y Control Móvil
+
+Con el motor de inferencia local estabilizado sobre la **RTX 5060 (8 GB VRAM)** y los **32 GB de RAM**, es completamente viable evolucionar esta base hacia un ecosistema privado estilo **Jarvis**, desarrollado **100 % con código propio y sin depender de aplicaciones de terceros** (ni bots externos, ni interfaces web ajenas, ni nubes privadas/públicas), utilizando únicamente los motores y pesos locales de IA (`llama-server`, Ollama o `llama-cpp-python`, más modelos locales de voz).
+
+### 9.1 Arquitectura Modular del Sistema
+
+Un LLM por sí solo únicamente genera texto. Para que exista un agente capaz de escuchar, recordar, razonar, controlar Windows, comunicarse con tu móvil y proyectar un HUD futurista en tiempo real, el proyecto se organiza alrededor de un servidor central propio (**Jarvis Core**) que coordina todas las piezas mediante **WebSockets** y **Tool Calling**:
+
+```mermaid
+flowchart LR
+    subgraph Clients["Tus Interfaces Propias"]
+        HUD["Desktop HUD Holográfico (Tauri + Three.js)"]
+        MOB["Tu App Móvil Propia (Cliente + Agente)"]
+    end
+
+    subgraph Core["Jarvis Core (Tu Backend en Python o Node)"]
+        WS["Gateway WebSocket + Gatekeeper de Seguridad"]
+        AUDIO["Pipeline Voz en CPU (WakeWord + Silero VAD + Whisper + Piper)"]
+        AGENT["Bucle Agente + Memoria Local (SQLite y Vectores)"]
+        TOOLS["Módulos Windows (WinAPI, Archivos, Shell, Browser)"]
+    end
+
+    subgraph Brain["Motor de Inferencia Local (RTX 5060 - 8 GB VRAM)"]
+        LLM["llama-server / Ollama (Qwen3.5-9B o Gemma 4 E4B)"]
+    end
+
+    HUD <-->|"WebSocket local (texto, audio, telemetría)"| WS
+    MOB <-->|"WireGuard + WebSocket (remoto)"| WS
+    WS <--> AUDIO
+    AUDIO <--> AGENT
+    WS <--> AGENT
+    AGENT <-->|"HTTP localhost (Tool Calling)"| LLM
+    AGENT <--> TOOLS
+```
+
+---
+
+### 9.2 Reparto de Hardware: Cómo No Ahogar los 8 GB de VRAM
+
+Según el presupuesto de la **Sección 4**, tras la reserva de Windows (~0.5–1.2 GB) dispones de **~6.8–7.3 GB útiles** en la RTX 5060. Cargar modelos de voz o visión pesada dentro de la GPU al mismo tiempo que el LLM provocaría desbordamiento hacia la RAM o errores `CUDA out of memory`.
+
+La estrategia correcta aprovecha tus **32 GB de RAM** y el procesador para todo lo que no requiera el ancho de banda de la GDDR7 (448 GB/s):
+
+| Módulo de Jarvis | Tecnología recomendada (100 % local) | Hardware objetivo | Impacto estimado y justificación |
+| :--- | :--- | :--- | :--- |
+| **Detector *Wake Word*** | `openWakeWord` o modelo ONNX propio | **CPU / RAM** | < 150 MB RAM; escucha pasiva 24/7 sin tocar la GPU. |
+| **Detección de voz (*VAD*)** | `Silero VAD` | **CPU / RAM** | ~2 MB; detecta con precisión inicio y fin del habla. |
+| **Voz a texto (*STT*)** | `faster-whisper` (`base`/`small`) o `whisper.cpp` | **CPU / RAM** | ~300–800 MB RAM; transcribe órdenes cortas (2–6 s) en décimas de segundo. |
+| **Cerebro (*LLM + Tools*)** | `Qwen3.5-9B` (`Q4_K_M`) o `Gemma 4 E4B` (`Q4_K_M`) | **100 % VRAM (RTX 5060)** | Ocupa el bloque principal de GPU (~5.0–5.7 GB + KV `q8_0`). |
+| **Texto a voz (*TTS*)** | `Piper TTS` o `Kokoro` | **CPU / RAM** | ~100–250 MB RAM; sintetiza audio en español en *streaming* casi instantáneo. |
+| **Memoria y RAG local** | `SQLite` + embeddings ligeros locales | **CPU / RAM** | Búsqueda semántica e historial persistente sin consumir VRAM. |
+| **Desktop HUD 3D** | **Tauri** + React + **Three.js / WebGL** | **iGPU (ideal) o GPU limitada** | 150–400 MB VRAM si corre en la RTX 5060 (ver advertencia abajo). |
+
+> [!TIP]
+> **Optimización clave de latencia para comandos de voz:**
+> En órdenes cotidianas del sistema (*"abre mi editor"*, *"baja el volumen al 30 %"*, *"consulta la batería del móvil"*), envía el parámetro de **desactivar razonamiento interno (`enable_thinking: false` / `--think=false`)** al modelo. Reservar el bloque `<think>` únicamente para tareas complejas evita pausas de varios segundos antes de que Jarvis empiece a responder por voz.
+
+---
+
+### 9.3 Funcionamiento Interno de "Jarvis Core"
+
+1. **Bucle de Agente (*Agent Loop*) y Memoria:**
+   - **Entrada:** recibe texto desde el teclado o transcripción desde el pipeline de audio.
+   - **Contexto e historial:** consulta en `SQLite` las preferencias del usuario, el contexto de sesión y recuerdos relevantes recuperados por similitud vectorial.
+   - **Decisión estructurada (*Tool Calling*):** envía al servidor local (`llama-server` / Ollama) la petición junto con el esquema JSON estricto de las herramientas disponibles. El modelo **no ejecuta código libre**: únicamente devuelve qué herramienta invocar y con qué argumentos (o responde directamente si es conversacional).
+   - **Guardián de Seguridad (*Gatekeeper*):** valida cada llamada antes de ejecutarla (ver **Sección 9.6**).
+   - **Respuesta en *streaming*:** el texto generado se envía en tiempo real por WebSocket al HUD y, simultáneamente, se trocea por frases hacia el motor TTS.
+
+2. **Pipeline de Voz Bidireccional:**
+   - Un hilo continuo captura audio del micrófono en un búfer circular hasta detectar la palabra clave (*"Jarvis"*).
+   - `Silero VAD` recorta automáticamente la frase cuando dejas de hablar y la envía a `faster-whisper`.
+   - Al responder, `Piper TTS` emite el audio en *streaming* mientras el servidor envía la envolvente/amplitud de onda por WebSocket al HUD para sincronizar la animación del holograma con la voz.
+
+---
+
+### 9.4 Interfaz Futurista Estilo "Hologramas de Iron Man"
+
+Para lograr la estética de proyección/HUD sin depender de software comercial:
+
+- **Tecnología recomendada:** **Tauri** (usa el WebView2 nativo de Windows, con menor huella de memoria que Electron) + **React/TypeScript** + **Three.js / Shaders GLSL** + **Canvas/SVG vectorial**.
+- **Comportamiento visual en el escritorio:**
+  - **Ventana transparente y sin bordes (`frameless + transparent`):** se superpone limpiamente sobre el escritorio o aplicaciones mediante atajo global (`Alt + Espacio`) o al activarse por voz.
+  - **Núcleo holográfico reactivo por estado:**
+    - *Reposo:* anillo geométrico/esfera de partículas en rotación lenta de baja carga.
+    - *Escuchando:* deformación radial reactiva a la señal real del micrófono.
+    - *Pensando / Ejecutando herramientas:* despliegue de nodos de datos, estado de la herramienta invocada y traza visual tipo telemetría.
+    - *Hablando:* pulsación y ondas sincronizadas con el audio de `Piper TTS`.
+  - **Paneles flotantes de telemetría real:** tarjetas translúcidas conectadas por WebSocket mostrando uso real de VRAM de la RTX 5060, temperatura GPU, CPU, RAM, procesos activos y estado del enlace con tu móvil.
+- **Proyección física opcional (*Pepper's Ghost*):** si renderizas el mismo HUD sobre fondo negro puro (`#000000`) en una pantalla secundaria pequeña mirando hacia arriba bajo un prisma o pirámide de acrílico, el núcleo holográfico se proyectará visualmente sobre tu escritorio.
+
+> [!WARNING]
+> **Protección de VRAM frente al HUD 3D:**
+> Un lienzo WebGL/Three.js activo de forma continua puede consumir **150–400 MB de VRAM** en la RTX 5060. Para no restar espacio de contexto al LLM:
+> 1. Limita la tasa de refresco del HUD (ej. **24–30 fps** en reposo o minimizado y **60 fps** solo durante la interacción).
+> 2. Usa geometrías vectoriales, líneas y partículas ligeras (evita texturas pesadas o post-procesado costoso).
+> 3. Si tu procesador cuenta con gráfica integrada (**iGPU**, ver **Fase 0**), conecta la pantalla o asigna el proceso del HUD a la iGPU en la configuración de gráficos de Windows para dejar la RTX 5060 dedicada casi al 100 % al modelo.
+
+---
+
+### 9.5 Control del Sistema Windows y Control del Móvil (App Propia)
+
+#### A. Control de Windows (Módulos locales propios)
+En lugar de depender de clics visuales lentos sobre capturas de pantalla, `Jarvis Core` controla Windows mediante módulos deterministas:
+- **Sistema y escritorio:** automatización nativa de ventanas e interfaz (`pywinauto` / `UIAutomation`), control granular de volumen por aplicación (`pycaw`), brillo, energía, portapapeles y monitoreo de hardware (`psutil` / `nvidia-smi`).
+- **Archivos y desarrollo:** lectura, búsqueda y edición acotada sobre carpetas autorizadas, ejecución de scripts bajo lista blanca y automatización web local (Playwright).
+- **Visión bajo demanda (opcional):** para interfaces sin API, tu código puede capturar la pantalla puntual y consultarla con `Gemma 4 E4B + mmproj` (~5.97 GB en total, viable en 8 GB con contexto de `8K–16K`).
+
+#### B. Red Privada y Tu Propia App Móvil
+Para conectarte desde fuera de casa y controlar tu teléfono sin instalar apps comerciales:
+1. **Túnel privado punto a punto:** configura **WireGuard** (código abierto, sin cuentas ni servidores de terceros; solo intercambio de llaves entre tu router/PC de casa y tu teléfono). Si el PC suele estar apagado o suspendido, combina esto con **Wake-on-LAN** desde tu red local.
+2. **Tu propia App Móvil ("Jarvis Mobile"):** desarrollada por ti (en **Flutter**, **React Native**, o **Kotlin/Swift** nativo) replicando la estética HUD holográfica y conectada por **WebSocket seguro (`wss://`)** a tu `Jarvis Core` en casa.
+3. **Capacidades reales de control sobre el móvil (Android vs. iOS):**
+
+| Sistema del móvil | Qué puedes lograr con tu app propia (sin apps de terceros) | Limitaciones técnicas del SO |
+| :--- | :--- | :--- |
+| **Android** | **Control bidireccional completo:** tu propia app actúa como agente local en el teléfono usando permisos nativos autorizados por ti (`AccessibilityService`, `NotificationListenerService`, `Intent` para abrir apps, control de audio/Bluetooth/DND/linterna, lectura de batería y ubicación) ejecutando órdenes JSON enviadas desde el PC. | Requiere otorgar manualmente permisos sensibles de accesibilidad/notificaciones a tu APK privada en el dispositivo. |
+| **iPhone (iOS)** | **Cliente HUD remoto completo:** puedes hablar con Jarvis por voz/texto, ver telemetría del PC y disparar acciones en tu ordenador desde cualquier lugar. | El *sandbox* de iOS prohíbe a apps propias leer notificaciones ajenas, controlar otras apps o cambiar ajustes globales en segundo plano; el control interno queda limitado a APIs de Apple o puentes puntuales mediante Atajos (*Shortcuts*). |
+
+---
+
+### 9.6 Seguridad y Control de Riesgos (Obligatorio en Agentes Locales)
+
+Al conectar un modelo de 4B–9B con capacidades de sistema, la arquitectura debe aplicar defensa en profundidad desde el código:
+
+1. **Herramientas acotadas en lugar de shell libre:** expón funciones específicas de alto nivel (`ajustar_volumen(nivel)`, `abrir_app(alias)`, `buscar_en_proyecto(ruta, patron)`) en vez de dar acceso irrestricto a PowerShell arbitrario.
+2. **Confirmación humana obligatoria (*Human-in-the-Loop*):** clasifica cada herramienta por nivel de riesgo. Cualquier acción destructiva, modificación crítica del sistema, envío externo o ejecución de comando no catalogado debe pausarse y exigir confirmación explícita en voz o botón del HUD antes de ejecutarse.
+3. **Aislamiento frente a *Prompt Injection*:** cuando Jarvis lea archivos descargados, correos o páginas web externas, el contenido debe tratarse estrictamente como datos no confiables y nunca habilitar automáticamente herramientas privilegiadas sin validación del usuario.
+
+---
+
+### 9.7 Hoja de Ruta Incremental (Construcción por Fases)
+
+Para evitar que la complejidad bloquee el avance, se recomienda construir el sistema en **cuatro hitos verificables**:
+
+1. **Fase J1 — Núcleo y *Tool Calling* (MVP):** implementar `Jarvis Core` (Python/FastAPI o Node/TypeScript) conectado a `llama-server` / Ollama (`Qwen3.5-9B` con `--think=false`), memoria `SQLite` básica y 5–10 herramientas seguras en Windows probadas desde consola.
+2. **Fase J2 — Desktop HUD Holográfico v1:** construir la ventana transparente en **Tauri + React + Three.js**, conectada por WebSocket al núcleo para mostrar estados del agente y telemetría real de la RTX 5060.
+3. **Fase J3 — Pipeline de Voz Local (CPU):** integrar `openWakeWord` + `Silero VAD` + `faster-whisper` + `Piper TTS` con *streaming* de audio y sincronización visual de onda en el HUD.
+4. **Fase J4 — Cliente Móvil Propio y Túnel Remoto:** desplegar **WireGuard** hacia tu PC y construir tu app móvil con la misma estética HUD (incorporando los módulos nativos de agente local si el dispositivo es Android).

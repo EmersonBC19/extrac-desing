@@ -757,13 +757,24 @@ describe('fuentes (fase 5.3)', () => {
 });
 
 describe('dynamic-page y manifiesto (fase 7)', () => {
-  it('manifiesto: documentAccess "dynamic-page" y networkAccess acotado sin "*"', () => {
+  it('manifiesto: documentAccess "dynamic-page" y networkAccess acotado sin "*" ni IPs crudas', () => {
     const manifest = require('../../packages/figma-plugin/manifest.json');
     expect(manifest.documentAccess).toBe('dynamic-page');
     expect(manifest.networkAccess).toBeDefined();
     expect(manifest.networkAccess.allowedDomains).not.toContain('*');
     expect(manifest.networkAccess.allowedDomains).toContain('ws://localhost:8080');
     expect(manifest.networkAccess.devAllowedDomains).toContain('ws://localhost:8080');
+    const allDomains = [
+      ...(manifest.networkAccess.allowedDomains || []),
+      ...(manifest.networkAccess.devAllowedDomains || []),
+    ];
+    for (const entry of allDomains) {
+      expect(() => new URL(entry)).not.toThrow();
+      // Figma rechaza IPs literales (ej. 127.0.0.1) en networkAccess como URL inválida
+      const host = new URL(entry).hostname;
+      expect(host).not.toMatch(/^\d+\.\d+\.\d+\.\d+$/);
+      expect(host.startsWith('[')).toBe(false);
+    }
   });
 
   it('dibuja y arma el tablero completo en modo dynamic-page sin llamadas síncronas prohibidas', async () => {

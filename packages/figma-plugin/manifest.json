@@ -7,13 +7,8 @@
   "editorType": ["figma"],
   "documentAccess": "dynamic-page",
   "networkAccess": {
-    "allowedDomains": ["ws://localhost:8080", "http://localhost:8080", "ws://127.0.0.1:8080", "http://127.0.0.1:8080"],
-    "devAllowedDomains": [
-      "ws://localhost:8080",
-      "http://localhost:8080",
-      "ws://127.0.0.1:8080",
-      "http://127.0.0.1:8080"
-    ],
-    "reasoning": "Se conecta localmente con Code to Figma Hub (ws://localhost:8080 / ws://127.0.0.1:8080) para recibir los diseños extraídos por la extensión del navegador sin enviar datos a internet."
+    "allowedDomains": ["ws://localhost:8080", "http://localhost:8080"],
+    "devAllowedDomains": ["ws://localhost:8080", "http://localhost:8080"],
+    "reasoning": "Se conecta localmente con Code to Figma Hub (ws://localhost:8080) para recibir los diseños extraídos por la extensión del navegador sin enviar datos a internet."
   }
 }

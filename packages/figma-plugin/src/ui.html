@@ -1182,7 +1182,7 @@
         <div class="brand-sub">Live Receiver & Component Cloner</div>
       </div>
     </div>
-    <div id="statusBadge" class="badge disconnected" onclick="reconnectHub()" title="Clic para reconectar al Hub local (ws://localhost:8080 / 127.0.0.1:8080). En Figma Web permite 'Apps en el dispositivo'.">
+    <div id="statusBadge" class="badge disconnected" onclick="reconnectHub()" title="Clic para reconectar al Hub local (ws://localhost:8080). En Figma Web permite 'Apps en el dispositivo'.">
       <span class="pulse-dot"></span>
       <span id="statusText">Desconectado</span>
     </div>
@@ -1707,26 +1707,18 @@
     }
 
     // ── Conexión WebSocket al Hub ──
-    let useLoopbackIpFallback = false;
-    function currentHubUrl() {
-      return useLoopbackIpFallback && HUB_URL === 'ws://localhost:8080' ? 'ws://127.0.0.1:8080' : HUB_URL;
-    }
-
     function connect() {
       if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
         return;
       }
 
-      const targetUrl = currentHubUrl();
-      let didOpen = false;
       updateStatus('connecting');
-      log(`Conectando al Hub WebSocket (${targetUrl})...`, 'info');
+      log(`Conectando al Hub WebSocket (${HUB_URL})...`, 'info');
 
       try {
-        socket = new WebSocket(targetUrl);
+        socket = new WebSocket(HUB_URL);
 
         socket.onopen = () => {
-          didOpen = true;
           updateStatus('connected');
           log('Conectado al Hub WebSocket con éxito.', 'success');
           hubAuthRequired = false;
@@ -1769,18 +1761,12 @@
             showPairing();
             return;
           }
-          if (!didOpen && HUB_URL === 'ws://localhost:8080') {
-            useLoopbackIpFallback = !useLoopbackIpFallback;
-          }
           log('Conexión con el Hub WebSocket cerrada. Reintentando en 3s...', 'warn');
           scheduleReconnect();
         };
 
         socket.onerror = () => {
           updateStatus('disconnected');
-          if (!didOpen && HUB_URL === 'ws://localhost:8080') {
-            useLoopbackIpFallback = !useLoopbackIpFallback;
-          }
           scheduleReconnect();
         };
       } catch (err) {

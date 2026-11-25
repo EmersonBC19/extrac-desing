@@ -6420,6 +6420,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     }).passthrough().optional(),
     /** Equivalencias de fuentes de los ajustes del plugin (fase 5.3) */
     fontMap: record(string2().max(200), string2().max(200)).optional(),
+    prewarmFonts: boolean2().optional(),
+    viewport: object({ width: finite.positive(), height: finite.positive() }).optional(),
     clearPage: boolean2().optional(),
     pageName: string2().max(200).optional(),
     sectionTitle: string2().max(500).optional(),
@@ -6755,16 +6757,17 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
   }
   var fontResolutionCache = /* @__PURE__ */ new Map();
   async function loadFontSafely(fontFamily, fontWeight, options = {}) {
-    const cacheKey = fontFamily + "|" + fontWeight;
+    const italic = Boolean(options.italic);
+    const cacheKey = `${fontFamily}|${fontWeight}${italic ? "|I" : ""}`;
     let font = fontResolutionCache.get(cacheKey);
     if (!font) {
-      font = await resolveFont(fontFamily, fontWeight);
+      font = await resolveFont(fontFamily, fontWeight, italic);
       fontResolutionCache.set(cacheKey, font);
     }
     if (options.track) recordUse(fontFamily, font);
     return font;
   }
-  async function resolveFont(fontFamily, fontWeight) {
+  async function resolveFont(fontFamily, fontWeight, italic = false) {
     try {
       await figma.loadFontAsync({ family: "Inter", style: "Regular" });
     } catch (_e) {
@@ -6772,9 +6775,17 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     await initFontCache();
     const targetStyle = resolveFontWeight(fontWeight);
     const candidates = fontCandidates(fontFamily);
-    const styleVariants = [targetStyle];
-    if (targetStyle === "Semi Bold") styleVariants.push("Semibold", "Semi-Bold", "Demibold");
-    else if (targetStyle === "Extra Bold") styleVariants.push("Extrabold", "Extra-Bold");
+    const baseVariants = [targetStyle];
+    if (targetStyle === "Semi Bold") baseVariants.push("Semibold", "Semi-Bold", "Demibold");
+    else if (targetStyle === "Extra Bold") baseVariants.push("Extrabold", "Extra-Bold");
+    const styleVariants = italic ? [
+      ...baseVariants.flatMap(
+        (st) => st === "Regular" ? ["Italic", "Oblique"] : [`${st} Italic`, `${st}Italic`, `${st} Oblique`]
+      ),
+      "Italic",
+      "Oblique",
+      ...baseVariants
+    ] : [...baseVariants];
     if (!styleVariants.includes("Regular")) styleVariants.push("Regular");
     const usable = async (f) => {
       if (renderProbeCache.get(fkey(f)) === false) return false;
@@ -6798,7 +6809,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         }
       }
     }
-    for (const st of [targetStyle, "Regular"]) {
+    const interFallback = italic ? [targetStyle === "Regular" ? "Italic" : `${targetStyle} Italic`, "Italic", targetStyle, "Regular"] : [targetStyle, "Regular"];
+    for (const st of interFallback) {
       try {
         const f = { family: "Inter", style: st };
         await figma.loadFontAsync(f);
@@ -7077,24 +7089,37 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     const S = n.styles || {};
     if (n.type === "TEXT") {
       const t = n.textData || {};
-      sig = ["T", t.fontFamily, t.fontSize, t.fontWeight, t.textAlign, (S.fills || []).map(boardColorKey).join(",")].join(
-        "|"
-      );
+      sig = [
+        "T",
+        t.fontFamily,
+        t.fontSize,
+        t.fontWeight,
+        t.textAlign,
+        (t.segments || []).length,
+        (S.fills || []).map(boardColorKey).join(","),
+        S.blendMode || ""
+      ].join("|");
     } else if (n.type === "SVG") {
       sig = "S|" + boardHash(n.svgContent || "") + "|" + L.width + "x" + L.height;
     } else {
       const pad = L.padding || {};
       const style = [
         L.mode,
+        L.layoutWrap || "",
+        L.counterAxisSpacing ?? "",
         L.primaryAxisAlignItems,
         L.counterAxisAlignItems,
         L.itemSpacing,
+        n.clipsContent === false ? "unclipped" : "clipped",
         [pad.top, pad.right, pad.bottom, pad.left].join(","),
         (S.fills || []).map(boardColorKey).join(","),
         (S.strokes || []).map((s) => boardColorKey(s) + "@" + s.width).join(","),
         JSON.stringify(S.cornerRadius ?? 0),
         S.opacity ?? 1,
         (S.boxShadow || []).length,
+        S.backdropBlur || 0,
+        S.layerBlur || 0,
+        S.blendMode || "",
         n.imageData ? "IMG:" + (S.imageScaleMode || "FILL") : ""
       ].join("|");
       const h = Math.round(L.measuredHeight ?? (typeof L.height === "number" ? L.height : 0));
@@ -7286,6 +7311,25 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     const collection = figma.variables.createVariableCollection(name);
     return { collection, modeId: collection.modes[0].modeId };
   }
+  async function upsertCollection(base) {
+    let cols = [];
+    try {
+      cols = typeof figma.variables.getLocalVariableCollectionsAsync === "function" ? await figma.variables.getLocalVariableCollectionsAsync() : figma.variables.getLocalVariableCollections?.() || [];
+    } catch (_e) {
+    }
+    let collection = cols.find((c) => c.name === base);
+    if (!collection) collection = figma.variables.createVariableCollection(base);
+    const modeId = collection.modes[0].modeId;
+    const byName = /* @__PURE__ */ new Map();
+    try {
+      const allVars = typeof figma.variables.getLocalVariablesAsync === "function" ? await figma.variables.getLocalVariablesAsync() : figma.variables.getLocalVariables?.() || [];
+      for (const v of allVars) {
+        if (v.variableCollectionId === collection.id) byName.set(v.name, v);
+      }
+    } catch (_e) {
+    }
+    return { collection, modeId, byName };
+  }
   function colorVariable(collection, modeId, name, rgb) {
     const v = figma.variables.createVariable(safeVarName(name), collection, "COLOR");
     v.setValueForMode(modeId, { r: rgb.r, g: rgb.g, b: rgb.b, a: 1 });
@@ -7295,6 +7339,17 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     }
     return v;
   }
+  function upsertColorVariable(ctx, name, rgb) {
+    const safe = safeVarName(name);
+    const existing = ctx.byName.get(safe);
+    if (existing && existing.resolvedType === "COLOR") {
+      existing.setValueForMode(ctx.modeId, { r: rgb.r, g: rgb.g, b: rgb.b, a: 1 });
+      return existing;
+    }
+    const v = colorVariable(ctx.collection, ctx.modeId, existing ? `${safe} Color` : safe, rgb);
+    ctx.byName.set(v.name, v);
+    return v;
+  }
   function numberVariable(collection, modeId, name, value, scopes) {
     const v = figma.variables.createVariable(safeVarName(name), collection, "FLOAT");
     v.setValueForMode(modeId, value);
@@ -7302,6 +7357,17 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       v.scopes = scopes;
     } catch (_e) {
     }
+    return v;
+  }
+  function upsertNumberVariable(ctx, name, value, scopes) {
+    const safe = safeVarName(name);
+    const existing = ctx.byName.get(safe);
+    if (existing && existing.resolvedType === "FLOAT") {
+      existing.setValueForMode(ctx.modeId, value);
+      return existing;
+    }
+    const v = numberVariable(ctx.collection, ctx.modeId, existing ? `${safe} Float` : safe, value, scopes);
+    ctx.byName.set(v.name, v);
     return v;
   }
   function boundSolidPaint(paint, variable) {
@@ -7441,7 +7507,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
             opacity: stroke.a !== void 0 ? stroke.a : 1
           }
         ];
-        inst.strokeWeight = Math.max(1, stroke.width || 1);
+        inst.strokeAlign = stroke.align === "CENTER" || stroke.align === "OUTSIDE" || stroke.align === "INSIDE" ? stroke.align : "INSIDE";
+        inst.strokeWeight = typeof stroke.width === "number" && stroke.width > 0 ? stroke.width : 1;
       } catch (_e) {
       }
     }
@@ -7595,6 +7662,12 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       tGroups.get(key).nodes.push(tn);
     }
     const typeScale = [...tGroups.values()].sort((a, b) => b.size - a.size || b.nodes.length - a.nodes.length).slice(0, 24);
+    const existingTextStyles = /* @__PURE__ */ new Map();
+    try {
+      const localTexts = typeof figma.getLocalTextStylesAsync === "function" ? await figma.getLocalTextStylesAsync() : typeof figma.getLocalTextStyles === "function" ? figma.getLocalTextStyles() : [];
+      for (const s of localTexts) if (s?.name) existingTextStyles.set(s.name, s);
+    } catch (_e) {
+    }
     let y = PAD;
     let typoRight = PAD + 600;
     const title = await boardLabel("Tipografía", 32, 700, { r: 0.1, g: 0.1, b: 0.12 });
@@ -7604,11 +7677,13 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     y += 70;
     for (const g of typeScale) {
       try {
-        const st = figma.createTextStyle();
-        st.name = `${prefix}/Texto/${Math.round(g.size)} ${g.font.style}`;
+        const styleName = `${prefix}/Texto/${Math.round(g.size)} ${g.font.style}`;
+        const st = existingTextStyles.get(styleName) || figma.createTextStyle();
+        st.name = styleName;
         st.fontName = g.font;
         st.fontSize = g.size;
         st.lineHeight = g.lh;
+        existingTextStyles.set(styleName, st);
         for (const tn of g.nodes) {
           try {
             if (typeof tn.setTextStyleIdAsync === "function") {
@@ -7664,13 +7739,21 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     let vars = null;
     if (useVariables) {
       try {
-        vars = await newCollection(prefix);
+        vars = await upsertCollection(prefix);
       } catch (varErr) {
         figma.ui.postMessage({
           type: "LOG",
           level: "warn",
           message: `Variables no disponibles en este archivo (${varErr?.message || varErr}): se usan estilos de color.`
         });
+      }
+    }
+    const existingPaintStyles = /* @__PURE__ */ new Map();
+    if (!vars) {
+      try {
+        const localPaints = typeof figma.getLocalPaintStylesAsync === "function" ? await figma.getLocalPaintStylesAsync() : typeof figma.getLocalPaintStyles === "function" ? figma.getLocalPaintStyles() : [];
+        for (const s of localPaints) if (s?.name) existingPaintStyles.set(s.name, s);
+      } catch (_e) {
       }
     }
     const cx = Math.round(typoRight + 160);
@@ -7688,15 +7771,17 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         let paint = base;
         let bindNode;
         if (vars) {
-          const variable = colorVariable(vars.collection, vars.modeId, `Color/${hex3.replace("#", "")}`, g.color);
+          const variable = upsertColorVariable(vars, `Color/${hex3.replace("#", "")}`, g.color);
           paint = boundSolidPaint(base, variable);
           bindNode = async (n) => {
             n.fills = [paint];
           };
         } else {
-          const st = figma.createPaintStyle();
-          st.name = `${prefix}/Color/${hex3}`;
+          const paintName = `${prefix}/Color/${hex3}`;
+          const st = existingPaintStyles.get(paintName) || figma.createPaintStyle();
+          st.name = paintName;
           st.paints = [base];
+          existingPaintStyles.set(paintName, st);
           bindNode = async (n) => {
             if (typeof n.setFillStyleIdAsync === "function") {
               await n.setFillStyleIdAsync(st.id);
@@ -7758,7 +7843,7 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
         cy += 50;
         for (const [value, uses] of entries) {
           try {
-            const v = numberVariable(vars.collection, vars.modeId, `${label}/${value}`, value, scopes);
+            const v = upsertNumberVariable(vars, `${label}/${value}`, value, scopes);
             for (const u of uses) {
               try {
                 u.node.setBoundVariable(u.field, v);
@@ -8043,8 +8128,10 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
       const end = Math.max(start, Math.min(len, seg.end));
       if (end <= start) continue;
       try {
-        if (seg.fontFamily || seg.fontWeight) {
-          const f = await loadFontSafely(seg.fontStack || seg.fontFamily || "Inter", seg.fontWeight || 400);
+        if (seg.fontFamily || seg.fontWeight || seg.italic) {
+          const f = await loadFontSafely(seg.fontStack || seg.fontFamily || "Inter", seg.fontWeight || 400, {
+            italic: Boolean(seg.italic)
+          });
           tn.setRangeFontName(start, end, f);
         }
         if (seg.fontSize && seg.fontSize > 0) tn.setRangeFontSize(start, end, seg.fontSize);
@@ -8222,7 +8309,8 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
         } catch (_e) {
         }
         const fontStack = nodeData.textData.fontStack || nodeData.textData.fontFamily;
-        let font = await loadFontSafely(fontStack, nodeData.textData.fontWeight);
+        const isItalic = Boolean(nodeData.textData.italic);
+        let font = await loadFontSafely(fontStack, nodeData.textData.fontWeight, { italic: isItalic });
         const textNode = figma.createText();
         try {
           textNode.fontName = font;
@@ -8242,7 +8330,7 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
           const current2 = textNode.fontName;
           if (!current2 || current2 === figma.mixed || current2.family === "Inter") break;
           markFontUnrenderable(current2);
-          font = await loadFontSafely(fontStack, nodeData.textData.fontWeight);
+          font = await loadFontSafely(fontStack, nodeData.textData.fontWeight, { italic: isItalic });
           try {
             textNode.fontName = font;
           } catch (_e) {
@@ -8352,6 +8440,16 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
           } catch (_effErr) {
           }
         }
+        if (typeof nodeData.styles?.opacity === "number" && nodeData.styles.opacity < 1) {
+          svgNode.opacity = Math.max(0, Math.min(1, nodeData.styles.opacity));
+        }
+        const svgBlend = blendModeFromStyles(nodeData.styles);
+        if (svgBlend) {
+          try {
+            svgNode.blendMode = svgBlend;
+          } catch (_bErr) {
+          }
+        }
         createdNode = svgNode;
       } else {
         const frame = nodeData.type === "COMPONENT" ? figma.createComponent() : figma.createFrame();
@@ -8441,7 +8539,9 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
               opacity: stroke.a !== void 0 ? stroke.a : 1
             }
           ];
-          frame.strokeAlign = "INSIDE";
+          const align = stroke.align;
+          frame.strokeAlign = align === "CENTER" || align === "OUTSIDE" || align === "INSIDE" ? align : "INSIDE";
+          const strokeW = typeof stroke.width === "number" && stroke.width > 0 ? stroke.width : 1;
           if (nodeData.styles?.borderSides) {
             const bs = nodeData.styles.borderSides;
             try {
@@ -8450,10 +8550,10 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
               frame.strokeBottomWeight = Math.max(0, bs.bottom ?? 0);
               frame.strokeLeftWeight = Math.max(0, bs.left ?? 0);
             } catch (_e) {
-              frame.strokeWeight = Math.max(1, stroke.width || 1);
+              frame.strokeWeight = strokeW;
             }
           } else {
-            frame.strokeWeight = Math.max(1, stroke.width || 1);
+            frame.strokeWeight = strokeW;
           }
           if (stroke.style === "DASHED") {
             try {
@@ -9178,6 +9278,7 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
       children: [],
       fill: null,
       fillBound: false,
+      gradient: null,
       stroke: null,
       radius: null,
       autoLayout: false,
@@ -9186,6 +9287,8 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
       gap: null,
       font: null,
       opacity: 1,
+      blur: null,
+      blendMode: null,
       shadow: null,
       image: null,
       textIds: /* @__PURE__ */ new Set(),
@@ -9206,6 +9309,19 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
       bound: !!(p.boundVariables && p.boundVariables.color)
     };
   }
+  function gradientSig(paints) {
+    if (!Array.isArray(paints)) return null;
+    const g = paints.find(
+      (x) => x && x.visible !== false && typeof x.type === "string" && x.type.startsWith("GRADIENT_")
+    );
+    if (!g) return null;
+    const rawStops = Array.isArray(g.gradientStops) ? g.gradientStops : Array.isArray(g.stops) ? g.stops : [];
+    const stops = rawStops.map((s) => {
+      const c = s?.color || s;
+      return c && typeof c.r === "number" ? hex2({ r: c.r, g: c.g, b: c.b, a: c.a ?? 1 }) : "";
+    }).filter(Boolean);
+    return `${g.type}(${stops.join(" → ")})`;
+  }
   function designModel(node2, parent = null) {
     const type = String(node2.type);
     const fills = Array.isArray(node2.fills) ? node2.fills : [];
@@ -9218,7 +9334,10 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     q.w = Number(node2.width) || 0;
     q.h = Number(node2.height) || 0;
     q.opacity = typeof node2.opacity === "number" ? node2.opacity : 1;
+    const bm = typeof node2.blendMode === "string" ? node2.blendMode : null;
+    q.blendMode = bm && bm !== "PASS_THROUGH" && bm !== "NORMAL" ? bm : null;
     const solid = solidOf(fills);
+    if (!solid) q.gradient = gradientSig(fills);
     if (kind === "TEXT") {
       q.rawText = String(node2.characters || "");
       q.text = normText(q.rawText);
@@ -9241,12 +9360,16 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
       q.fill = solid ? solid.color : null;
       q.fillBound = !!solid?.bound;
       const st = solidOf(node2.strokes);
-      const weight = typeof node2.strokeWeight === "number" ? node2.strokeWeight : Math.max(
-        ...["strokeTopWeight", "strokeRightWeight", "strokeBottomWeight", "strokeLeftWeight"].map(
-          (k) => Number(node2[k]) || 0
-        )
-      );
-      if (st && weight > 0) q.stroke = { color: st.color, weight };
+      const sideArr = typeof node2.strokeWeight === "number" ? [node2.strokeWeight, node2.strokeWeight, node2.strokeWeight, node2.strokeWeight] : ["strokeTopWeight", "strokeRightWeight", "strokeBottomWeight", "strokeLeftWeight"].some(
+        (k) => typeof node2[k] === "number"
+      ) ? [
+        Number(node2.strokeTopWeight) || 0,
+        Number(node2.strokeRightWeight) || 0,
+        Number(node2.strokeBottomWeight) || 0,
+        Number(node2.strokeLeftWeight) || 0
+      ] : void 0;
+      const weight = typeof node2.strokeWeight === "number" ? node2.strokeWeight : Math.max(...sideArr || [0]);
+      if (st && weight > 0) q.stroke = { color: st.color, weight, sides: sideArr };
       if (typeof node2.cornerRadius === "number") q.radius = node2.cornerRadius;
       else if (typeof node2.topLeftRadius === "number") q.radius = node2.topLeftRadius;
       q.autoLayout = !!node2.layoutMode && node2.layoutMode !== "NONE";
@@ -9256,6 +9379,10 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
       }
       const sh = Array.isArray(node2.effects) ? node2.effects.find((e) => e && e.type === "DROP_SHADOW" && e.visible !== false) : null;
       if (sh) q.shadow = { blur: sh.radius || 0, x: sh.offset?.x || 0, y: sh.offset?.y || 0 };
+      const bl = Array.isArray(node2.effects) ? node2.effects.find(
+        (e) => e && (e.type === "LAYER_BLUR" || e.type === "BACKGROUND_BLUR") && e.visible !== false
+      ) : null;
+      if (bl && typeof bl.radius === "number" && bl.radius > 0) q.blur = bl.radius;
     }
     if (kind !== "TEXT" && kind !== "VECTOR" && Array.isArray(node2.children)) {
       for (const c of node2.children) if (c && c.visible !== false) q.children.push(designModel(c, q));
@@ -9273,9 +9400,12 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     q.h = Number(L.measuredHeight ?? (typeof L.height === "number" ? L.height : 0)) || 0;
     const S = node2.styles || {};
     q.opacity = typeof S.opacity === "number" ? S.opacity : 1;
+    const pBlend = typeof S.blendMode === "string" ? S.blendMode : null;
+    q.blendMode = pBlend && pBlend !== "PASS_THROUGH" && pBlend !== "NORMAL" ? pBlend : null;
     if (kind === "IMAGE") q.image = { hash: null, scaleMode: S.imageScaleMode || "FILL" };
     const fill = (S.fills || []).find(isSolid2);
     q.fill = fill ? rgba2(fill) : null;
+    if (!q.fill) q.gradient = gradientSig(S.fills);
     if (kind === "TEXT" && node2.textData) {
       const td = node2.textData;
       q.rawText = String(td.characters || "");
@@ -9305,6 +9435,8 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
       }
       const sh = (S.boxShadow || []).find((b) => b && !b.inset);
       if (sh) q.shadow = { blur: sh.radius || 0, x: sh.offset?.x || 0, y: sh.offset?.y || 0 };
+      const pBlur = typeof S.backdropBlur === "number" && S.backdropBlur > 0 ? S.backdropBlur : typeof S.layerBlur === "number" && S.layerBlur > 0 ? S.layerBlur : null;
+      if (pBlur) q.blur = pBlur;
       for (const c of node2.children || []) q.children.push(prodModel(c, q));
     }
     if (!parent) finishSubtree(q);
@@ -9637,9 +9769,18 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
         else if ((d.fill?.a ?? 0) > 0.01 || (p.fill?.a ?? 0) > 0.01) {
           add("media", "color", d, p, `Relleno: ${hex2(p.fill)} en producción, ${hex2(d.fill)} en el diseño`);
         }
+      } else if (!paintless(d) && !paintless(p) && (d.gradient || p.gradient) && d.gradient !== p.gradient) {
+        add(
+          "media",
+          "color",
+          d,
+          p,
+          `Degradado: ${p.gradient || "sin degradado"} en producción, ${d.gradient || "sin degradado"} en el diseño`
+        );
       }
       if (d.stroke && p.stroke) {
         colorFinding("Borde", d, p, d.stroke.color, p.stroke.color);
+        const sideMismatch = d.stroke.sides && p.border.some((v, idx) => Math.abs(v - d.stroke.sides[idx]) > 0.5);
         if (Math.abs(d.stroke.weight - p.stroke.weight) > 0.5) {
           add(
             "media",
@@ -9647,6 +9788,14 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
             d,
             p,
             `Grosor de borde: ${px(p.stroke.weight)} en producción, ${px(d.stroke.weight)} en el diseño`
+          );
+        } else if (sideMismatch) {
+          add(
+            "media",
+            "borde",
+            d,
+            p,
+            `Lados del borde distintos ([${p.border.join(", ")}] px en producción, [${d.stroke.sides.join(", ")}] px en el diseño)`
           );
         }
       } else if (!!d.stroke !== !!p.stroke) {
@@ -9656,6 +9805,24 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
           d,
           p,
           d.stroke ? "Borde: el diseño tiene borde y producción no" : "Borde: producción tiene borde y el diseño no"
+        );
+      }
+      if ((d.blur || p.blur) && Math.abs((d.blur || 0) - (p.blur || 0)) > 2) {
+        add(
+          "baja",
+          "efecto",
+          d,
+          p,
+          `Desenfoque: ${p.blur ? px(p.blur) : "ninguno"} en producción, ${d.blur ? px(d.blur) : "ninguno"} en el diseño`
+        );
+      }
+      if (d.blendMode !== p.blendMode) {
+        add(
+          "baja",
+          "efecto",
+          d,
+          p,
+          `Modo de fusión: ${p.blendMode || "NORMAL"} en producción, ${d.blendMode || "NORMAL"} en el diseño`
         );
       }
       if (d.shadow || p.shadow) {
@@ -10148,9 +10315,12 @@ ${g.message}`,
       await figma.loadFontAsync({ family: "Inter", style: "Regular" });
     } catch (_e) {
     }
-    await prewarmFonts(payload.rootNode);
+    if (payload.prewarmFonts !== false) {
+      await prewarmFonts(payload.rootNode);
+      const responsiveVariants2 = Array.isArray(payload.responsive?.variants) ? payload.responsive.variants : [];
+      for (const v of responsiveVariants2) await prewarmFonts(v.rootNode);
+    }
     const responsiveVariants = Array.isArray(payload.responsive?.variants) ? payload.responsive.variants : [];
-    for (const v of responsiveVariants) await prewarmFonts(v.rootNode);
     const fontsMs = Date.now() - t0;
     const totalNodes = responsiveVariants.length ? responsiveVariants.reduce((n, v) => n + countNodes(v.rootNode), 0) : countNodes(payload.rootNode);
     setRenderBatchContext(totalNodes);
@@ -10438,12 +10608,22 @@ ${g.message}`,
       }
     }
   }
+  function mergeScanTokens(current2, incoming) {
+    if (!incoming || typeof incoming !== "object") return current2;
+    const base = current2 && typeof current2 === "object" ? current2 : {};
+    return {
+      ...base,
+      ...incoming,
+      colors: { ...base.colors || {}, ...incoming.colors || {} },
+      radii: { ...base.radii || {}, ...incoming.radii || {} }
+    };
+  }
   async function renderScanPage(payload, post2, log2) {
     const scan = payload.scan;
     const state = scans.get(scan.id) || startState();
     scans.set(scan.id, state);
     if (state.board === void 0 && typeof scan.board === "boolean") state.board = scan.board;
-    if (payload.tokens) state.tokens = payload.tokens;
+    if (payload.tokens) state.tokens = mergeScanTokens(state.tokens, payload.tokens);
     const url = routeKey(String(scan.url || payload.source?.url || ""));
     if (url && payload.rootNode) {
       const mark = { url, path: String(scan.path || ""), scanId: scan.id, at: Date.now() };
@@ -10680,7 +10860,13 @@ ${g.message}`,
       }
     },
     CLEAR_PAGE: () => {
-      for (const child of figma.currentPage.children) child.remove();
+      for (const child of [...figma.currentPage.children]) {
+        try {
+          child.remove();
+        } catch (_e) {
+        }
+      }
+      post({ type: "PAGE_CLEARED" });
     },
     // QA-12: borrar de verdad (todas las capas de un envío, p. ej. las 4 Sections de un tablero) y
     // confirmar a la UI lo que se borró. getNodeByIdAsync funciona también con acceso dinámico a páginas.
@@ -10772,6 +10958,18 @@ ${g.message}`,
           comp.y = node2.y;
           comp.resize(node2.width, node2.height);
           comp.layoutMode = node2.layoutMode;
+          if (node2.layoutMode !== "NONE") {
+            try {
+              comp.layoutWrap = node2.layoutWrap;
+              comp.counterAxisSpacing = node2.counterAxisSpacing;
+            } catch (_e) {
+            }
+            try {
+              comp.primaryAxisSizingMode = node2.primaryAxisSizingMode;
+              comp.counterAxisSizingMode = node2.counterAxisSizingMode;
+            } catch (_e) {
+            }
+          }
           comp.primaryAxisAlignItems = node2.primaryAxisAlignItems;
           comp.counterAxisAlignItems = node2.counterAxisAlignItems;
           comp.itemSpacing = node2.itemSpacing;
@@ -10779,18 +10977,45 @@ ${g.message}`,
           comp.paddingRight = node2.paddingRight;
           comp.paddingBottom = node2.paddingBottom;
           comp.paddingLeft = node2.paddingLeft;
+          comp.clipsContent = node2.clipsContent;
+          if (typeof node2.opacity === "number") comp.opacity = node2.opacity;
+          if (node2.blendMode) {
+            try {
+              comp.blendMode = node2.blendMode;
+            } catch (_e) {
+            }
+          }
           comp.fills = node2.fills;
           comp.strokes = node2.strokes;
           comp.strokeWeight = node2.strokeWeight;
+          if (node2.strokeAlign) comp.strokeAlign = node2.strokeAlign;
           comp.cornerRadius = node2.cornerRadius;
           comp.effects = node2.effects;
+          try {
+            const routeMark = node2.getPluginData?.("c2f-route");
+            if (routeMark) comp.setPluginData?.("c2f-route", routeMark);
+          } catch (_e) {
+          }
+          try {
+            if (Array.isArray(node2.reactions) && node2.reactions.length && typeof comp.setReactionsAsync === "function") {
+              await comp.setReactionsAsync(node2.reactions);
+            }
+          } catch (_e) {
+          }
+          const parent = node2.parent;
+          const idx = parent && "children" in parent ? parent.children.indexOf(node2) : -1;
           while (node2.children.length > 0) {
             comp.appendChild(node2.children[0]);
           }
-          node2.parent?.appendChild(comp);
+          if (parent) {
+            if (idx >= 0 && typeof parent.insertChild === "function") parent.insertChild(idx, comp);
+            else parent.appendChild(comp);
+          }
+          const oldId = node2.id;
           node2.remove();
           figma.currentPage.selection = [comp];
           figma.viewport.scrollAndZoomIntoView([comp]);
+          post({ type: "NODE_CONVERTED", oldId, newId: comp.id, name: comp.name });
           post({
             type: "LOG",
             message: `Frame "${comp.name}" convertido a Componente nativo de Figma`,
@@ -10844,25 +11069,55 @@ ${g.message}`,
       const scope = targetNode && !targetNode.removed ? targetNode : figma.currentPage;
       const textNodes = scope.findAllWithCriteria ? scope.findAllWithCriteria({ types: ["TEXT"] }) : scope.findAll ? scope.findAll((n) => n.type === "TEXT") : [];
       let replacedCount = 0;
+      const loadTargetFont = async (targetFam, curStyle) => {
+        for (const st of [curStyle, "Regular"]) {
+          try {
+            const f = { family: targetFam, style: st };
+            await figma.loadFontAsync(f);
+            return f;
+          } catch (_e) {
+          }
+        }
+        return null;
+      };
       for (const tNode of textNodes) {
         try {
           const curFont = tNode.fontName;
-          if (curFont === figma.mixed) continue;
+          if (curFont === figma.mixed) {
+            const getRange = tNode.getRangeFontName;
+            const len = (tNode.characters || "").length;
+            if (typeof getRange !== "function" || !len) continue;
+            let changed = false;
+            let start = 0;
+            while (start < len) {
+              const rf = getRange.call(tNode, start, start + 1);
+              let end = start + 1;
+              while (end < len) {
+                const nf = getRange.call(tNode, end, end + 1);
+                if (!nf || nf.family !== rf.family || nf.style !== rf.style) break;
+                end++;
+              }
+              const targetFam2 = rf && (mapping[rf.family] || mapping[`${rf.family}:::${rf.style}`]);
+              if (targetFam2 && targetFam2 !== rf.family) {
+                const loaded = await loadTargetFont(targetFam2, rf.style);
+                if (loaded) {
+                  tNode.setRangeFontName(start, end, loaded);
+                  changed = true;
+                }
+              }
+              start = end;
+            }
+            if (changed) replacedCount++;
+            continue;
+          }
           const curFam = curFont.family;
           const curStyle = curFont.style;
           const targetFam = mapping[curFam] || mapping[`${curFam}:::${curStyle}`];
           if (targetFam && targetFam !== curFam) {
-            try {
-              await figma.loadFontAsync({ family: targetFam, style: curStyle });
-              tNode.fontName = { family: targetFam, style: curStyle };
+            const loaded = await loadTargetFont(targetFam, curStyle);
+            if (loaded) {
+              tNode.fontName = loaded;
               replacedCount++;
-            } catch (_e1) {
-              try {
-                await figma.loadFontAsync({ family: targetFam, style: "Regular" });
-                tNode.fontName = { family: targetFam, style: "Regular" };
-                replacedCount++;
-              } catch (_e2) {
-              }
             }
           }
         } catch (_tErr) {

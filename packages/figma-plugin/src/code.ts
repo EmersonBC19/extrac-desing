@@ -73,7 +73,12 @@ const handlers: { [T in PluginUiMessageType]: Handler<T> } = {
   },
 
   CLEAR_PAGE: () => {
-    for (const child of figma.currentPage.children) child.remove();
+    for (const child of [...figma.currentPage.children]) {
+      try {
+        child.remove();
+      } catch (_e) {}
+    }
+    post({ type: 'PAGE_CLEARED' });
   },
 
   // QA-12: borrar de verdad (todas las capas de un envío, p. ej. las 4 Sections de un tablero) y
@@ -176,6 +181,16 @@ const handlers: { [T in PluginUiMessageType]: Handler<T> } = {
         comp.y = node.y;
         comp.resize(node.width, node.height);
         comp.layoutMode = node.layoutMode;
+        if (node.layoutMode !== 'NONE') {
+          try {
+            (comp as any).layoutWrap = (node as any).layoutWrap;
+            (comp as any).counterAxisSpacing = (node as any).counterAxisSpacing;
+          } catch (_e) {}
+          try {
+            comp.primaryAxisSizingMode = node.primaryAxisSizingMode;
+            comp.counterAxisSizingMode = node.counterAxisSizingMode;
+          } catch (_e) {}
+        }
         comp.primaryAxisAlignItems = node.primaryAxisAlignItems;
         comp.counterAxisAlignItems = node.counterAxisAlignItems;
         comp.itemSpacing = node.itemSpacing;
@@ -183,21 +198,49 @@ const handlers: { [T in PluginUiMessageType]: Handler<T> } = {
         comp.paddingRight = node.paddingRight;
         comp.paddingBottom = node.paddingBottom;
         comp.paddingLeft = node.paddingLeft;
+        comp.clipsContent = node.clipsContent;
+        if (typeof node.opacity === 'number') comp.opacity = node.opacity;
+        if ((node as any).blendMode) {
+          try {
+            (comp as any).blendMode = (node as any).blendMode;
+          } catch (_e) {}
+        }
         comp.fills = node.fills;
         comp.strokes = node.strokes;
         comp.strokeWeight = node.strokeWeight;
+        if ((node as any).strokeAlign) comp.strokeAlign = (node as any).strokeAlign;
         comp.cornerRadius = node.cornerRadius;
         comp.effects = node.effects;
+        try {
+          const routeMark = node.getPluginData?.('c2f-route');
+          if (routeMark) comp.setPluginData?.('c2f-route', routeMark);
+        } catch (_e) {}
+        try {
+          if (
+            Array.isArray((node as any).reactions) &&
+            (node as any).reactions.length &&
+            typeof (comp as any).setReactionsAsync === 'function'
+          ) {
+            await (comp as any).setReactionsAsync((node as any).reactions);
+          }
+        } catch (_e) {}
 
+        const parent = node.parent;
+        const idx = parent && 'children' in parent ? parent.children.indexOf(node) : -1;
         while (node.children.length > 0) {
           comp.appendChild(node.children[0]);
         }
 
-        node.parent?.appendChild(comp);
+        if (parent) {
+          if (idx >= 0 && typeof (parent as any).insertChild === 'function') (parent as any).insertChild(idx, comp);
+          else parent.appendChild(comp);
+        }
+        const oldId = node.id;
         node.remove();
         figma.currentPage.selection = [comp];
         figma.viewport.scrollAndZoomIntoView([comp]);
 
+        post({ type: 'NODE_CONVERTED', oldId, newId: comp.id, name: comp.name });
         post({
           type: 'LOG',
           message: `Frame "${comp.name}" convertido a Componente nativo de Figma`,
@@ -263,25 +306,56 @@ const handlers: { [T in PluginUiMessageType]: Handler<T> } = {
         : [];
 
     let replacedCount = 0;
+    const loadTargetFont = async (targetFam: string, curStyle: string): Promise<FontName | null> => {
+      for (const st of [curStyle, 'Regular']) {
+        try {
+          const f = { family: targetFam, style: st };
+          await figma.loadFontAsync(f);
+          return f;
+        } catch (_e) {}
+      }
+      return null;
+    };
+
     for (const tNode of textNodes) {
       try {
         const curFont = tNode.fontName;
-        if (curFont === figma.mixed) continue;
+        if (curFont === figma.mixed) {
+          const getRange = (tNode as any).getRangeFontName;
+          const len = (tNode.characters || '').length;
+          if (typeof getRange !== 'function' || !len) continue;
+          let changed = false;
+          let start = 0;
+          while (start < len) {
+            const rf = getRange.call(tNode, start, start + 1) as FontName;
+            let end = start + 1;
+            while (end < len) {
+              const nf = getRange.call(tNode, end, end + 1) as FontName;
+              if (!nf || nf.family !== rf.family || nf.style !== rf.style) break;
+              end++;
+            }
+            const targetFam = rf && (mapping[rf.family] || mapping[`${rf.family}:::${rf.style}`]);
+            if (targetFam && targetFam !== rf.family) {
+              const loaded = await loadTargetFont(targetFam, rf.style);
+              if (loaded) {
+                tNode.setRangeFontName(start, end, loaded);
+                changed = true;
+              }
+            }
+            start = end;
+          }
+          if (changed) replacedCount++;
+          continue;
+        }
         const curFam = (curFont as FontName).family;
         const curStyle = (curFont as FontName).style;
 
         const targetFam = mapping[curFam] || mapping[`${curFam}:::${curStyle}`];
         if (targetFam && targetFam !== curFam) {
-          try {
-            await figma.loadFontAsync({ family: targetFam, style: curStyle });
-            tNode.fontName = { family: targetFam, style: curStyle };
+          const loaded = await loadTargetFont(targetFam, curStyle);
+          if (loaded) {
+            tNode.fontName = loaded;
             replacedCount++;
-          } catch (_e1) {
-            try {
-              await figma.loadFontAsync({ family: targetFam, style: 'Regular' });
-              tNode.fontName = { family: targetFam, style: 'Regular' };
-              replacedCount++;
-            } catch (_e2) {}
           }
         }
       } catch (_tErr) {}

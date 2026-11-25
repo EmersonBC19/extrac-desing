@@ -191,6 +191,18 @@ export declare const MESSAGE_CATALOG: {
         readonly route: "UI → sandbox";
         readonly description: "Convertir un frame en componente";
     };
+    readonly NODE_CONVERTED: {
+        readonly channel: "plugin";
+        readonly kind: "event";
+        readonly route: "sandbox → UI";
+        readonly description: "Un frame fue convertido en Componente (actualiza id y tipo en el receptor)";
+    };
+    readonly PAGE_CLEARED: {
+        readonly channel: "plugin";
+        readonly kind: "event";
+        readonly route: "sandbox → UI";
+        readonly description: "La página actual fue vaciada en Figma";
+    };
     readonly FOCUS_NODE: {
         readonly channel: "plugin";
         readonly kind: "command";
@@ -749,6 +761,13 @@ export type PluginSandboxMessage = {
     requestId?: string;
     routes: FigmaRoute[];
     error?: string;
+} | {
+    type: 'NODE_CONVERTED';
+    oldId: string;
+    newId: string;
+    name: string;
+} | {
+    type: 'PAGE_CLEARED';
 };
 export {};
 //# sourceMappingURL=messages.d.ts.map

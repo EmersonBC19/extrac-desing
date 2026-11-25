@@ -6,11 +6,13 @@
 // tener Node.js instalado en su sistema.
 // Uso: node scripts/build-hub-exe.mjs
 import { build } from 'esbuild';
-import { copyFileSync, mkdirSync, writeFileSync } from 'fs';
+import { copyFileSync, mkdirSync, rmSync, writeFileSync } from 'fs';
+import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 import { execFileSync } from 'child_process';
 import path from 'path';
 
+const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = path.join(ROOT, 'packages/mcp-server/dist');
 const BUNDLE_OUT = path.join(DIST, 'hub-bundle.cjs');
@@ -18,6 +20,17 @@ const SEA_CONFIG = path.join(DIST, 'sea-config.json');
 const BLOB_OUT = path.join(DIST, 'sea-prep.blob');
 const isWin = process.platform === 'win32';
 const EXE_OUT = path.join(DIST, isWin ? 'code-to-figma-hub.exe' : 'code-to-figma-hub');
+
+let postjectCli;
+try {
+  const pkgPath = require.resolve('postject/package.json');
+  postjectCli = path.join(path.dirname(pkgPath), 'dist', 'cli.js');
+} catch (_e) {
+  console.error(
+    '✗ No se encontró "postject" en node_modules. Ejecuta "npm install" o "npm ci" antes de generar el binario.',
+  );
+  process.exit(1);
+}
 
 mkdirSync(DIST, { recursive: true });
 
@@ -33,6 +46,7 @@ await build({
   legalComments: 'none',
   define: {
     'process.env.CTF_STANDALONE': '"1"',
+    'import.meta': '{}',
   },
   banner: {
     js: '// Code to Figma Hub — Binario autónomo (Fase 7: Cero Terminal)\nprocess.env.CTF_STANDALONE = "1";',
@@ -60,8 +74,8 @@ copyFileSync(process.execPath, EXE_OUT);
 console.log(`✓ Binario base copiado a: ${EXE_OUT}`);
 
 console.log('4/4 Inyectando blob SEA con postject...');
-const postjectBin = path.join(ROOT, 'node_modules/.bin', isWin ? 'postject.cmd' : 'postject');
 const postjectArgs = [
+  postjectCli,
   EXE_OUT,
   'NODE_SEA_BLOB',
   BLOB_OUT,
@@ -74,10 +88,14 @@ if (isWin) {
   postjectArgs.push('--overwrite');
 }
 
-execFileSync(postjectBin, postjectArgs, {
-  cwd: ROOT,
-  stdio: 'inherit',
-  shell: true,
-});
+try {
+  execFileSync(process.execPath, postjectArgs, {
+    cwd: ROOT,
+    stdio: 'inherit',
+  });
+} catch (err) {
+  rmSync(EXE_OUT, { force: true });
+  throw err;
+}
 
 console.log(`\n🎉 ¡Ejecutable de Hub generado con éxito!\n👉 ${EXE_OUT}\n`);

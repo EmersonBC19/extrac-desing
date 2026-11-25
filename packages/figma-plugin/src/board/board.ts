@@ -15,10 +15,11 @@ import {
 import {
   boundSolidPaint,
   collectNumericTokens,
-  colorVariable,
-  newCollection,
-  numberVariable,
+  upsertCollection,
+  upsertColorVariable,
+  upsertNumberVariable,
   variablesAvailable,
+  type CollectionHandle,
   type NumericUse,
 } from './variables';
 import { base64ToBytes, cssFillToPaint } from '../paint';
@@ -114,7 +115,9 @@ export async function buildBoardInstance(nodeData: any, master: ComponentNode): 
           opacity: stroke.a !== undefined ? stroke.a : 1,
         },
       ];
-      inst.strokeWeight = Math.max(1, stroke.width || 1);
+      inst.strokeAlign =
+        stroke.align === 'CENTER' || stroke.align === 'OUTSIDE' || stroke.align === 'INSIDE' ? stroke.align : 'INSIDE';
+      inst.strokeWeight = typeof stroke.width === 'number' && stroke.width > 0 ? stroke.width : 1;
     } catch (_e) {}
   }
   if (typeof nodeData.styles?.cornerRadius === 'number') {
@@ -325,6 +328,17 @@ export async function boardBuildStyles(scope: SceneNode[], stylesSec: SectionNod
     .sort((a, b) => b.size - a.size || b.nodes.length - a.nodes.length)
     .slice(0, 24);
 
+  const existingTextStyles = new Map<string, TextStyle>();
+  try {
+    const localTexts =
+      typeof (figma as any).getLocalTextStylesAsync === 'function'
+        ? await (figma as any).getLocalTextStylesAsync()
+        : typeof (figma as any).getLocalTextStyles === 'function'
+          ? (figma as any).getLocalTextStyles()
+          : [];
+    for (const s of localTexts) if (s?.name) existingTextStyles.set(s.name, s);
+  } catch (_e) {}
+
   let y = PAD;
   let typoRight = PAD + 600;
   const title = await boardLabel('Tipografía', 32, 700, { r: 0.1, g: 0.1, b: 0.12 });
@@ -334,11 +348,13 @@ export async function boardBuildStyles(scope: SceneNode[], stylesSec: SectionNod
   y += 70;
   for (const g of typeScale) {
     try {
-      const st = figma.createTextStyle();
-      st.name = `${prefix}/Texto/${Math.round(g.size)} ${g.font.style}`;
+      const styleName = `${prefix}/Texto/${Math.round(g.size)} ${g.font.style}`;
+      const st = existingTextStyles.get(styleName) || figma.createTextStyle();
+      st.name = styleName;
       st.fontName = g.font;
       st.fontSize = g.size;
       st.lineHeight = g.lh;
+      existingTextStyles.set(styleName, st);
       for (const tn of g.nodes) {
         try {
           if (typeof (tn as any).setTextStyleIdAsync === 'function') {
@@ -392,10 +408,10 @@ export async function boardBuildStyles(scope: SceneNode[], stylesSec: SectionNod
   }
   const palette = boardMergeSimilarColors([...exact.values()]).slice(0, 48);
   const useVariables = variablesAvailable();
-  let vars: { collection: VariableCollection; modeId: string } | null = null;
+  let vars: CollectionHandle | null = null;
   if (useVariables) {
     try {
-      vars = await newCollection(prefix);
+      vars = await upsertCollection(prefix);
     } catch (varErr: any) {
       figma.ui.postMessage({
         type: 'LOG',
@@ -403,6 +419,19 @@ export async function boardBuildStyles(scope: SceneNode[], stylesSec: SectionNod
         message: `Variables no disponibles en este archivo (${varErr?.message || varErr}): se usan estilos de color.`,
       });
     }
+  }
+
+  const existingPaintStyles = new Map<string, PaintStyle>();
+  if (!vars) {
+    try {
+      const localPaints =
+        typeof (figma as any).getLocalPaintStylesAsync === 'function'
+          ? await (figma as any).getLocalPaintStylesAsync()
+          : typeof (figma as any).getLocalPaintStyles === 'function'
+            ? (figma as any).getLocalPaintStyles()
+            : [];
+      for (const s of localPaints) if (s?.name) existingPaintStyles.set(s.name, s);
+    } catch (_e) {}
   }
 
   const cx = Math.round(typoRight + 160);
@@ -420,15 +449,17 @@ export async function boardBuildStyles(scope: SceneNode[], stylesSec: SectionNod
       let paint: SolidPaint = base;
       let bindNode: (n: SceneNode & MinimalFillsMixin) => Promise<void>;
       if (vars) {
-        const variable = colorVariable(vars.collection, vars.modeId, `Color/${hex.replace('#', '')}`, g.color);
+        const variable = upsertColorVariable(vars, `Color/${hex.replace('#', '')}`, g.color);
         paint = boundSolidPaint(base, variable);
         bindNode = async n => {
           (n as any).fills = [paint];
         };
       } else {
-        const st = figma.createPaintStyle();
-        st.name = `${prefix}/Color/${hex}`;
+        const paintName = `${prefix}/Color/${hex}`;
+        const st = existingPaintStyles.get(paintName) || figma.createPaintStyle();
+        st.name = paintName;
         st.paints = [base];
+        existingPaintStyles.set(paintName, st);
         bindNode = async n => {
           if (typeof (n as any).setFillStyleIdAsync === 'function') {
             await (n as any).setFillStyleIdAsync(st.id);
@@ -489,7 +520,7 @@ export async function boardBuildStyles(scope: SceneNode[], stylesSec: SectionNod
       cy += 50;
       for (const [value, uses] of entries) {
         try {
-          const v = numberVariable(vars.collection, vars.modeId, `${label}/${value}`, value, scopes);
+          const v = upsertNumberVariable(vars, `${label}/${value}`, value, scopes);
           for (const u of uses) {
             try {
               (u.node as any).setBoundVariable(u.field, v);

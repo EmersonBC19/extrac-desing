@@ -171,4 +171,73 @@ describe('ai-optimizer (Gemini Flash)', () => {
     expect(res.modelUsed).toBe('gemini-2.5-flash-lite');
     expect(callCount).toBe(2);
   });
+
+  it('conserva SVGs con tokens temporales y rechaza el árbol si el modelo omite texto visible', async () => {
+    const svg = '<svg viewBox="0 0 24 24"><path d="M0 0h24v24"/></svg>';
+    const payload = {
+      rootNode: {
+        id: 'root',
+        type: 'FRAME',
+        children: [
+          { id: 'ico', type: 'SVG', svgContent: svg, layout: {} },
+          { id: 'txt', type: 'TEXT', textData: { characters: 'Guardar cambios' }, layout: {} },
+        ],
+      },
+    };
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  text: JSON.stringify({
+                    id: 'root',
+                    type: 'FRAME',
+                    children: [{ id: 'ico', type: 'SVG', svgContent: '__SVG_TOKEN_ico__', layout: {} }],
+                  }),
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    } as any);
+
+    const rejected = await optimizePayloadWithGemini(payload, 'valid-key');
+    expect(rejected.optimized).toBe(false);
+    expect(rejected.reason).toMatch(/Invariante rota/);
+    expect(rejected.payload).toBe(payload);
+
+    // Ahora conserva ambos (texto + SVG token) -> restaura svgContent
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  text: JSON.stringify({
+                    id: 'root',
+                    type: 'FRAME',
+                    name: 'Card / FormActions',
+                    children: [
+                      { id: 'ico', type: 'SVG', svgContent: '__SVG_TOKEN_ico__', layout: {} },
+                      { id: 'txt', type: 'TEXT', textData: { characters: 'Guardar cambios' }, layout: {} },
+                    ],
+                  }),
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    } as any);
+
+    const accepted = await optimizePayloadWithGemini(payload, 'valid-key');
+    expect(accepted.optimized).toBe(true);
+    expect(accepted.payload.rootNode.children[0].svgContent).toBe(svg);
+  });
 });

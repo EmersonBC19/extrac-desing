@@ -16,10 +16,12 @@ function printTree(node: UINode, depth = 0) {
 }
 
 async function inspect() {
+  const url = process.argv[2] || 'http://localhost:4210';
+  const selector = process.argv[3] || 'app-root';
   const extractor = new BrowserExtractor();
   const node = await extractor.extractFromUrl({
-    url: 'http://localhost:4210',
-    selector: 'app-root',
+    url,
+    selector,
   });
 
   console.log('\n--- Jerarquía de componentes ---');

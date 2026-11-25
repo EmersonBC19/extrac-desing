@@ -230,19 +230,20 @@ const fontResolutionCache = new Map<string, FontName>();
 export async function loadFontSafely(
   fontFamily: string,
   fontWeight: number | string,
-  options: { track?: boolean } = {},
+  options: { track?: boolean; italic?: boolean } = {},
 ): Promise<FontName> {
-  const cacheKey = fontFamily + '|' + fontWeight;
+  const italic = Boolean(options.italic);
+  const cacheKey = `${fontFamily}|${fontWeight}${italic ? '|I' : ''}`;
   let font = fontResolutionCache.get(cacheKey);
   if (!font) {
-    font = await resolveFont(fontFamily, fontWeight);
+    font = await resolveFont(fontFamily, fontWeight, italic);
     fontResolutionCache.set(cacheKey, font);
   }
   if (options.track) recordUse(fontFamily, font);
   return font;
 }
 
-async function resolveFont(fontFamily: string, fontWeight: number | string): Promise<FontName> {
+async function resolveFont(fontFamily: string, fontWeight: number | string, italic = false): Promise<FontName> {
   // Asegurar siempre Inter Regular en memoria primero para que figma.createText() nunca falle
   try {
     await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
@@ -254,9 +255,19 @@ async function resolveFont(fontFamily: string, fontWeight: number | string): Pro
   const candidates = fontCandidates(fontFamily);
 
   // Variantes de ortografía del estilo tipográfico
-  const styleVariants: string[] = [targetStyle];
-  if (targetStyle === 'Semi Bold') styleVariants.push('Semibold', 'Semi-Bold', 'Demibold');
-  else if (targetStyle === 'Extra Bold') styleVariants.push('Extrabold', 'Extra-Bold');
+  const baseVariants: string[] = [targetStyle];
+  if (targetStyle === 'Semi Bold') baseVariants.push('Semibold', 'Semi-Bold', 'Demibold');
+  else if (targetStyle === 'Extra Bold') baseVariants.push('Extrabold', 'Extra-Bold');
+  const styleVariants: string[] = italic
+    ? [
+        ...baseVariants.flatMap(st =>
+          st === 'Regular' ? ['Italic', 'Oblique'] : [`${st} Italic`, `${st}Italic`, `${st} Oblique`],
+        ),
+        'Italic',
+        'Oblique',
+        ...baseVariants,
+      ]
+    : [...baseVariants];
   if (!styleVariants.includes('Regular')) styleVariants.push('Regular');
 
   /** Cargada y capaz de dibujar (las que Figma no maqueta se saltan: ver fontRenders) */
@@ -288,7 +299,10 @@ async function resolveFont(fontFamily: string, fontWeight: number | string): Pro
   }
 
   // Fallbacks universales garantizados
-  for (const st of [targetStyle, 'Regular']) {
+  const interFallback = italic
+    ? [targetStyle === 'Regular' ? 'Italic' : `${targetStyle} Italic`, 'Italic', targetStyle, 'Regular']
+    : [targetStyle, 'Regular'];
+  for (const st of interFallback) {
     try {
       const f: FontName = { family: 'Inter', style: st };
       await figma.loadFontAsync(f);

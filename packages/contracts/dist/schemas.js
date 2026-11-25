@@ -198,6 +198,8 @@ exports.WSRenderPayloadSchema = z
         .optional(),
     /** Equivalencias de fuentes de los ajustes del plugin (fase 5.3) */
     fontMap: z.record(z.string().max(200), z.string().max(200)).optional(),
+    prewarmFonts: z.boolean().optional(),
+    viewport: z.object({ width: finite.positive(), height: finite.positive() }).optional(),
     clearPage: z.boolean().optional(),
     pageName: z.string().max(200).optional(),
     sectionTitle: z.string().max(500).optional(),

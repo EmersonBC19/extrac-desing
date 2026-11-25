@@ -6,6 +6,7 @@ export interface RelayResult {
     /** Plugins conectados (en el hub propio o en el externo) */
     plugins: number;
     via: 'hub-propio' | 'hub-externo' | 'ninguno';
+    error?: string;
 }
 /** Envía RENDER_NODES a un hub ya en marcha y responde si había plugins de Figma conectados */
 export declare function relayToExternalHub(url: string, message: WSMessage<WSRenderPayload>, timeoutMs?: number): Promise<RelayResult>;

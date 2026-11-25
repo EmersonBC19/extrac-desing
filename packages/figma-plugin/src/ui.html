@@ -7,6 +7,7 @@
     :root {
       --bg: #131417;
       --surface-1: #1a1b20;
+      --surface: var(--surface-1);
       --surface-2: #22242b;
       --surface-hover: #292c35;
       --surface-active: #323541;
@@ -1136,6 +1137,33 @@
       border-radius: 50%;
       background: #34d399;
     }
+
+    .btn-subtle {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 7px 10px;
+      border-radius: var(--radius-sm);
+      font-size: 10.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .btn-subtle:hover {
+      background: var(--surface-hover);
+      border-color: var(--border-hover);
+    }
+
+    .empty-icon-wrap {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 10px;
+    }
   </style>
 </head>
 <body>
@@ -1154,7 +1182,7 @@
         <div class="brand-sub">Live Receiver & Component Cloner</div>
       </div>
     </div>
-    <div id="statusBadge" class="badge disconnected" onclick="reconnectHub()" title="Clic para reconectar al Hub local (ws://localhost:8080). En Figma Web permite 'Apps en el dispositivo'.">
+    <div id="statusBadge" class="badge disconnected" onclick="reconnectHub()" title="Clic para reconectar al Hub local (ws://localhost:8080 / 127.0.0.1:8080). En Figma Web permite 'Apps en el dispositivo'.">
       <span class="pulse-dot"></span>
       <span id="statusText">Desconectado</span>
     </div>
@@ -1166,9 +1194,9 @@
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
       Vincular con el Hub Local
     </div>
-    <div class="pairing-desc">Ingresa el código de 6 dígitos que mostró el Hub (en <code>~/.code-to-figma/pairing-code</code> o en la consola del hub). Solo se solicita la primera vez.</div>
+    <div class="pairing-desc">Ingresa el código de 8 caracteres que mostró el Hub (en <code>~/.code-to-figma/pairing-code</code> o en la consola del hub). Solo se solicita la primera vez.</div>
     <div class="pairing-row">
-      <input id="pairingInput" placeholder="XXXXXX" maxlength="9" autocomplete="off" spellcheck="false"
+      <input id="pairingInput" placeholder="XXXX-XXXX" maxlength="9" autocomplete="off" spellcheck="false"
              onkeydown="if (event.key === 'Enter') submitPairingCode()">
       <button onclick="submitPairingCode()">Vincular</button>
     </div>
@@ -1471,10 +1499,7 @@
           <select id="selGeminiModel" class="search-input" style="width: 100%; box-sizing: border-box; font-family: ui-monospace, monospace; font-size: 11px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" onchange="savePluginSettings()">
             <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recomendado — Rápido y Preciso)</option>
             <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite (Ultrarrápido / Menor latencia)</option>
-            <option value="gemini-3.8-flash">Gemini 3.8 Flash</option>
-            <option value="gemini-3.6-flash">Gemini 3.6 Flash</option>
             <option value="gemini-flash-latest">gemini-flash-latest (Auto / Último estable)</option>
-            <option value="gemini-1.5-flash">Gemini 1.5 Flash (Legacy)</option>
           </select>
           <div class="setting-caption" style="margin-top: 4px;">
             Si el modelo elegido no está disponible en tu cuenta, el sistema intentará automáticamente con las alternativas Flash compatibles sin fallar.
@@ -1682,18 +1707,26 @@
     }
 
     // ── Conexión WebSocket al Hub ──
+    let useLoopbackIpFallback = false;
+    function currentHubUrl() {
+      return useLoopbackIpFallback && HUB_URL === 'ws://localhost:8080' ? 'ws://127.0.0.1:8080' : HUB_URL;
+    }
+
     function connect() {
       if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
         return;
       }
 
+      const targetUrl = currentHubUrl();
+      let didOpen = false;
       updateStatus('connecting');
-      log('Conectando al Hub WebSocket (ws://localhost:8080)...', 'info');
+      log(`Conectando al Hub WebSocket (${targetUrl})...`, 'info');
 
       try {
-        socket = new WebSocket(HUB_URL);
+        socket = new WebSocket(targetUrl);
 
         socket.onopen = () => {
+          didOpen = true;
           updateStatus('connected');
           log('Conectado al Hub WebSocket con éxito.', 'success');
           hubAuthRequired = false;
@@ -1706,6 +1739,7 @@
             client: 'Figma-Studio-Receiver-v3',
             pairingCode: pairingCode || undefined,
             geminiApiKey: s?.geminiApiKey || '',
+            geminiModel: s?.geminiModel || undefined,
             aiOptimization: Boolean(s?.aiOptimization)
           }));
           if (pairingCode) {
@@ -1735,12 +1769,18 @@
             showPairing();
             return;
           }
+          if (!didOpen && HUB_URL === 'ws://localhost:8080') {
+            useLoopbackIpFallback = !useLoopbackIpFallback;
+          }
           log('Conexión con el Hub WebSocket cerrada. Reintentando en 3s...', 'warn');
           scheduleReconnect();
         };
 
         socket.onerror = () => {
           updateStatus('disconnected');
+          if (!didOpen && HUB_URL === 'ws://localhost:8080') {
+            useLoopbackIpFallback = !useLoopbackIpFallback;
+          }
           scheduleReconnect();
         };
       } catch (err) {
@@ -2134,6 +2174,31 @@
       FONTS_REPLACED(msg) {
         log(msg.details || `${msg.count} capas de texto actualizadas.`, 'success');
       },
+      NODE_CONVERTED(msg) {
+        let updated = false;
+        receivedItems = receivedItems.map(item => {
+          const ids = Array.isArray(item.nodeIds) && item.nodeIds.length ? item.nodeIds : [item.id];
+          if (item.id !== msg.oldId && !ids.includes(msg.oldId)) return item;
+          updated = true;
+          return {
+            ...item,
+            id: item.id === msg.oldId ? msg.newId : item.id,
+            nodeIds: ids.map(id => (id === msg.oldId ? msg.newId : id)),
+            nodeType: item.id === msg.oldId ? 'COMPONENT' : item.nodeType,
+            name: msg.name || item.name
+          };
+        });
+        if (updated) {
+          saveReceivedItemsToStorage();
+          renderInboxFeed();
+        }
+      },
+      PAGE_CLEARED() {
+        receivedItems = [];
+        badgeReceiverCount.textContent = '0';
+        saveReceivedItemsToStorage();
+        renderInboxFeed();
+      },
     };
 
     window.onmessage = (event) => {
@@ -2328,14 +2393,15 @@
 
       try {
         const obj = JSON.parse(raw);
-        const root = obj.rootNode || (Array.isArray(obj) ? obj[0] : obj);
+        const first = Array.isArray(obj) ? (obj[0] && obj[0].rootNode ? obj[0].rootNode : obj[0]) : obj;
+        const root = (first && first.rootNode) || first;
 
         if (!root || (!root.type && !root.layout)) {
           throw new Error('Estructura de nodo no reconocida');
         }
 
         parsedJsonData = obj;
-        const name = root.name || 'Componente';
+        const name = Array.isArray(obj) ? `Multi-selection (${obj.length})` : (root.name || 'Componente');
         const w = root.layout?.width || root.layout?.measuredWidth || '?';
         const h = root.layout?.height || root.layout?.measuredHeight || '?';
         const childCount = root.children ? root.children.length : 0;
@@ -2376,22 +2442,67 @@
       const withTokens = document.getElementById('chkImportTokens').checked;
       const settings = loadPluginSettings();
 
-      const payload = {
-        rootNode: parsedJsonData.rootNode || parsedJsonData,
-        tokens: withTokens ? parsedJsonData.tokens : undefined,
-        createAsComponent: asComp,
-        placementMode: settings.placement || 'SIDE',
-        placementGap: 120
-      };
+      let payload;
+      if (Array.isArray(parsedJsonData)) {
+        const children = parsedJsonData.map(item => (item && item.rootNode ? item.rootNode : item)).filter(Boolean);
+        let yCursor = 0;
+        let maxW = 0;
+        const placed = children.map(ch => {
+          const w = ch.layout?.measuredWidth || (typeof ch.layout?.width === 'number' ? ch.layout.width : 100);
+          const h = ch.layout?.measuredHeight || (typeof ch.layout?.height === 'number' ? ch.layout.height : 100);
+          maxW = Math.max(maxW, w);
+          const clone = { ...ch, layout: { ...(ch.layout || {}), positioning: 'ABSOLUTE', x: 0, y: yCursor } };
+          yCursor += h + 60;
+          return clone;
+        });
+        payload = {
+          rootNode: {
+            id: 'multi_selection_bundle_' + Date.now(),
+            name: `Multi-selection (${placed.length} componentes)`,
+            type: 'FRAME',
+            layout: {
+              mode: 'NONE',
+              width: Math.max(1, maxW),
+              height: Math.max(1, yCursor - 60),
+              measuredWidth: Math.max(1, maxW),
+              measuredHeight: Math.max(1, yCursor - 60),
+              padding: { top: 0, right: 0, bottom: 0, left: 0 },
+              itemSpacing: 0
+            },
+            styles: { fills: [] },
+            children: placed
+          },
+          board: settings.boardMode !== 'NEVER',
+          placementMode: settings.placement || 'SIDE',
+          placementGap: 120
+        };
+      } else {
+        payload = {
+          rootNode: parsedJsonData.rootNode || parsedJsonData,
+          tokens: withTokens && settings.autoPaintStyles ? parsedJsonData.tokens : undefined,
+          states: parsedJsonData.states,
+          responsive: parsedJsonData.responsive,
+          source: parsedJsonData.source,
+          createAsComponent: asComp || settings.structure === 'COMPONENT',
+          board: settings.boardMode === 'ALWAYS' ? true : settings.boardMode === 'NEVER' ? false : Boolean(parsedJsonData.board),
+          placementMode: settings.placement || 'SIDE',
+          placementGap: 120
+        };
+      }
 
       collectDetectedFontsFromPayload(payload);
 
-      parent.postMessage({
-        pluginMessage: {
-          type: 'RENDER_NODES',
-          payload: withRenderSettings(payload)
-        }
-      }, '*');
+      const trees = [payload.rootNode];
+      for (const s of payload.states || []) trees.push(s && s.rootNode);
+      for (const v of (payload.responsive && payload.responsive.variants) || []) trees.push(v && v.rootNode, v && v.dark);
+      queueToSandbox(() => normalizeTreeImages({ children: trees.filter(Boolean) }).then(() => {
+        parent.postMessage({
+          pluginMessage: {
+            type: 'RENDER_NODES',
+            payload: withRenderSettings(payload)
+          }
+        }, '*');
+      }));
 
       switchTab('receiver');
     }
@@ -2509,6 +2620,7 @@
     function withRenderSettings(payload) {
       const s = loadPluginSettings();
       if (Object.keys(s.fontMap).length) payload.fontMap = s.fontMap;
+      payload.prewarmFonts = s.prewarmFonts;
       if (s.aiOptimization && s.geminiApiKey) {
         payload.geminiApiKey = s.geminiApiKey;
         payload.geminiModel = s.geminiModel || 'gemini-2.5-flash';
@@ -2533,12 +2645,19 @@
       function walk(node) {
         if (!node) return;
         if (node.type === 'TEXT' && node.textData) {
-          const fam = node.textData.fontFamily || node.textData.fontStack || 'Inter';
-          const cleanFam = fam.split(',')[0].replace(/['"]/g, '').trim();
-          if (cleanFam) {
-            const cur = detectedPageFonts.get(cleanFam) || { count: 0, sampleStyle: node.textData.fontWeight || 'Regular' };
-            cur.count++;
-            detectedPageFonts.set(cleanFam, cur);
+          const addFam = famStr => {
+            const cleanFam = String(famStr || 'Inter').split(',')[0].replace(/['"]/g, '').trim();
+            if (cleanFam) {
+              const cur = detectedPageFonts.get(cleanFam) || { count: 0, sampleStyle: node.textData.fontWeight || 'Regular' };
+              cur.count++;
+              detectedPageFonts.set(cleanFam, cur);
+            }
+          };
+          addFam(node.textData.fontFamily || node.textData.fontStack || 'Inter');
+          if (Array.isArray(node.textData.segments)) {
+            for (const seg of node.textData.segments) {
+              if (seg && (seg.fontFamily || seg.fontStack)) addFam(seg.fontFamily || seg.fontStack);
+            }
           }
         }
         if (Array.isArray(node.children)) {
@@ -2547,6 +2666,11 @@
       }
 
       walk(payload.rootNode || (Array.isArray(payload.nodes) ? payload.nodes[0] : payload));
+      for (const st of payload.states || []) walk(st && st.rootNode);
+      for (const vr of (payload.responsive && payload.responsive.variants) || []) {
+        walk(vr && vr.rootNode);
+        walk(vr && vr.dark);
+      }
       renderDetectedFontsList();
     }
 
@@ -2800,11 +2924,12 @@
             <span>${escapeHtml(v.route || '/')}</span>
           </div>
           <div class="inbox-card-actions">
-            <button class="card-btn primary" onclick="requestViewRender('${v.id}', '${escapeHtml(v.name)}')">
+            <button class="card-btn primary" data-view-render="${escapeHtml(v.id)}">
               Renderizar en Figma
             </button>
           </div>
         `;
+        card.querySelector('[data-view-render]').addEventListener('click', () => requestViewRender(v.id, v.name));
         container.appendChild(card);
       }
     }

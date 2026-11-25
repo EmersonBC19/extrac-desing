@@ -97,7 +97,8 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
 
       // 2. Cargar la fuente deseada preservando peso visual (solo fuentes que Figma dibuja: fonts.ts)
       const fontStack = nodeData.textData.fontStack || nodeData.textData.fontFamily;
-      let font = await loadFontSafely(fontStack, nodeData.textData.fontWeight);
+      const isItalic = Boolean((nodeData.textData as any).italic);
+      let font = await loadFontSafely(fontStack, nodeData.textData.fontWeight, { italic: isItalic });
 
       // 3. Crear el nodo de texto (garantizado libre de excepciones)
       const textNode = figma.createText();
@@ -127,7 +128,7 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
         const current = textNode.fontName as FontName;
         if (!current || (current as any) === figma.mixed || current.family === 'Inter') break;
         markFontUnrenderable(current);
-        font = await loadFontSafely(fontStack, nodeData.textData.fontWeight);
+        font = await loadFontSafely(fontStack, nodeData.textData.fontWeight, { italic: isItalic });
         try {
           textNode.fontName = font;
         } catch (_e) {
@@ -251,6 +252,15 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
           svgNode.effects = svgEffects;
         } catch (_effErr) {}
       }
+      if (typeof nodeData.styles?.opacity === 'number' && nodeData.styles.opacity < 1) {
+        svgNode.opacity = Math.max(0, Math.min(1, nodeData.styles.opacity));
+      }
+      const svgBlend = blendModeFromStyles(nodeData.styles);
+      if (svgBlend) {
+        try {
+          svgNode.blendMode = svgBlend;
+        } catch (_bErr) {}
+      }
       createdNode = svgNode;
     } else {
       // FRAME o COMPONENT
@@ -361,7 +371,9 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
             opacity: stroke.a !== undefined ? stroke.a : 1,
           },
         ];
-        frame.strokeAlign = 'INSIDE';
+        const align = stroke.align;
+        frame.strokeAlign = align === 'CENTER' || align === 'OUTSIDE' || align === 'INSIDE' ? align : 'INSIDE';
+        const strokeW = typeof stroke.width === 'number' && stroke.width > 0 ? stroke.width : 1;
 
         // Lados individuales de borde si aplican
         if (nodeData.styles?.borderSides) {
@@ -372,10 +384,10 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
             (frame as any).strokeBottomWeight = Math.max(0, bs.bottom ?? 0);
             (frame as any).strokeLeftWeight = Math.max(0, bs.left ?? 0);
           } catch (_e) {
-            frame.strokeWeight = Math.max(1, stroke.width || 1);
+            frame.strokeWeight = strokeW;
           }
         } else {
-          frame.strokeWeight = Math.max(1, stroke.width || 1);
+          frame.strokeWeight = strokeW;
         }
 
         // Estilo discontinuo de borde (dashed o dotted)

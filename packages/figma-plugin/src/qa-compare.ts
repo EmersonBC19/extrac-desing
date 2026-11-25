@@ -33,7 +33,8 @@ export interface QNode {
   children: QNode[];
   fill: RGBA | null;
   fillBound: boolean;
-  stroke: { color: RGBA; weight: number } | null;
+  gradient: string | null;
+  stroke: { color: RGBA; weight: number; sides?: [number, number, number, number] } | null;
   radius: number | null;
   autoLayout: boolean;
   /** Distancia del borde exterior al contenido (lo que se ve), por lado */
@@ -43,6 +44,8 @@ export interface QNode {
   gap: number | null;
   font: { family: string; weight: number; size: number; lineHeight: number | null; letterSpacing: number } | null;
   opacity: number;
+  blur: number | null;
+  blendMode: string | null;
   shadow: { blur: number; x: number; y: number } | null;
   /** Imagen: hash de Figma (null si no se conoce) y ajuste (FILL = cover, FIT = contain…) */
   image: { hash: string | null; scaleMode: string } | null;
@@ -169,6 +172,7 @@ function emptyNode(id: string, kind: Kind, name: string, parent: QNode | null): 
     children: [],
     fill: null,
     fillBound: false,
+    gradient: null,
     stroke: null,
     radius: null,
     autoLayout: false,
@@ -177,6 +181,8 @@ function emptyNode(id: string, kind: Kind, name: string, parent: QNode | null): 
     gap: null,
     font: null,
     opacity: 1,
+    blur: null,
+    blendMode: null,
     shadow: null,
     image: null,
     textIds: new Set(),
@@ -203,6 +209,22 @@ function solidOf(paints: any): { color: RGBA; bound: boolean } | null {
   };
 }
 
+function gradientSig(paints: any): string | null {
+  if (!Array.isArray(paints)) return null;
+  const g = paints.find(
+    (x: any) => x && x.visible !== false && typeof x.type === 'string' && x.type.startsWith('GRADIENT_'),
+  );
+  if (!g) return null;
+  const rawStops = Array.isArray(g.gradientStops) ? g.gradientStops : Array.isArray(g.stops) ? g.stops : [];
+  const stops = rawStops
+    .map((s: any) => {
+      const c = s?.color || s;
+      return c && typeof c.r === 'number' ? hex({ r: c.r, g: c.g, b: c.b, a: c.a ?? 1 }) : '';
+    })
+    .filter(Boolean);
+  return `${g.type}(${stops.join(' → ')})`;
+}
+
 export function designModel(node: any, parent: QNode | null = null): QNode {
   const type = String(node.type);
   const fills = Array.isArray(node.fills) ? node.fills : [];
@@ -222,7 +244,10 @@ export function designModel(node: any, parent: QNode | null = null): QNode {
   q.w = Number(node.width) || 0;
   q.h = Number(node.height) || 0;
   q.opacity = typeof node.opacity === 'number' ? node.opacity : 1;
+  const bm = typeof node.blendMode === 'string' ? node.blendMode : null;
+  q.blendMode = bm && bm !== 'PASS_THROUGH' && bm !== 'NORMAL' ? bm : null;
   const solid = solidOf(fills);
+  if (!solid) q.gradient = gradientSig(fills);
   if (kind === 'TEXT') {
     q.rawText = String(node.characters || '');
     q.text = normText(q.rawText);
@@ -248,15 +273,21 @@ export function designModel(node: any, parent: QNode | null = null): QNode {
     q.fillBound = !!solid?.bound;
     const st = solidOf(node.strokes);
     // Bordes por lado (strokeWeight es figma.mixed): el más grueso; uno solo abajo también es borde
-    const weight =
+    const sideArr: [number, number, number, number] | undefined =
       typeof node.strokeWeight === 'number'
-        ? node.strokeWeight
-        : Math.max(
-            ...['strokeTopWeight', 'strokeRightWeight', 'strokeBottomWeight', 'strokeLeftWeight'].map(
-              k => Number(node[k]) || 0,
-            ),
-          );
-    if (st && weight > 0) q.stroke = { color: st.color, weight };
+        ? [node.strokeWeight, node.strokeWeight, node.strokeWeight, node.strokeWeight]
+        : ['strokeTopWeight', 'strokeRightWeight', 'strokeBottomWeight', 'strokeLeftWeight'].some(
+              k => typeof node[k] === 'number',
+            )
+          ? [
+              Number(node.strokeTopWeight) || 0,
+              Number(node.strokeRightWeight) || 0,
+              Number(node.strokeBottomWeight) || 0,
+              Number(node.strokeLeftWeight) || 0,
+            ]
+          : undefined;
+    const weight = typeof node.strokeWeight === 'number' ? node.strokeWeight : Math.max(...(sideArr || [0]));
+    if (st && weight > 0) q.stroke = { color: st.color, weight, sides: sideArr };
     if (typeof node.cornerRadius === 'number') q.radius = node.cornerRadius;
     else if (typeof node.topLeftRadius === 'number') q.radius = node.topLeftRadius;
     q.autoLayout = !!node.layoutMode && node.layoutMode !== 'NONE';
@@ -268,6 +299,12 @@ export function designModel(node: any, parent: QNode | null = null): QNode {
       ? node.effects.find((e: any) => e && e.type === 'DROP_SHADOW' && e.visible !== false)
       : null;
     if (sh) q.shadow = { blur: sh.radius || 0, x: sh.offset?.x || 0, y: sh.offset?.y || 0 };
+    const bl = Array.isArray(node.effects)
+      ? node.effects.find(
+          (e: any) => e && (e.type === 'LAYER_BLUR' || e.type === 'BACKGROUND_BLUR') && e.visible !== false,
+        )
+      : null;
+    if (bl && typeof bl.radius === 'number' && bl.radius > 0) q.blur = bl.radius;
   }
   if (kind !== 'TEXT' && kind !== 'VECTOR' && Array.isArray(node.children)) {
     for (const c of node.children) if (c && c.visible !== false) q.children.push(designModel(c, q));
@@ -296,10 +333,13 @@ export function prodModel(node: any, parent: QNode | null = null): QNode {
   q.h = Number(L.measuredHeight ?? (typeof L.height === 'number' ? L.height : 0)) || 0;
   const S = node.styles || {};
   q.opacity = typeof S.opacity === 'number' ? S.opacity : 1;
+  const pBlend = typeof S.blendMode === 'string' ? S.blendMode : null;
+  q.blendMode = pBlend && pBlend !== 'PASS_THROUGH' && pBlend !== 'NORMAL' ? pBlend : null;
   // El hash lo pone compareTrees (opts.prodImageHashes): calcularlo necesita la API de Figma
   if (kind === 'IMAGE') q.image = { hash: null, scaleMode: S.imageScaleMode || 'FILL' };
   const fill = (S.fills || []).find(isSolid);
   q.fill = fill ? rgba(fill) : null;
+  if (!q.fill) q.gradient = gradientSig(S.fills);
   if (kind === 'TEXT' && node.textData) {
     const td = node.textData;
     q.rawText = String(td.characters || '');
@@ -331,6 +371,13 @@ export function prodModel(node: any, parent: QNode | null = null): QNode {
     }
     const sh = (S.boxShadow || []).find((b: any) => b && !b.inset);
     if (sh) q.shadow = { blur: sh.radius || 0, x: sh.offset?.x || 0, y: sh.offset?.y || 0 };
+    const pBlur =
+      typeof S.backdropBlur === 'number' && S.backdropBlur > 0
+        ? S.backdropBlur
+        : typeof S.layerBlur === 'number' && S.layerBlur > 0
+          ? S.layerBlur
+          : null;
+    if (pBlur) q.blur = pBlur;
     for (const c of node.children || []) q.children.push(prodModel(c, q));
   }
   if (!parent) finishSubtree(q);
@@ -731,9 +778,18 @@ export function compareTrees(design: any, production: any, opts: CompareOptions 
       else if ((d.fill?.a ?? 0) > 0.01 || (p.fill?.a ?? 0) > 0.01) {
         add('media', 'color', d, p, `Relleno: ${hex(p.fill)} en producción, ${hex(d.fill)} en el diseño`);
       }
+    } else if (!paintless(d) && !paintless(p) && (d.gradient || p.gradient) && d.gradient !== p.gradient) {
+      add(
+        'media',
+        'color',
+        d,
+        p,
+        `Degradado: ${p.gradient || 'sin degradado'} en producción, ${d.gradient || 'sin degradado'} en el diseño`,
+      );
     }
     if (d.stroke && p.stroke) {
       colorFinding('Borde', d, p, d.stroke.color, p.stroke.color);
+      const sideMismatch = d.stroke.sides && p.border.some((v, idx) => Math.abs(v - d.stroke!.sides![idx]) > 0.5);
       if (Math.abs(d.stroke.weight - p.stroke.weight) > 0.5) {
         add(
           'media',
@@ -741,6 +797,14 @@ export function compareTrees(design: any, production: any, opts: CompareOptions 
           d,
           p,
           `Grosor de borde: ${px(p.stroke.weight)} en producción, ${px(d.stroke.weight)} en el diseño`,
+        );
+      } else if (sideMismatch) {
+        add(
+          'media',
+          'borde',
+          d,
+          p,
+          `Lados del borde distintos ([${p.border.join(', ')}] px en producción, [${d.stroke.sides!.join(', ')}] px en el diseño)`,
         );
       }
     } else if (!!d.stroke !== !!p.stroke) {
@@ -750,6 +814,24 @@ export function compareTrees(design: any, production: any, opts: CompareOptions 
         d,
         p,
         d.stroke ? 'Borde: el diseño tiene borde y producción no' : 'Borde: producción tiene borde y el diseño no',
+      );
+    }
+    if ((d.blur || p.blur) && Math.abs((d.blur || 0) - (p.blur || 0)) > 2) {
+      add(
+        'baja',
+        'efecto',
+        d,
+        p,
+        `Desenfoque: ${p.blur ? px(p.blur) : 'ninguno'} en producción, ${d.blur ? px(d.blur) : 'ninguno'} en el diseño`,
+      );
+    }
+    if (d.blendMode !== p.blendMode) {
+      add(
+        'baja',
+        'efecto',
+        d,
+        p,
+        `Modo de fusión: ${p.blendMode || 'NORMAL'} en producción, ${d.blendMode || 'NORMAL'} en el diseño`,
       );
     }
     if (d.shadow || p.shadow) {

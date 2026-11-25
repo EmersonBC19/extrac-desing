@@ -50,6 +50,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: 'string',
               description: 'Selector CSS del elemento que se desea extraer (por defecto "body > *" o "body").',
             },
+            createAsComponent: { type: 'boolean', description: 'Crear raíz como Componente nativo de Figma.' },
+            board: { type: 'boolean', description: 'Generar tablero Design System completo.' },
+            includeTokens: {
+              type: 'boolean',
+              description: 'Incluir variables CSS (:root) como tokens (por defecto true).',
+            },
+            viewport: {
+              type: 'object',
+              properties: { width: { type: 'number' }, height: { type: 'number' } },
+              description: 'Dimensiones opcionales de viewport para extraer.',
+            },
           },
           required: ['html'],
         },
@@ -68,6 +79,18 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             selector: {
               type: 'string',
               description: 'Selector CSS del componente a extraer (ej: "#modal-confirm", ".user-profile-card").',
+            },
+            createAsComponent: { type: 'boolean', description: 'Crear raíz como Componente nativo de Figma.' },
+            board: { type: 'boolean', description: 'Generar tablero Design System completo.' },
+            includeTokens: {
+              type: 'boolean',
+              description: 'Incluir variables CSS (:root) como tokens (por defecto true).',
+            },
+            waitForSelector: { type: 'string', description: 'Selector opcional que esperar antes de extraer.' },
+            viewport: {
+              type: 'object',
+              properties: { width: { type: 'number' }, height: { type: 'number' } },
+              description: 'Dimensiones opcionales de viewport para extraer.',
             },
           },
           required: ['url'],
@@ -112,6 +135,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: 'number',
               description: 'Espacio en píxeles entre pantallas en el lienzo horizontal (por defecto 160).',
             },
+            board: { type: 'boolean', description: 'Generar tablero Design System por pantalla.' },
+            viewport: {
+              type: 'object',
+              properties: { width: { type: 'number' }, height: { type: 'number' } },
+              description: 'Viewport opcional del crawler (por defecto 1440x900).',
+            },
           },
           required: ['baseUrl'],
         },
@@ -147,22 +176,34 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
 </html>`;
       }
 
-      const uiNode = await extractor.extractFromUrl({
+      const vpArg = args?.viewport as { width?: number; height?: number } | undefined;
+      const viewport =
+        vpArg && typeof vpArg.width === 'number' && typeof vpArg.height === 'number'
+          ? { width: vpArg.width, height: vpArg.height }
+          : undefined;
+      const { rootNode: uiNode, tokens } = await extractor.extractBundleFromUrl({
         htmlContent: fullHtml,
         selector,
+        viewport,
       });
 
+      const includeTokens = args?.includeTokens !== false;
       const delivery = await sendToFigma(
         hub,
         {
           type: 'RENDER_NODES',
           payload: {
             rootNode: uiNode,
+            ...(includeTokens && tokens ? { tokens } : {}),
+            ...(typeof args?.createAsComponent === 'boolean' ? { createAsComponent: args.createAsComponent } : {}),
+            ...(typeof args?.board === 'boolean' ? { board: args.board } : {}),
+            ...(viewport ? { viewport } : {}),
             clearPage: false,
-          },
+          } as any,
         },
         HUB_URL,
       );
+      if (delivery.error) throw new Error(delivery.error);
       const sent = delivery.sent;
 
       return {
@@ -191,23 +232,38 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
     if (name === 'render_url_to_figma') {
       const url = String(args?.url || '');
       const selector = args?.selector ? String(args.selector) : 'body';
+      const vpArg = args?.viewport as { width?: number; height?: number } | undefined;
+      const viewport =
+        vpArg && typeof vpArg.width === 'number' && typeof vpArg.height === 'number'
+          ? { width: vpArg.width, height: vpArg.height }
+          : undefined;
+      const waitForSelector = args?.waitForSelector ? String(args.waitForSelector) : undefined;
 
-      const uiNode = await extractor.extractFromUrl({
+      const { rootNode: uiNode, tokens } = await extractor.extractBundleFromUrl({
         url,
         selector,
+        viewport,
+        waitForSelector,
       });
 
+      const includeTokens = args?.includeTokens !== false;
       const delivery = await sendToFigma(
         hub,
         {
           type: 'RENDER_NODES',
           payload: {
             rootNode: uiNode,
+            ...(includeTokens && tokens ? { tokens } : {}),
+            ...(typeof args?.createAsComponent === 'boolean' ? { createAsComponent: args.createAsComponent } : {}),
+            ...(typeof args?.board === 'boolean' ? { board: args.board } : {}),
+            ...(viewport ? { viewport } : {}),
+            source: { url },
             clearPage: false,
-          },
+          } as any,
         },
         HUB_URL,
       );
+      if (delivery.error) throw new Error(delivery.error);
       const sent = delivery.sent;
 
       return {
@@ -261,29 +317,42 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
       const gap = typeof args?.gap === 'number' ? args.gap : 160;
 
       const crawler = new SiteCrawler();
-      const width = 1440;
+      const vpArg = args?.viewport as { width?: number; height?: number } | undefined;
+      const viewport =
+        vpArg && typeof vpArg.width === 'number' && typeof vpArg.height === 'number'
+          ? { width: vpArg.width, height: vpArg.height }
+          : { width: 1440, height: 900 };
+      const board = Boolean(args?.board);
+      let cursorX = 0;
 
       const screens = await crawler.crawl({
         baseUrl,
         routes,
-        viewport: { width, height: 900 },
+        viewport,
         logger: log.child('crawler'),
-        onScreen: async (screen, index) => {
-          const posX = index * (width + gap);
-          await sendToFigma(
+        onScreen: async screen => {
+          const measuredW =
+            screen.rootNode.layout?.measuredWidth ??
+            (typeof screen.rootNode.layout?.width === 'number' ? screen.rootNode.layout.width : viewport.width);
+          const posX = cursorX;
+          cursorX += Math.max(100, Math.round(measuredW)) + gap;
+          const delivery = await sendToFigma(
             hub,
             {
               type: 'RENDER_NODES',
               payload: {
                 rootNode: screen.rootNode,
+                ...(screen.tokens ? { tokens: screen.tokens } : {}),
+                ...(board ? { board: true } : {}),
                 clearPage: false,
                 targetCanvasPosition: pages ? undefined : { x: posX, y: 0 },
                 pageName: pages ? screen.title : undefined,
-              },
+              } as any,
             },
             HUB_URL,
           );
-          await new Promise(r => setTimeout(r, 600));
+          if (delivery.error) throw new Error(delivery.error);
+          await new Promise(r => setTimeout(r, 250));
         },
       });
 

@@ -1,6 +1,7 @@
 import { chromium } from 'playwright';
 import { consoleSink, createLogger } from '@code-to-figma/contracts';
 import { getBrowserExtractorScript } from './browser-script.js';
+import { inlineSvgImages } from './browser.js';
 export class SiteCrawler {
     browser = null;
     async init(headless = true) {
@@ -210,50 +211,43 @@ export class SiteCrawler {
                     }
                 }
                 catch (_e) { }
-                // 3. Catálogo oficial de Polaris Cloud para cobertura total
-                const POLARIS_CATALOG = [
-                    { route: '/administration/dashboard', title: 'Dashboard', group: 'Dashboard' },
-                    { route: '/administration/users', title: 'Usuarios', group: 'Seguridad' },
-                    { route: '/administration/roles', title: 'Roles', group: 'Seguridad' },
-                    { route: '/administration/auditoria/descarga', title: 'Reporte de Descarga', group: 'Auditoría' },
-                    { route: '/administration/auditoria/inventario', title: 'Reporte de Inventario', group: 'Auditoría' },
-                    { route: '/administration/auditoria/terminales', title: 'Reporte de Terminales', group: 'Auditoría' },
-                    { route: '/administration/auditoria/log', title: 'Reporte de Auditoría', group: 'Auditoría' },
-                    { route: '/administration/auditoria/aplicaciones', title: 'Reporte de Aplicaciones', group: 'Auditoría' },
-                    { route: '/administration/remote-download/groups', title: 'Grupos', group: 'Descarga Remota' },
-                    { route: '/administration/remote-download/groups/new', title: 'Nuevo Grupo', group: 'Descarga Remota' },
-                    { route: '/administration/remote-download/terminals', title: 'Terminales', group: 'Descarga Remota' },
-                    {
-                        route: '/administration/remote-download/terminals/move',
-                        title: 'Mover Terminales',
-                        group: 'Descarga Remota',
-                    },
-                    {
-                        route: '/administration/remote-download/applications',
-                        title: 'Carga de Aplicaciones',
-                        group: 'Descarga Remota',
-                    },
-                    { route: '/administration/tcp', title: 'Configuración TCP', group: 'Descarga Remota' },
-                    {
-                        route: '/administration/descarga-remota/geolocalizacion',
-                        title: 'Geolocalizar Terminales',
-                        group: 'Descarga Remota',
-                    },
-                    { route: '/administration/email-providers', title: 'Proveedores de Correo', group: 'Configuración' },
-                    { route: '/administration/change-password', title: 'Cambiar Contraseña', group: 'Configuración' },
-                    { route: '/administration/mfa', title: 'MFA', group: 'Configuración' },
-                    { route: '/administration/codigo-barras', title: 'Código de Barras', group: 'Código de Barras' },
-                ];
-                for (const item of POLARIS_CATALOG) {
-                    if (!discoveredMap.has(item.route)) {
-                        discoveredMap.set(item.route, item);
+                // 3. Fallback genérico: cualquier enlace interno seguro de la página actual (sin catálogo fijo)
+                try {
+                    const genericLinks = await page.evaluate(() => {
+                        const items = [];
+                        const origin = window.location.origin;
+                        const dangerous = /(^|[/_.\-=?&])(log-?out|sign-?out|salir|cerrar-?sesion|delete|eliminar|remove|destroy|unsubscribe|pay|pagar|checkout|purchase|transfer|reset|revoke)([/_.\-=?&]|$)/i;
+                        const nonView = /\.(pdf|zip|png|jpe?g|gif|webp|avif|svg|ico|mp4|webm|csv|xlsx?|json|xml)$/i;
+                        document.querySelectorAll('a[href]').forEach(a => {
+                            const href = a.getAttribute('href') || '';
+                            if (!href || href.startsWith('#') || href.startsWith('javascript:'))
+                                return;
+                            try {
+                                const u = new URL(href, origin);
+                                const full = decodeURIComponent(u.pathname + u.search);
+                                if (u.origin !== origin || nonView.test(u.pathname) || dangerous.test(full))
+                                    return;
+                                const label = (a.textContent || '').replace(/\s+/g, ' ').trim() || u.pathname || 'Vista';
+                                items.push({ route: full || '/', title: label.slice(0, 60), group: 'Navegación' });
+                            }
+                            catch (_e) { }
+                        });
+                        return items;
+                    });
+                    for (const item of genericLinks) {
+                        if (!discoveredMap.has(item.route))
+                            discoveredMap.set(item.route, item);
                     }
                 }
-                const dashboardKey = '/administration/dashboard';
+                catch (_e) { }
+                const initialRoute = decodeURIComponent(baseObj.pathname + baseObj.search) || '/';
+                if (discoveredMap.size === 0) {
+                    discoveredMap.set(initialRoute, { route: initialRoute, title: 'Inicio', group: 'Principal' });
+                }
                 const orderedTargets = [];
-                if (discoveredMap.has(dashboardKey)) {
-                    orderedTargets.push(discoveredMap.get(dashboardKey));
-                    discoveredMap.delete(dashboardKey);
+                if (discoveredMap.has(initialRoute)) {
+                    orderedTargets.push(discoveredMap.get(initialRoute));
+                    discoveredMap.delete(initialRoute);
                 }
                 orderedTargets.push(...Array.from(discoveredMap.values()));
                 targets = orderedTargets.slice(0, maxScreens);
@@ -303,47 +297,22 @@ export class SiteCrawler {
                     // Espera exhaustiva y estabilización de datos de la página
                     await this.waitForPageReady(page, 10000);
                     // Inlinear imágenes SVG
-                    await page.evaluate(async () => {
-                        const imgs = Array.from(document.querySelectorAll('img'));
-                        for (const img of imgs) {
-                            const src = img.getAttribute('src') || '';
-                            if (src.toLowerCase().includes('.svg') || src.startsWith('data:image/svg+xml')) {
-                                try {
-                                    const resp = await fetch(img.src);
-                                    const text = await resp.text();
-                                    if (text.includes('<svg')) {
-                                        const parser = new DOMParser();
-                                        const doc = parser.parseFromString(text, 'image/svg+xml');
-                                        const svg = doc.querySelector('svg');
-                                        if (svg) {
-                                            const rect = img.getBoundingClientRect();
-                                            svg.setAttribute('width', String(Math.round(rect.width) || 200));
-                                            svg.setAttribute('height', String(Math.round(rect.height) || 42));
-                                            svg.setAttribute('data-icon', img.getAttribute('alt') || 'Logo');
-                                            img.replaceWith(svg);
-                                        }
-                                    }
-                                }
-                                catch (_e) { }
-                            }
-                        }
-                    });
+                    await inlineSvgImages(page);
                     const screenTitle = `${target.group} / ${target.title}`;
                     // Extraer la vista base de la pantalla
-                    const uiNode = await page.evaluate(async ({ scriptCode, sel, screenName }) => {
+                    const extractedBase = await page.evaluate(async ({ scriptCode, sel, screenName }) => {
                         if (!window.__codeToFigmaExtract)
                             (0, eval)(scriptCode); // mismo extractor que la extensión
                         const targetEl = document.querySelector(sel);
                         if (!targetEl)
                             return null;
-                        const node = (await window.__codeToFigmaExtract(targetEl))?.rootNode;
-                        if (node) {
-                            node.name = 'Screen / ' + screenName;
-                            node.layout = node.layout || {};
-                            node.layout.mode = 'NONE'; // Lienzo raíz fijo 1440x900 libre para capas superpuestas
+                        const res = await window.__codeToFigmaExtract(targetEl);
+                        if (res?.rootNode) {
+                            res.rootNode.name = 'Screen / ' + screenName;
                         }
-                        return node;
+                        return res;
                     }, { scriptCode: getBrowserExtractorScript(), sel: contentSelector, screenName: screenTitle });
+                    const uiNode = extractedBase?.rootNode;
                     function countTreeNodes(n) {
                         let c = 1;
                         if (n && n.children) {
@@ -359,6 +328,7 @@ export class SiteCrawler {
                             title: screenTitle,
                             routeOrTab: target.route,
                             rootNode: uiNode,
+                            tokens: extractedBase?.tokens,
                             group: target.group,
                             routeKey: target.route,
                             variantType: 'BASE',
@@ -380,20 +350,18 @@ export class SiteCrawler {
                                     await tabHandle.click();
                                     await this.waitForPageReady(page, 4500);
                                     const tabScreenTitle = `${target.group} / ${target.title} [Pestaña: ${tabText}]`;
-                                    const tabNode = await page.evaluate(async ({ scriptCode, sel, screenName }) => {
+                                    const tabExtracted = await page.evaluate(async ({ scriptCode, sel, screenName }) => {
                                         if (!window.__codeToFigmaExtract)
                                             (0, eval)(scriptCode); // mismo extractor que la extensión
                                         const targetEl = document.querySelector(sel);
                                         if (!targetEl)
                                             return null;
-                                        const node = (await window.__codeToFigmaExtract(targetEl))?.rootNode;
-                                        if (node) {
-                                            node.name = 'Screen / ' + screenName;
-                                            node.layout = node.layout || {};
-                                            node.layout.mode = 'NONE';
-                                        }
-                                        return node;
+                                        const res = await window.__codeToFigmaExtract(targetEl);
+                                        if (res?.rootNode)
+                                            res.rootNode.name = 'Screen / ' + screenName;
+                                        return res;
                                     }, { scriptCode: getBrowserExtractorScript(), sel: contentSelector, screenName: tabScreenTitle });
+                                    const tabNode = tabExtracted?.rootNode;
                                     if (tabNode) {
                                         const count = countTreeNodes(tabNode);
                                         log.info(`      📑 Pestaña extraída: "${tabScreenTitle}" (${count} elementos)`);
@@ -475,20 +443,18 @@ export class SiteCrawler {
                                         log.info(`      ✨ [Modal Capturado con Fondo] "${modalTitle}"`);
                                         const modalScreenTitle = `${target.group} / ${target.title} [Modal: ${modalTitle}]`;
                                         // Extrae el árbol completo con el fondo oscurecido y el diálogo encima
-                                        const modalNode = await page.evaluate(async ({ scriptCode, sel, screenName }) => {
+                                        const modalExtracted = await page.evaluate(async ({ scriptCode, sel, screenName }) => {
                                             if (!window.__codeToFigmaExtract)
                                                 (0, eval)(scriptCode); // mismo extractor que la extensión
                                             const targetEl = document.querySelector(sel);
                                             if (!targetEl)
                                                 return null;
-                                            const node = (await window.__codeToFigmaExtract(targetEl))?.rootNode;
-                                            if (node) {
-                                                node.name = 'Screen / ' + screenName;
-                                                node.layout = node.layout || {};
-                                                node.layout.mode = 'NONE';
-                                            }
-                                            return node;
+                                            const res = await window.__codeToFigmaExtract(targetEl);
+                                            if (res?.rootNode)
+                                                res.rootNode.name = 'Screen / ' + screenName;
+                                            return res;
                                         }, { scriptCode: getBrowserExtractorScript(), sel: contentSelector, screenName: modalScreenTitle });
+                                        const modalNode = modalExtracted?.rootNode;
                                         if (modalNode) {
                                             const count = countTreeNodes(modalNode);
                                             log.info(`      🗂️ Modal extraído: "${modalScreenTitle}" (${count} elementos)`);

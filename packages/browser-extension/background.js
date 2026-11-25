@@ -160,6 +160,24 @@ function imageFetchPolicy(url, tabUrl) {
   return { allowed: true, credentials: sameSite };
 }
 
+const FETCH_TIMEOUT_MS = 15000;
+const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
+
+async function fetchWithTimeout(url, init, timeoutMs = FETCH_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (err) {
+    if (err && err.name === 'AbortError') {
+      throw new Error(`Tiempo de espera agotado (${Math.round(timeoutMs / 1000)}s) descargando recurso`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function fetchImageBase64(url, tabUrl) {
   if (!url) throw new Error('URL no proporcionada');
   if (url.startsWith('data:')) return url;
@@ -170,7 +188,7 @@ async function fetchImageBase64(url, tabUrl) {
   // Cookies solo para imágenes del mismo sitio (plataformas con login, intranets)
   let res;
   try {
-    res = await fetch(url, { credentials: policy.credentials ? 'include' : 'omit' });
+    res = await fetchWithTimeout(url, { credentials: policy.credentials ? 'include' : 'omit' });
   } catch (netErr) {
     // Sin permiso de host, el CORS del otro dominio bloquea la descarga: decirlo claro y ofrecer el permiso
     if (!(await hasAllSites())) {
@@ -184,7 +202,14 @@ async function fetchImageBase64(url, tabUrl) {
   if (!res.ok) {
     throw new Error(`HTTP error ${res.status}`);
   }
+  const contentLen = Number(res.headers.get('content-length') || 0);
+  if (contentLen > MAX_IMAGE_BYTES) {
+    throw new Error(`Imagen demasiado grande (${Math.round(contentLen / (1024 * 1024))} MB)`);
+  }
   const blob = await res.blob();
+  if (blob.size > MAX_IMAGE_BYTES) {
+    throw new Error(`Imagen demasiado grande (${Math.round(blob.size / (1024 * 1024))} MB)`);
+  }
   let mime = (blob.type || '').toLowerCase();
   if (mime && !mime.startsWith('image/')) {
     throw new Error(`Respuesta no es imagen (${mime})`);
@@ -209,7 +234,7 @@ async function fetchStylesheetText(url, tabUrl) {
   if (!policy.allowed) throw new Error(`Descarga bloqueada: ${policy.reason}`);
   let res;
   try {
-    res = await fetch(url, { credentials: policy.credentials ? 'include' : 'omit' });
+    res = await fetchWithTimeout(url, { credentials: policy.credentials ? 'include' : 'omit' });
   } catch (netErr) {
     if (!(await hasAllSites())) {
       openPermissionPage(false);
@@ -368,23 +393,31 @@ function sendToWebSocketHub(data, hubUrl = HUB_URL, message = null) {
     }
 
     let settled = false;
+    let closeTimer = null;
     const finish = (err, value) => {
       if (settled) return;
       settled = true;
       clearTimeout(connectTimeout);
-      if (err) {
-        try {
-          ws.close();
-        } catch (_) {}
-        reject(err);
-      } else {
-        resolve(value);
-      }
+      if (closeTimer) clearTimeout(closeTimer);
+      try {
+        ws.close();
+      } catch (_) {}
+      if (err) reject(err);
+      else resolve(value);
     };
     const connectTimeout = setTimeout(
       () => finish(new Error('Tiempo de espera agotado al conectar a ' + hubUrl)),
       6000,
     );
+
+    ws.onmessage = event => {
+      try {
+        const parsed = JSON.parse(event.data);
+        if (parsed && parsed.type === 'RENDER_ERROR') {
+          finish(new Error(parsed.error || 'El hub rechazó el render'));
+        }
+      } catch (_) {}
+    };
 
     // Esperar a que el socket vacíe su búfer (sin acumular cientos de MB en memoria)
     const drained = (limit = 0) =>
@@ -403,7 +436,8 @@ function sendToWebSocketHub(data, hubUrl = HUB_URL, message = null) {
           const messages = chunkMessages(text);
           parts = messages.length;
           for (const m of messages) {
-            if (ws.readyState !== WebSocket.OPEN) throw new Error('El hub cerró la conexión durante el envío');
+            if (settled || ws.readyState !== WebSocket.OPEN)
+              throw new Error('El hub cerró la conexión durante el envío');
             ws.send(m);
             await drained(2 * CHUNK_SIZE_CHARS);
           }
@@ -411,12 +445,8 @@ function sendToWebSocketHub(data, hubUrl = HUB_URL, message = null) {
           ws.send(text);
         }
         await drained(0);
-        setTimeout(() => {
-          try {
-            ws.close();
-          } catch (_) {}
-          finish(null, { bytes: text.length, parts });
-        }, 150);
+        if (settled) return;
+        closeTimer = setTimeout(() => finish(null, { bytes: text.length, parts }), 150);
       } catch (err) {
         finish(err);
       }
@@ -641,6 +671,7 @@ function createSiteScanner(deps) {
       if (!originTab || !originTab.url) throw new Error('Pestaña de origen desconocida');
       const valid = validateRoutes(routes, originTab.url);
       if (!valid.length) throw new Error('No hay rutas válidas para escanear');
+      if (typeof deps.checkReady === 'function') await deps.checkReady();
       if (!(await hasPermission())) {
         askPermission();
         throw new Error(
@@ -665,6 +696,7 @@ function createSiteScanner(deps) {
 
 const siteScanner = createSiteScanner({
   chrome,
+  checkReady: () => assertUpToDate(),
   sendRender: data => sendToWebSocketHub(data),
   sendHubMessage: message => sendToWebSocketHub(null, HUB_URL, message),
   report: (level, message) => reportToHub(level, message),
@@ -800,7 +832,7 @@ function checkHubStatus(hubUrl = HUB_URL) {
       try {
         ws.send(JSON.stringify({ type: 'GET_STATUS' }));
       } catch (_) {}
-      // If no reply after 500ms but onopen succeeded, hub is at least running
+      // If no reply after 500ms but onopen succeeded, hub is running but Figma status is unknown
       setTimeout(() => {
         if (!settled) {
           settled = true;
@@ -808,7 +840,7 @@ function checkHubStatus(hubUrl = HUB_URL) {
           try {
             ws.close();
           } catch (_) {}
-          resolve({ hubRunning: true, figmaConnected: true, figmaCount: 1 });
+          resolve({ hubRunning: true, figmaConnected: false, figmaCount: 0, statusUnknown: true });
         }
       }, 500);
     };
@@ -835,7 +867,7 @@ function checkHubStatus(hubUrl = HUB_URL) {
       try {
         ws.close();
       } catch (_) {}
-      resolve({ hubRunning: true, figmaConnected: true, figmaCount: 1 });
+      resolve({ hubRunning: true, figmaConnected: false, figmaCount: 0, statusUnknown: true });
     };
 
     ws.onerror = () => {

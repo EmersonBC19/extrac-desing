@@ -129,13 +129,24 @@ async function removeNodes(ids: string[]): Promise<void> {
   }
 }
 
+function mergeScanTokens(current: any, incoming: any): any {
+  if (!incoming || typeof incoming !== 'object') return current;
+  const base = current && typeof current === 'object' ? current : {};
+  return {
+    ...base,
+    ...incoming,
+    colors: { ...(base.colors || {}), ...(incoming.colors || {}) },
+    radii: { ...(base.radii || {}), ...(incoming.radii || {}) },
+  };
+}
+
 /** Una página del escaneo → un frame (o un marcador, con tablero) del mapa, a la derecha de la anterior */
 export async function renderScanPage(payload: any, post: Post, log: Logger): Promise<void> {
   const scan = payload.scan;
   const state = scans.get(scan.id) || startState();
   scans.set(scan.id, state);
   if (state.board === undefined && typeof scan.board === 'boolean') state.board = scan.board;
-  if (payload.tokens) state.tokens = payload.tokens;
+  if (payload.tokens) state.tokens = mergeScanTokens(state.tokens, payload.tokens);
 
   // Marca de la ruta: la URL que se pidió (la de la página puede ser la de una redirección)
   const url = routeKey(String(scan.url || payload.source?.url || ''));

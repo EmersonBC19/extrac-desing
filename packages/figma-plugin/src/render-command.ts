@@ -205,9 +205,12 @@ export async function renderNodesCommand(
   try {
     await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
   } catch (_e) {}
-  await prewarmFonts(payload.rootNode);
+  if (payload.prewarmFonts !== false) {
+    await prewarmFonts(payload.rootNode);
+    const responsiveVariants: any[] = Array.isArray(payload.responsive?.variants) ? payload.responsive.variants : [];
+    for (const v of responsiveVariants) await prewarmFonts(v.rootNode);
+  }
   const responsiveVariants: any[] = Array.isArray(payload.responsive?.variants) ? payload.responsive.variants : [];
-  for (const v of responsiveVariants) await prewarmFonts(v.rootNode);
   const fontsMs = Date.now() - t0;
 
   // Registrar total de nodos y habilitar medición de progreso reactivo en Figma

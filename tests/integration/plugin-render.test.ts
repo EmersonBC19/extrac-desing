@@ -816,3 +816,72 @@ describe('Figma sigue respondiendo mientras se dibuja', () => {
     expect(progress.at(-1).rendered).toBeGreaterThanOrEqual(3000);
   });
 });
+
+describe('mejoras de fidelidad, reutilización de tablero y comandos del sandbox', () => {
+  it('respeta stroke.align, bordes sub-píxel (< 1px) y opacity/blendMode en SVG', async () => {
+    const figma = await runPlugin({
+      rootNode: {
+        id: 'r',
+        type: 'FRAME',
+        layout: { width: 200, height: 100 },
+        styles: {
+          strokes: [{ r: 0, g: 0, b: 0, a: 1, width: 0.5, align: 'OUTSIDE' }],
+        },
+        children: [
+          {
+            id: 's',
+            type: 'SVG',
+            layout: { width: 24, height: 24 },
+            svgContent: '<svg width="24" height="24"><rect width="24" height="24"/></svg>',
+            styles: { fills: [], opacity: 0.4, blendMode: 'MULTIPLY' },
+          },
+        ],
+      },
+    });
+    expect(errorsOf(figma)).toEqual([]);
+    const frame = figma.currentPage.children[0];
+    expect(frame.strokeAlign).toBe('OUTSIDE');
+    expect(frame.strokeWeight).toBe(0.5);
+    const svgNode = frame.children[0];
+    expect(svgNode.opacity).toBeCloseTo(0.4, 2);
+    expect(svgNode.blendMode).toBe('MULTIPLY');
+  });
+
+  it('reutiliza la colección y variables del mismo sitio en tableros consecutivos sin duplicar', async () => {
+    const figma = loadPlugin({}, { ...console, log() {}, warn() {} });
+    await figma.ui.onmessage({
+      type: 'RENDER_NODES',
+      payload: { rootNode: clone(hero), board: true, source: { url: 'https://ejemplo.com/a' } },
+    });
+    await figma.ui.onmessage({
+      type: 'RENDER_NODES',
+      payload: { rootNode: clone(hero), board: true, source: { url: 'https://ejemplo.com/b' } },
+    });
+    expect(figma.variables.collections.map((c: any) => c.name)).toEqual(['ejemplo.com']);
+  });
+
+  it('CONVERT_TO_COMPONENT preserva clipsContent/pluginData y notifica NODE_CONVERTED a la UI', async () => {
+    const figma = await runPlugin({
+      rootNode: {
+        id: 'box',
+        name: 'Card',
+        type: 'FRAME',
+        clipsContent: false,
+        __route: { url: 'https://ejemplo.com/p', path: '/p', scanId: 's1', at: 1 },
+        layout: { mode: 'HORIZONTAL', layoutWrap: 'WRAP', width: 200, height: 100 },
+        styles: { fills: [{ r: 1, g: 1, b: 1, a: 1 }], opacity: 0.85 },
+        children: [],
+      },
+    });
+    const frame = figma.currentPage.children[0];
+    await figma.ui.onmessage({ type: 'CONVERT_TO_COMPONENT', nodeId: frame.id });
+    const conv = figma.logs.find((m: any) => m.type === 'NODE_CONVERTED');
+    expect(conv).toMatchObject({ oldId: frame.id, name: 'Card' });
+    const comp = figma.currentPage.children.find((n: any) => n.id === conv.newId);
+    expect(comp.type).toBe('COMPONENT');
+    expect(comp.clipsContent).toBe(false);
+    expect(comp.opacity).toBeCloseTo(0.85, 2);
+    expect(comp.layoutWrap).toBe('WRAP');
+    expect(comp.getPluginData('c2f-route')).toContain('/p');
+  });
+});

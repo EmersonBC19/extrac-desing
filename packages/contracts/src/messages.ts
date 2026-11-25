@@ -173,6 +173,18 @@ export const MESSAGE_CATALOG = {
     route: 'UI → sandbox',
     description: 'Convertir un frame en componente',
   },
+  NODE_CONVERTED: {
+    channel: 'plugin',
+    kind: 'event',
+    route: 'sandbox → UI',
+    description: 'Un frame fue convertido en Componente (actualiza id y tipo en el receptor)',
+  },
+  PAGE_CLEARED: {
+    channel: 'plugin',
+    kind: 'event',
+    route: 'sandbox → UI',
+    description: 'La página actual fue vaciada en Figma',
+  },
   FOCUS_NODE: {
     channel: 'plugin',
     kind: 'command',
@@ -608,4 +620,6 @@ export type PluginSandboxMessage =
   | { type: 'RENDER_SUCCESS'; nodeId: string; name: string; [k: string]: unknown }
   | { type: 'RENDER_ERROR'; error: string }
   | { type: 'SELECTION_INFO'; requestId?: string; selection: FigmaSelection | null }
-  | { type: 'ROUTES_INFO'; requestId?: string; routes: FigmaRoute[]; error?: string };
+  | { type: 'ROUTES_INFO'; requestId?: string; routes: FigmaRoute[]; error?: string }
+  | { type: 'NODE_CONVERTED'; oldId: string; newId: string; name: string }
+  | { type: 'PAGE_CLEARED' };

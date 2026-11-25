@@ -30,12 +30,55 @@ export async function newCollection(base: string): Promise<{ collection: Variabl
   return { collection, modeId: collection.modes[0].modeId };
 }
 
+export interface CollectionHandle {
+  collection: VariableCollection;
+  modeId: string;
+  byName: Map<string, Variable>;
+}
+
+/** Reutiliza la colección existente del sitio (o crea una nueva) para actualizar tokens sin duplicar */
+export async function upsertCollection(base: string): Promise<CollectionHandle> {
+  let cols: any[] = [];
+  try {
+    cols =
+      typeof (figma.variables as any).getLocalVariableCollectionsAsync === 'function'
+        ? await (figma.variables as any).getLocalVariableCollectionsAsync()
+        : figma.variables.getLocalVariableCollections?.() || [];
+  } catch (_e) {}
+  let collection = cols.find((c: any) => c.name === base);
+  if (!collection) collection = figma.variables.createVariableCollection(base);
+  const modeId = collection.modes[0].modeId;
+  const byName = new Map<string, Variable>();
+  try {
+    const allVars =
+      typeof (figma.variables as any).getLocalVariablesAsync === 'function'
+        ? await (figma.variables as any).getLocalVariablesAsync()
+        : figma.variables.getLocalVariables?.() || [];
+    for (const v of allVars) {
+      if (v.variableCollectionId === collection.id) byName.set(v.name, v);
+    }
+  } catch (_e) {}
+  return { collection, modeId, byName };
+}
+
 export function colorVariable(collection: VariableCollection, modeId: string, name: string, rgb: RGB): Variable {
   const v = figma.variables.createVariable(safeVarName(name), collection, 'COLOR');
   v.setValueForMode(modeId, { r: rgb.r, g: rgb.g, b: rgb.b, a: 1 });
   try {
     v.scopes = ['ALL_FILLS', 'STROKE_COLOR', 'EFFECT_COLOR'];
   } catch (_e) {}
+  return v;
+}
+
+export function upsertColorVariable(ctx: CollectionHandle, name: string, rgb: RGB): Variable {
+  const safe = safeVarName(name);
+  const existing = ctx.byName.get(safe);
+  if (existing && existing.resolvedType === 'COLOR') {
+    existing.setValueForMode(ctx.modeId, { r: rgb.r, g: rgb.g, b: rgb.b, a: 1 });
+    return existing;
+  }
+  const v = colorVariable(ctx.collection, ctx.modeId, existing ? `${safe} Color` : safe, rgb);
+  ctx.byName.set(v.name, v);
   return v;
 }
 
@@ -51,6 +94,23 @@ export function numberVariable(
   try {
     v.scopes = scopes;
   } catch (_e) {}
+  return v;
+}
+
+export function upsertNumberVariable(
+  ctx: CollectionHandle,
+  name: string,
+  value: number,
+  scopes: VariableScope[],
+): Variable {
+  const safe = safeVarName(name);
+  const existing = ctx.byName.get(safe);
+  if (existing && existing.resolvedType === 'FLOAT') {
+    existing.setValueForMode(ctx.modeId, value);
+    return existing;
+  }
+  const v = numberVariable(ctx.collection, ctx.modeId, existing ? `${safe} Float` : safe, value, scopes);
+  ctx.byName.set(v.name, v);
   return v;
 }
 

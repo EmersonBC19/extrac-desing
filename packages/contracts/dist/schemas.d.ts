@@ -150,6 +150,11 @@ export declare const WSRenderPayloadSchema: z.ZodObject<{
         }>>>;
     }, z.core.$loose>>;
     fontMap: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
+    prewarmFonts: z.ZodOptional<z.ZodBoolean>;
+    viewport: z.ZodOptional<z.ZodObject<{
+        width: z.ZodNumber;
+        height: z.ZodNumber;
+    }, z.core.$strip>>;
     clearPage: z.ZodOptional<z.ZodBoolean>;
     pageName: z.ZodOptional<z.ZodString>;
     sectionTitle: z.ZodOptional<z.ZodString>;

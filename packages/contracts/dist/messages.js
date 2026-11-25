@@ -195,6 +195,18 @@ exports.MESSAGE_CATALOG = {
         route: 'UI → sandbox',
         description: 'Convertir un frame en componente',
     },
+    NODE_CONVERTED: {
+        channel: 'plugin',
+        kind: 'event',
+        route: 'sandbox → UI',
+        description: 'Un frame fue convertido en Componente (actualiza id y tipo en el receptor)',
+    },
+    PAGE_CLEARED: {
+        channel: 'plugin',
+        kind: 'event',
+        route: 'sandbox → UI',
+        description: 'La página actual fue vaciada en Figma',
+    },
     FOCUS_NODE: {
         channel: 'plugin',
         kind: 'command',

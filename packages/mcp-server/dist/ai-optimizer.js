@@ -17,32 +17,35 @@ export async function optimizePayloadWithGemini(payload, apiKey, options = {}) {
     }
     const t0 = Date.now();
     const timeoutMs = options.timeoutMs || 8000;
-    // Lista de modelos ordenados por preferencia. Si el modelo elegido devuelve 404 (retirado o no disponible en la cuenta),
-    // se prueba automáticamente el siguiente candidato de la familia Flash/Flash-Lite (2.5, 3.8, 3.6, etc.).
+    // Lista de modelos ordenados por preferencia. Si el modelo elegido devuelve 404,
+    // se prueba automáticamente el siguiente candidato vigente de la familia Flash/Flash-Lite.
     const requestedModel = options.model || process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-    const candidateModels = Array.from(new Set([
-        requestedModel,
-        'gemini-2.5-flash',
-        'gemini-2.5-flash-lite',
-        'gemini-2.0-flash',
-        'gemini-2.0-flash-lite',
-        'gemini-3.8-flash',
-        'gemini-3.6-flash',
-        'gemini-flash-latest',
-        'gemini-1.5-flash',
-    ])).filter(Boolean);
-    // 1. Extraer imágenes base64 a un mapa temporal para reducir el payload en un 95%
+    const candidateModels = Array.from(new Set([requestedModel, 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest'])).filter(Boolean);
+    // 1. Extraer imágenes base64 y SVGs inline a mapas temporales para reducir tokens y evitar mutaciones
     const imageMap = new Map();
-    function stripImages(n) {
+    const svgMap = new Map();
+    const originalTexts = [];
+    let tokenIdx = 0;
+    function stripAssetsAndCollect(n) {
         if (!n)
             return;
+        if (n.type === 'TEXT' && n.textData?.characters) {
+            const txt = String(n.textData.characters).replace(/\s+/g, ' ').trim();
+            if (txt)
+                originalTexts.push(txt);
+        }
         if (n.imageData && typeof n.imageData === 'string') {
-            const placeholder = `__IMG_TOKEN_${n.id || Math.random()}__`;
+            const placeholder = `__IMG_TOKEN_${n.id || ++tokenIdx}__`;
             imageMap.set(placeholder, n.imageData);
             n.imageData = placeholder;
         }
+        if (n.svgContent && typeof n.svgContent === 'string') {
+            const placeholder = `__SVG_TOKEN_${n.id || ++tokenIdx}__`;
+            svgMap.set(placeholder, n.svgContent);
+            n.svgContent = placeholder;
+        }
         if (Array.isArray(n.children)) {
-            n.children.forEach(stripImages);
+            n.children.forEach(stripAssetsAndCollect);
         }
     }
     // Clonar árbol para no mutar el original en caso de fallo
@@ -53,23 +56,33 @@ export async function optimizePayloadWithGemini(payload, apiKey, options = {}) {
     catch (_e) {
         return { payload, optimized: false, reason: 'No se pudo serializar el árbol' };
     }
-    stripImages(treeClone);
+    stripAssetsAndCollect(treeClone);
     const systemInstruction = `You are a Principal UI Engineer and Figma Design System Architect.
 You receive a web UI tree JSON in UINode format extracted from HTML/CSS.
 Your goal is to optimize the tree structure for clean, professional Figma Auto Layout:
 1. PRUNE REDUNDANT WRAPPERS: Eliminate meaningless wrapper frames (e.g. wrapper <div> elements from React/Tailwind that have no background fill, no border stroke, no shadow, no padding, and only contain a single child frame). Move the child frame directly to the parent.
 2. ORGANIZE CSS GRIDS: If you see multi-row/multi-column cards or grids, ensure they are grouped into clean HORIZONTAL Auto Layout rows with width 'FILL' or uniform itemSpacing so that Figma resizes them naturally.
 3. SEMANTIC NAMING: Rename frames into clean Design System component names (e.g. 'Card / Container', 'Button / Action', 'Badge / Status', 'Nav / Bar', 'Item / GridCell', 'Header / Hero').
-4. STRICT FIDELITY: Preserve all essential style properties (fills, strokes, cornerRadius, opacity, boxShadow), textData (characters, fontSize, fontWeight, color), and original 'id' attributes.
+4. STRICT FIDELITY: Preserve all essential style properties (fills, strokes, cornerRadius, opacity, boxShadow), textData (characters, fontSize, fontWeight, color), svgContent tokens, imageData tokens, and original 'id' attributes.
 Output ONLY a valid JSON object representing the optimized root UINode. No markdown backticks, no explanations.`;
-    function restoreImages(n) {
+    function restoreAssetsAndCheck(n, stats) {
         if (!n)
             return;
+        if (n.type === 'TEXT' && n.textData?.characters) {
+            const txt = String(n.textData.characters).replace(/\s+/g, ' ').trim();
+            if (txt)
+                stats.texts.add(txt);
+        }
         if (typeof n.imageData === 'string' && imageMap.has(n.imageData)) {
             n.imageData = imageMap.get(n.imageData);
+            stats.images++;
+        }
+        if (typeof n.svgContent === 'string' && svgMap.has(n.svgContent)) {
+            n.svgContent = svgMap.get(n.svgContent);
+            stats.svgs++;
         }
         if (Array.isArray(n.children)) {
-            n.children.forEach(restoreImages);
+            n.children.forEach((c) => restoreAssetsAndCheck(c, stats));
         }
     }
     let lastFailureReason = '';
@@ -134,8 +147,14 @@ Output ONLY a valid JSON object representing the optimized root UINode. No markd
                 lastFailureReason = `El JSON devuelto por ${modelToTry} no tiene estructura UINode válida`;
                 continue;
             }
-            // 2. Restaurar imágenes originales en los nodos
-            restoreImages(optimizedRoot);
+            // 2. Restaurar imágenes/SVGs originales y verificar invariantes de contenido
+            const restoreStats = { images: 0, svgs: 0, texts: new Set() };
+            restoreAssetsAndCheck(optimizedRoot, restoreStats);
+            const missingText = originalTexts.some(t => !restoreStats.texts.has(t));
+            if (restoreStats.images < imageMap.size || restoreStats.svgs < svgMap.size || missingText) {
+                lastFailureReason = `Invariante rota por ${modelToTry}: textos o recursos omitidos; se conserva el original`;
+                continue;
+            }
             const optimizedPayload = {
                 ...payload,
                 rootNode: optimizedRoot,

@@ -30,24 +30,37 @@ export function boardSignature(n: any, memo: Map<any, string>): string {
   const S = n.styles || {};
   if (n.type === 'TEXT') {
     const t = n.textData || {};
-    sig = ['T', t.fontFamily, t.fontSize, t.fontWeight, t.textAlign, (S.fills || []).map(boardColorKey).join(',')].join(
-      '|',
-    );
+    sig = [
+      'T',
+      t.fontFamily,
+      t.fontSize,
+      t.fontWeight,
+      t.textAlign,
+      (t.segments || []).length,
+      (S.fills || []).map(boardColorKey).join(','),
+      S.blendMode || '',
+    ].join('|');
   } else if (n.type === 'SVG') {
     sig = 'S|' + boardHash(n.svgContent || '') + '|' + L.width + 'x' + L.height;
   } else {
     const pad = L.padding || {};
     const style = [
       L.mode,
+      L.layoutWrap || '',
+      L.counterAxisSpacing ?? '',
       L.primaryAxisAlignItems,
       L.counterAxisAlignItems,
       L.itemSpacing,
+      n.clipsContent === false ? 'unclipped' : 'clipped',
       [pad.top, pad.right, pad.bottom, pad.left].join(','),
       (S.fills || []).map(boardColorKey).join(','),
       (S.strokes || []).map((s: any) => boardColorKey(s) + '@' + s.width).join(','),
       JSON.stringify(S.cornerRadius ?? 0),
       S.opacity ?? 1,
       (S.boxShadow || []).length,
+      S.backdropBlur || 0,
+      S.layerBlur || 0,
+      S.blendMode || '',
       n.imageData ? 'IMG:' + (S.imageScaleMode || 'FILL') : '',
     ].join('|');
     const h = Math.round(L.measuredHeight ?? (typeof L.height === 'number' ? L.height : 0));

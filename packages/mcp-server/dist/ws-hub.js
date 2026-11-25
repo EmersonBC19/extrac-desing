@@ -105,6 +105,9 @@ export class FigmaWsHub {
             }
             else {
                 this.log.error('Error del servidor WebSocket', { error: err.message });
+                if (process.env.CTF_STANDALONE === '1') {
+                    process.exit(1);
+                }
             }
             this.wss = null;
         });

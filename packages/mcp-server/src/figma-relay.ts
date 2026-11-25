@@ -16,6 +16,7 @@ export interface RelayResult {
   /** Plugins conectados (en el hub propio o en el externo) */
   plugins: number;
   via: 'hub-propio' | 'hub-externo' | 'ninguno';
+  error?: string;
 }
 
 /** Envía RENDER_NODES a un hub ya en marcha y responde si había plugins de Figma conectados */
@@ -26,10 +27,12 @@ export function relayToExternalHub(
 ): Promise<RelayResult> {
   return new Promise(resolve => {
     let settled = false;
+    let ackTimer: ReturnType<typeof setTimeout> | null = null;
     const done = (r: RelayResult) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (ackTimer) clearTimeout(ackTimer);
       try {
         ws.close();
       } catch (_e) {}
@@ -37,6 +40,7 @@ export function relayToExternalHub(
     };
     const ws = new WebSocket(url);
     const timer = setTimeout(() => done({ sent: false, plugins: 0, via: 'ninguno' }), timeoutMs);
+    let sentPendingPlugins: number | null = null;
     ws.on('open', () => {
       ws.send(JSON.stringify({ type: 'REGISTER_CLIENT', clientType: 'CLI_OR_MCP', client: 'code-to-figma-mcp' }));
       ws.send(JSON.stringify({ type: 'GET_STATUS' }));
@@ -48,10 +52,21 @@ export function relayToExternalHub(
       } catch (_e) {
         return;
       }
+      if (sentPendingPlugins !== null && msg.type === 'RENDER_ERROR') {
+        return done({
+          sent: false,
+          plugins: sentPendingPlugins,
+          via: 'hub-externo',
+          error: String(msg.error || 'El hub rechazó el render'),
+        });
+      }
       if (msg.type !== 'STATUS_RESPONSE') return;
       const plugins = Number(msg.payload?.figmaCount) || 0;
       if (!msg.payload?.figmaConnected) return done({ sent: false, plugins, via: 'hub-externo' });
-      ws.send(JSON.stringify(message), () => done({ sent: true, plugins, via: 'hub-externo' }));
+      sentPendingPlugins = plugins;
+      ws.send(JSON.stringify(message), () => {
+        ackTimer = setTimeout(() => done({ sent: true, plugins, via: 'hub-externo' }), 80);
+      });
     });
     ws.on('error', () => done({ sent: false, plugins: 0, via: 'ninguno' }));
   });

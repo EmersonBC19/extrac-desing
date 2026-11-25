@@ -13,8 +13,10 @@ export async function applyTextSegments(tn: TextNode, segments: UITextSegment[])
     const end = Math.max(start, Math.min(len, seg.end));
     if (end <= start) continue;
     try {
-      if (seg.fontFamily || seg.fontWeight) {
-        const f = await loadFontSafely(seg.fontStack || seg.fontFamily || 'Inter', seg.fontWeight || 400);
+      if (seg.fontFamily || seg.fontWeight || seg.italic) {
+        const f = await loadFontSafely(seg.fontStack || seg.fontFamily || 'Inter', seg.fontWeight || 400, {
+          italic: Boolean(seg.italic),
+        });
         tn.setRangeFontName(start, end, f);
       }
       if (seg.fontSize && seg.fontSize > 0) tn.setRangeFontSize(start, end, seg.fontSize);

@@ -4,6 +4,7 @@ export interface CrawlScreenResult {
     title: string;
     routeOrTab: string;
     rootNode: UINode;
+    tokens?: Record<string, unknown>;
     group?: string;
     routeKey?: string;
     variantType?: 'BASE' | 'TAB' | 'MODAL';

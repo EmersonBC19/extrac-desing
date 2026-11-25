@@ -586,6 +586,30 @@
           border-radius: 4px;
         }
 
+        .hud-tag-pill {
+          display: inline-flex;
+          align-items: center;
+          padding: 2px 7px;
+          border-radius: 5px;
+          background: rgba(56, 189, 248, 0.16);
+          border: 1px solid rgba(56, 189, 248, 0.32);
+          color: #7dd3fc;
+          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-size: 11px;
+          font-weight: 600;
+        }
+
+        .hud-meta-badge {
+          display: inline-flex;
+          align-items: center;
+          padding: 2px 6px;
+          border-radius: 4px;
+          background: rgba(255, 255, 255, 0.06);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          color: #cbd5e1;
+          font-size: 11px;
+        }
+
         .hud-breadcrumbs {
           display: flex;
           align-items: center;
@@ -1054,6 +1078,10 @@
         pill.className = 'hud-status-pill connected';
         pill.innerHTML = `<span class="status-dot"></span> Figma Conectado`;
         pill.title = 'WebSocket Hub y Plugin de Figma enlazados en tiempo real';
+      } else if (this.figmaStatus.statusUnknown) {
+        pill.className = 'hud-status-pill waiting';
+        pill.innerHTML = `<span class="status-dot"></span> Hub activo (Figma n/d)`;
+        pill.title = 'El Hub respondió sin estado: actualiza el Hub si el estado no coincide';
       } else if (this.figmaStatus.hubRunning) {
         pill.className = 'hud-status-pill waiting';
         pill.innerHTML = `<span class="status-dot"></span> Esperando Figma`;
@@ -1439,6 +1467,36 @@
       }
     }
 
+    firstVisibleChild(el) {
+      if (!el || !el.children) return null;
+      const isVisible = node => {
+        if (!node || node.id === '__code_to_figma_root__') return false;
+        const r = node.getBoundingClientRect();
+        if (r.width < 1 || r.height < 1) return false;
+        const cs = window.getComputedStyle(node);
+        return cs.display !== 'none' && cs.visibility !== 'hidden';
+      };
+      for (const child of el.children) {
+        if (isVisible(child)) return child;
+      }
+      return Array.from(el.querySelectorAll('*')).find(node => isVisible(node)) || null;
+    }
+
+    siblingElement(el, dir) {
+      if (!el) return null;
+      const isVisible = node => {
+        if (!node || node.id === '__code_to_figma_root__') return false;
+        const r = node.getBoundingClientRect();
+        return r.width >= 1 && r.height >= 1 && window.getComputedStyle(node).display !== 'none';
+      };
+      let cur = dir < 0 ? el.previousElementSibling : el.nextElementSibling;
+      while (cur) {
+        if (isVisible(cur)) return cur;
+        cur = dir < 0 ? cur.previousElementSibling : cur.nextElementSibling;
+      }
+      return null;
+    }
+
     elevateParent() {
       if (this.selectedElements.length !== 1) return;
       const parent = this.selectedElements[0].parentElement;
@@ -1449,9 +1507,17 @@
 
     elevateChild() {
       if (this.selectedElements.length !== 1) return;
-      const child = this.selectedElements[0].querySelector('article, section, div, button, nav, form, figure');
+      const child = this.firstVisibleChild(this.selectedElements[0]);
       if (!child || child === this.selectedElements[0]) return;
       this.selectedElements = [child];
+      this.elevateElements(this.selectedElements);
+    }
+
+    elevateSibling(dir) {
+      if (this.selectedElements.length !== 1) return;
+      const sib = this.siblingElement(this.selectedElements[0], dir);
+      if (!sib) return;
+      this.selectedElements = [sib];
       this.elevateElements(this.selectedElements);
     }
 
@@ -1639,40 +1705,7 @@
       `;
 
       // Fluid Viewport Positioning: centered and fully visible within viewport
-      const vpW = window.innerWidth || document.documentElement.clientWidth || 1280;
-      const vpH = window.innerHeight || document.documentElement.clientHeight || 800;
-      const hudEstWidth = Math.min(620, vpW - 24);
-      const hudEstHeight = 145;
-
-      let hudTop;
-      let hudLeft;
-
-      if (this.userCustomPos) {
-        hudLeft = Math.max(12, Math.min(vpW - hudEstWidth - 12, this.userCustomPos.left));
-        hudTop = Math.max(12, Math.min(vpH - hudEstHeight - 12, this.userCustomPos.top));
-      } else {
-        hudTop = vpH - hudEstHeight - 24;
-        hudLeft = (vpW - hudEstWidth) / 2;
-      }
-
-      hudTop = Math.max(12, Math.min(vpH - hudEstHeight - 12, hudTop));
-      hudLeft = Math.max(12, Math.min(vpW - hudEstWidth - 12, hudLeft));
-
-      this.hud.style.top = `${Math.round(hudTop)}px`;
-      this.hud.style.left = `${Math.round(hudLeft)}px`;
-      this.hud.style.display = 'block';
-
-      // La altura estimada se queda corta en cuanto los botones pasan a otra línea (ventanas bajas o
-      // estrechas): con la medida real el HUD entero queda dentro de la ventana
-      const realH = this.hud.offsetHeight || hudEstHeight;
-      const realW = this.hud.offsetWidth || hudEstWidth;
-      if (realH !== hudEstHeight || realW !== hudEstWidth) {
-        const maxTop = Math.max(12, vpH - realH - 12);
-        const top = this.userCustomPos ? Math.min(hudTop, maxTop) : Math.max(12, vpH - realH - 24);
-        const left = Math.max(12, Math.min(vpW - realW - 12, this.userCustomPos ? hudLeft : (vpW - realW) / 2));
-        this.hud.style.top = `${Math.round(Math.min(top, maxTop))}px`;
-        this.hud.style.left = `${Math.round(left)}px`;
-      }
+      this.positionHUD();
 
       // Attach Drag & Drop listener to header
       const header = this.hud.querySelector('#__hud_header');
@@ -1761,9 +1794,50 @@
       this.updateFigmaStatusUI();
     }
 
+    positionHUD() {
+      if (!this.hud || !this.isElevated) return;
+      const vpW = window.innerWidth || document.documentElement.clientWidth || 1280;
+      const vpH = window.innerHeight || document.documentElement.clientHeight || 800;
+      const hudEstWidth = Math.min(620, vpW - 24);
+      const hudEstHeight = 145;
+
+      let hudTop = this.userCustomPos
+        ? Math.max(12, Math.min(vpH - hudEstHeight - 12, this.userCustomPos.top))
+        : vpH - hudEstHeight - 24;
+      let hudLeft = this.userCustomPos
+        ? Math.max(12, Math.min(vpW - hudEstWidth - 12, this.userCustomPos.left))
+        : (vpW - hudEstWidth) / 2;
+
+      hudTop = Math.max(12, Math.min(vpH - hudEstHeight - 12, hudTop));
+      hudLeft = Math.max(12, Math.min(vpW - hudEstWidth - 12, hudLeft));
+
+      this.hud.style.top = `${Math.round(hudTop)}px`;
+      this.hud.style.left = `${Math.round(hudLeft)}px`;
+      this.hud.style.display = 'block';
+
+      const realH = this.hud.offsetHeight || hudEstHeight;
+      const realW = this.hud.offsetWidth || hudEstWidth;
+      if (realH !== hudEstHeight || realW !== hudEstWidth) {
+        const maxTop = Math.max(12, vpH - realH - 12);
+        const top = this.userCustomPos ? Math.min(hudTop, maxTop) : Math.max(12, vpH - realH - 24);
+        const left = Math.max(12, Math.min(vpW - realW - 12, this.userCustomPos ? hudLeft : (vpW - realW) / 2));
+        this.hud.style.top = `${Math.round(Math.min(top, maxTop))}px`;
+        this.hud.style.left = `${Math.round(left)}px`;
+      }
+    }
+
     toggleTheme() {
       const root = document.documentElement;
       const body = document.body;
+      if (!this._initialThemeAttrs) {
+        this._initialThemeAttrs = {
+          rootDarkClasses: ['dark', 'dark-theme', 'dark-mode'].filter(c => root.classList.contains(c)),
+          bodyDarkClasses: body ? ['dark', 'dark-theme', 'dark-mode'].filter(c => body.classList.contains(c)) : [],
+          dataTheme: root.getAttribute('data-theme'),
+          dataBsTheme: root.getAttribute('data-bs-theme'),
+          dataColorMode: root.getAttribute('data-color-mode'),
+        };
+      }
       const isDark =
         root.classList.contains('dark') ||
         root.classList.contains('dark-theme') ||
@@ -1797,6 +1871,27 @@
       }
     }
 
+    restoreThemeState() {
+      const saved = this._initialThemeAttrs;
+      if (!saved) return;
+      const root = document.documentElement;
+      const body = document.body;
+      root.classList.remove('dark', 'dark-theme', 'dark-mode');
+      saved.rootDarkClasses.forEach(c => root.classList.add(c));
+      if (body) {
+        body.classList.remove('dark', 'dark-theme', 'dark-mode');
+        saved.bodyDarkClasses.forEach(c => body.classList.add(c));
+      }
+      const restoreAttr = (name, val) => {
+        if (val === null) root.removeAttribute(name);
+        else root.setAttribute(name, val);
+      };
+      restoreAttr('data-theme', saved.dataTheme);
+      restoreAttr('data-bs-theme', saved.dataBsTheme);
+      restoreAttr('data-color-mode', saved.dataColorMode);
+      this._initialThemeAttrs = null;
+    }
+
     cancelElevation() {
       if (!this.isElevated) return;
 
@@ -1812,6 +1907,68 @@
       if (this.hoveredEl) {
         this.updateHighlight(this.hoveredEl);
       }
+    }
+
+    async buildMultiSelectionBundle(elements) {
+      const results = await Promise.all(elements.map(el => window.__codeToFigmaExtract(el)));
+      const validNodes = [];
+      let tokens;
+      for (const r of results) {
+        if (r) {
+          const node = r.rootNode || r;
+          validNodes.push(node);
+          if (!tokens && r.tokens) tokens = r.tokens;
+        }
+      }
+      if (validNodes.length === 0) {
+        throw new Error('No se pudo extraer ningún componente de la selección');
+      }
+
+      let minLeft = Infinity;
+      let minTop = Infinity;
+      let maxRight = -Infinity;
+      let maxBottom = -Infinity;
+
+      for (const el of elements) {
+        const r = el.getBoundingClientRect();
+        minLeft = Math.min(minLeft, r.left);
+        minTop = Math.min(minTop, r.top);
+        maxRight = Math.max(maxRight, r.right);
+        maxBottom = Math.max(maxBottom, r.bottom);
+      }
+
+      const children = validNodes.map((childNode, idx) => {
+        const el = elements[idx];
+        const r = el.getBoundingClientRect();
+        if (!childNode.layout) childNode.layout = {};
+        childNode.layout.x = Math.round(r.left - minLeft);
+        childNode.layout.y = Math.round(r.top - minTop);
+        childNode.layout.positioning = 'ABSOLUTE';
+        return childNode;
+      });
+
+      const totalW = Math.max(100, Math.round(maxRight - minLeft));
+      const totalH = Math.max(50, Math.round(maxBottom - minTop));
+
+      const rootNode = {
+        id: 'multi_selection_bundle_' + Date.now(),
+        name: `Multi-selection (${children.length} componentes)`,
+        type: this.createAsComponent ? 'COMPONENT' : 'FRAME',
+        layout: {
+          mode: 'NONE',
+          width: totalW,
+          height: totalH,
+          measuredWidth: totalW,
+          measuredHeight: totalH,
+          padding: { top: 0, right: 0, bottom: 0, left: 0 },
+          itemSpacing: 0,
+        },
+        styles: {
+          fills: [],
+        },
+        children,
+      };
+      return { rootNode, tokens };
     }
 
     async sendToFigma() {
@@ -1897,63 +2054,9 @@
             }
           } else {
             // Multi-selection: Extract all selected elements and bundle in a parent frame
-            const results = await Promise.all(this.selectedElements.map(el => window.__codeToFigmaExtract(el)));
-            const validNodes = [];
-            for (const r of results) {
-              if (r) {
-                const node = r.rootNode || r;
-                validNodes.push(node);
-                if (!tokens && r.tokens) tokens = r.tokens;
-              }
-            }
-            if (validNodes.length === 0) {
-              throw new Error('No se pudo extraer ningún componente de la selección');
-            }
-
-            let minLeft = Infinity;
-            let minTop = Infinity;
-            let maxRight = -Infinity;
-            let maxBottom = -Infinity;
-
-            for (const el of this.selectedElements) {
-              const r = el.getBoundingClientRect();
-              minLeft = Math.min(minLeft, r.left);
-              minTop = Math.min(minTop, r.top);
-              maxRight = Math.max(maxRight, r.right);
-              maxBottom = Math.max(maxBottom, r.bottom);
-            }
-
-            const children = validNodes.map((childNode, idx) => {
-              const el = this.selectedElements[idx];
-              const r = el.getBoundingClientRect();
-              if (!childNode.layout) childNode.layout = {};
-              childNode.layout.x = Math.round(r.left - minLeft);
-              childNode.layout.y = Math.round(r.top - minTop);
-              childNode.layout.positioning = 'ABSOLUTE';
-              return childNode;
-            });
-
-            const totalW = Math.max(100, Math.round(maxRight - minLeft));
-            const totalH = Math.max(50, Math.round(maxBottom - minTop));
-
-            rootNode = {
-              id: 'multi_selection_bundle_' + Date.now(),
-              name: `Multi-selection (${children.length} componentes)`,
-              type: this.createAsComponent ? 'COMPONENT' : 'FRAME',
-              layout: {
-                mode: 'NONE',
-                width: totalW,
-                height: totalH,
-                measuredWidth: totalW,
-                measuredHeight: totalH,
-                padding: { top: 0, right: 0, bottom: 0, left: 0 },
-                itemSpacing: 0,
-              },
-              styles: {
-                fills: [],
-              },
-              children,
-            };
+            const bundled = await this.buildMultiSelectionBundle(this.selectedElements);
+            rootNode = bundled.rootNode;
+            tokens = bundled.tokens;
           }
         } finally {
           // Medición terminada: quitar los estados "reveal" forzados y devolver la elevación
@@ -2052,7 +2155,7 @@
 
         setTimeout(() => {
           if (btn) {
-            btn.innerHTML = `${ICONS.figma} Enviar a Figma <span style="opacity:0.75;font-size:10px">[Enter]</span>`;
+            btn.innerHTML = `${ICONS.figma} Enviar a Figma <span class="hud-kbd" style="color:#fff;background:rgba(255,255,255,0.2);border-color:transparent;">↵</span>`;
             btn.style.background = '';
             btn.style.borderColor = '';
             btn.disabled = false;
@@ -2080,7 +2183,7 @@
 
     resetSendButton(btn) {
       if (!btn) return;
-      btn.innerHTML = `${ICONS.figma} Enviar a Figma <span style="opacity:0.75;font-size:10px">[Enter]</span>`;
+      btn.innerHTML = `${ICONS.figma} Enviar a Figma <span class="hud-kbd" style="color:#fff;background:rgba(255,255,255,0.2);border-color:transparent;">↵</span>`;
       btn.disabled = false;
     }
 
@@ -2148,38 +2251,66 @@
     async copyJson() {
       if (this.selectedElements.length === 0) return;
       try {
-        let dataToCopy;
+        let rootNode;
+        let tokens;
+        let states;
+        const wantsBoard = this.shouldBuildBoard(this.selectedElements);
         const relift = await this.suspendLift();
         try {
           await this.prepareForExtraction(this.selectedElements);
           if (this.selectedElements.length === 1) {
-            dataToCopy = await window.__codeToFigmaExtract(this.selectedElements[0]);
+            const res = await window.__codeToFigmaExtract(this.selectedElements[0]);
+            rootNode = res?.rootNode || res;
+            tokens = res?.tokens;
+            const el = this.selectedElements[0];
+            const er = el.getBoundingClientRect();
+            if (
+              !wantsBoard &&
+              this.extractHover &&
+              window.__codeToFigmaExtractState &&
+              er.width * er.height <= innerWidth * innerHeight
+            ) {
+              try {
+                const hover = await window.__codeToFigmaExtractState(el, 'hover');
+                if (hover && hover.rootNode && JSON.stringify(hover.rootNode) !== JSON.stringify(rootNode)) {
+                  states = [{ name: 'Hover', rootNode: hover.rootNode, transition: hover.transition || null }];
+                }
+              } catch (_e) {}
+            }
           } else {
-            dataToCopy = await Promise.all(this.selectedElements.map(el => window.__codeToFigmaExtract(el)));
+            const bundled = await this.buildMultiSelectionBundle(this.selectedElements);
+            rootNode = bundled.rootNode;
+            tokens = bundled.tokens;
           }
         } finally {
           this.restoreReveals();
           if (this.isElevated) relift();
         }
-        if (!this.includeImages && window.__codeToFigmaPayload?.withoutImages && dataToCopy) {
-          if (dataToCopy.rootNode) {
-            dataToCopy.rootNode = window.__codeToFigmaPayload.withoutImages(dataToCopy.rootNode);
-          } else if (Array.isArray(dataToCopy)) {
-            dataToCopy = dataToCopy.map(d =>
-              d && d.rootNode ? { ...d, rootNode: window.__codeToFigmaPayload.withoutImages(d.rootNode) } : d,
-            );
-          }
+        if (!this.includeImages && window.__codeToFigmaPayload?.withoutImages && rootNode) {
+          rootNode = window.__codeToFigmaPayload.withoutImages(rootNode);
         }
+        const dataToCopy = {
+          rootNode,
+          ...(tokens ? { tokens } : {}),
+          ...(states ? { states } : {}),
+          createAsComponent: Boolean(this.createAsComponent),
+          board: wantsBoard,
+          source: { url: location.href, title: document.title },
+        };
         const json = JSON.stringify(dataToCopy, null, 2);
-        navigator.clipboard.writeText(json).then(() => {
-          this.showToast(
-            `${ICONS.copy} JSON copiado al portapapeles`,
-            'Pégalo en el plugin de Figma directamente.',
-            3000,
-          );
-        });
+        await navigator.clipboard.writeText(json);
+        this.showToast(
+          `${ICONS.copy} JSON copiado al portapapeles`,
+          'Pégalo en el plugin de Figma directamente.',
+          3000,
+        );
       } catch (err) {
         console.error(err);
+        this.showToast(
+          `${ICONS.warning} No se pudo copiar el JSON`,
+          String(err?.message || 'El navegador bloqueó el acceso al portapapeles.'),
+          4000,
+        );
       }
     }
 
@@ -2500,6 +2631,14 @@
           e.preventDefault();
           this.elevateChild();
           return;
+        } else if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          this.elevateSibling(-1);
+          return;
+        } else if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          this.elevateSibling(1);
+          return;
         }
       }
 
@@ -2512,9 +2651,16 @@
           }
         } else if (e.key === 'ArrowDown') {
           e.preventDefault();
-          const firstChild = this.hoveredEl.querySelector('article, section, div, button, nav, form, figure');
+          const firstChild = this.firstVisibleChild(this.hoveredEl);
           if (firstChild) {
             this.hoveredEl = firstChild;
+            this.updateHighlight(this.hoveredEl);
+          }
+        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+          e.preventDefault();
+          const sib = this.siblingElement(this.hoveredEl, e.key === 'ArrowLeft' ? -1 : 1);
+          if (sib) {
+            this.hoveredEl = sib;
             this.updateHighlight(this.hoveredEl);
           }
         }
@@ -2524,7 +2670,7 @@
     onScrollOrResize() {
       if (this.isElevated && this.selectedElements.length > 0) {
         this.renderSpotlights(this.selectedElements);
-        this.renderHUD();
+        this.positionHUD();
       } else if (this.hoveredEl) {
         this.updateHighlight(this.hoveredEl);
       }
@@ -2804,6 +2950,7 @@
 
     destroy() {
       this.cancelElevation();
+      this.restoreThemeState();
       this.unbindEvents();
       if (this.host && this.host.parentNode) {
         this.host.parentNode.removeChild(this.host);

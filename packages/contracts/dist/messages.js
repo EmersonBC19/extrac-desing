@@ -168,6 +168,18 @@ exports.MESSAGE_CATALOG = {
         route: 'plugin → hub → extensión',
         description: 'Respuesta a GET_FIGMA_SELECTION',
     },
+    GET_FIGMA_ROUTES: {
+        channel: 'hub',
+        kind: 'query',
+        route: 'extensión → hub → plugin',
+        description: 'Escaneo del sitio: qué rutas de un sitio ya están dibujadas en el archivo de Figma',
+    },
+    FIGMA_ROUTES: {
+        channel: 'hub',
+        kind: 'event',
+        route: 'plugin → hub → extensión',
+        description: 'Respuesta a GET_FIGMA_ROUTES',
+    },
     // ── Plugin (UI ↔ sandbox) ───────────────────────────────────────────────────────────────────
     CLEAR_PAGE: { channel: 'plugin', kind: 'command', route: 'UI → sandbox', description: 'Vaciar la página actual' },
     DELETE_NODE: { channel: 'plugin', kind: 'command', route: 'UI → sandbox', description: 'Borrar un nodo del lienzo' },
@@ -258,6 +270,18 @@ exports.MESSAGE_CATALOG = {
         route: 'sandbox → UI',
         description: 'Respuesta a GET_SELECTION',
     },
+    GET_ROUTES: {
+        channel: 'plugin',
+        kind: 'query',
+        route: 'UI → sandbox',
+        description: 'Escaneo del sitio: las rutas de un sitio marcadas en el archivo (todas sus páginas)',
+    },
+    ROUTES_INFO: {
+        channel: 'plugin',
+        kind: 'event',
+        route: 'sandbox → UI',
+        description: 'Respuesta a GET_ROUTES',
+    },
     PAGE_INFO: {
         channel: 'plugin',
         kind: 'event',
@@ -324,6 +348,12 @@ exports.MESSAGE_CATALOG = {
         kind: 'query',
         route: 'content → service worker',
         description: 'QA de diseño: el frame seleccionado en Figma (vía hub)',
+    },
+    QUERY_FIGMA_ROUTES: {
+        channel: 'extension',
+        kind: 'query',
+        route: 'content → service worker',
+        description: 'Escaneo del sitio: las rutas de este sitio que ya están en Figma (vía hub)',
     },
     COMPARE_IN_FIGMA: {
         channel: 'extension',
@@ -392,12 +422,22 @@ const FigmaSelectionSchema = z
     .passthrough();
 /**
  * Versión del protocolo hub ↔ extensión ↔ plugin. Súbela cuando una función necesite que los tres
- * estén al día (2: breakpoints y tema, QA de diseño y selección de Figma). El hub la anuncia en
+ * estén al día (2: breakpoints y tema, QA de diseño y selección de Figma; 3: rutas del escaneo
+ * que ya están en el archivo de Figma). El hub la anuncia en
  * STATUS_RESPONSE y el plugin al registrarse: un hub arrancado antes de actualizar, o el plugin
  * abierto desde entonces, descartan los mensajes nuevos sin avisar, y así la extensión puede decir
  * qué hay que reiniciar en vez de esperar una respuesta que nunca llega.
  */
-exports.HUB_PROTOCOL = 2;
+exports.HUB_PROTOCOL = 3;
+/** Escaneo del sitio: una ruta que ya está dibujada en el archivo de Figma */
+const FigmaRouteSchema = z
+    .object({
+    url: z.string().max(4096),
+    path: z.string().max(2000),
+    label: z.string().max(200).optional(),
+    at: z.number().finite().optional(),
+})
+    .passthrough();
 const RegisterSchema = z
     .object({
     type: z.enum(['REGISTER_CLIENT', 'REGISTER']),
@@ -465,6 +505,21 @@ exports.HubInboundSchema = z.discriminatedUnion('type', [
         type: z.literal('FIGMA_SELECTION'),
         requestId: z.string().max(64).optional(),
         selection: FigmaSelectionSchema.nullable().optional(),
+        error: z.string().max(1000).optional(),
+    })
+        .passthrough(),
+    z
+        .object({
+        type: z.literal('GET_FIGMA_ROUTES'),
+        requestId: z.string().max(64).optional(),
+        origin: z.string().min(1).max(400),
+    })
+        .passthrough(),
+    z
+        .object({
+        type: z.literal('FIGMA_ROUTES'),
+        requestId: z.string().max(64).optional(),
+        routes: z.array(FigmaRouteSchema).max(5000).optional(),
         error: z.string().max(1000).optional(),
     })
         .passthrough(),

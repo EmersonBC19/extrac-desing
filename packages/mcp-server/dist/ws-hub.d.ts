@@ -9,8 +9,8 @@ export declare class FigmaWsHub {
     /** HUB_PROTOCOL que anunció cada plugin al registrarse (1 si no lo anunció: versión anterior) */
     private pluginProtocols;
     private otherClients;
-    /** QA de diseño: consultas de selección en curso (requestId → quién preguntó) */
-    private pendingSelections;
+    /** Consultas al plugin en curso (selección del QA, rutas del escaneo): requestId → quién preguntó */
+    private pendingQueries;
     private pairing;
     private pairingLimiter;
     private pluginGeminiApiKey;
@@ -23,6 +23,14 @@ export declare class FigmaWsHub {
     start(port?: number): void;
     private onConnection;
     private handlers;
+    /**
+     * Reenvía una consulta a los plugins; la primera respuesta vuelve a quien preguntó (answerQuery).
+     * Sin plugin, o con uno anterior a `minProtocol` (la ignoraría y la extensión esperaría en vano),
+     * se responde en el acto con el motivo.
+     */
+    private askPlugins;
+    /** Respuesta de un plugin a askPlugins: solo los plugins responden, y solo a lo que se preguntó */
+    private answerQuery;
     private sendStatus;
     /** La versión más alta entre los plugins conectados (0 si no hay ninguno) */
     private pluginProtocol;

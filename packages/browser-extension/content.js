@@ -112,6 +112,17 @@
   }
 
   /** Texto de la página o de la extracción → HTML seguro dentro del overlay */
+  /** URL sin #fragmento (como la guarda el plugin al marcar una página escaneada) */
+  function withoutHash(url) {
+    try {
+      const u = new URL(String(url || ''), location.href);
+      u.hash = '';
+      return u.href;
+    } catch (_e) {
+      return '';
+    }
+  }
+
   function escapeHtml(str) {
     return String(str == null ? '' : str)
       .replace(/&/g, '&amp;')
@@ -864,6 +875,8 @@
         .scan-route:hover { background: rgba(255,255,255,0.06); }
         .scan-path { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: #e2e8f0; word-break: break-all; }
         .scan-label { color: #94a3b8; font-size: 11px; }
+        .scan-done { color: #4ade80; font-size: 11px; white-space: nowrap; }
+        .scan-note { margin: 0 0 8px; color: #94a3b8; font-size: 12px; }
         .scan-excluded { margin: 0 0 10px; color: #fbbf24; font-size: 11px; }
         .scan-excluded div { color: #94a3b8; margin: 2px 0 0 12px; }
         .scan-panel {
@@ -2573,7 +2586,9 @@
       } catch (err) {
         return this.showToast(`${ICONS.warning} Escanear sitio`, String((err && err.message) || err), 4500);
       }
-      const routes = await this.askScanRoutes(found.routes, found.excluded);
+      // Las que ya están en el archivo de Figma salen desmarcadas: se escanea solo lo que falta
+      const inFigma = await this.queryRoutesInFigma();
+      const routes = await this.askScanRoutes(found.routes, found.excluded, inFigma);
       if (!routes || !routes.length) return;
       const res = await new Promise(resolve => {
         try {
@@ -2594,10 +2609,39 @@
     }
 
     /**
-     * Lista de TODAS las rutas encontradas, con casillas: el usuario decide cuáles escanear (todas
-     * marcadas al abrir; "Todas", "Ninguna" y un filtro para listas largas). Resuelve las elegidas o null.
+     * Rutas de este sitio que ya están dibujadas en el archivo de Figma abierto (el plugin las marca
+     * al dibujarlas). Nunca falla: sin respuesta, byUrl vacío y el motivo en `reason`.
      */
-    askScanRoutes(routes, excluded) {
+    queryRoutesInFigma() {
+      const empty = reason => ({ byUrl: new Map(), reason });
+      return new Promise(resolve => {
+        try {
+          if (!extensionAlive()) return resolve(empty(''));
+          chrome.runtime.sendMessage({ type: 'QUERY_FIGMA_ROUTES' }, r => {
+            if (chrome.runtime.lastError || !r || !r.success) {
+              return resolve(empty((r && r.error) || 'la extensión no respondió'));
+            }
+            const byUrl = new Map();
+            for (const x of Array.isArray(r.routes) ? r.routes : []) {
+              const key = x && typeof x.url === 'string' ? withoutHash(x.url) : '';
+              if (key) byUrl.set(key, x);
+            }
+            resolve({ byUrl, reason: Array.isArray(r.routes) ? '' : String(r.reason || '') });
+          });
+        } catch (_e) {
+          resolve(empty('la extensión no respondió'));
+        }
+      });
+    }
+
+    /**
+     * Lista de TODAS las rutas encontradas, con casillas: el usuario decide cuáles escanear (marcadas
+     * al abrir, salvo las que ya están en Figma; "Todas", "Ninguna", "Las que faltan" y un filtro para
+     * listas largas). Resuelve las elegidas o null.
+     */
+    askScanRoutes(routes, excluded, inFigma = { byUrl: new Map(), reason: '' }) {
+      const done = routes.map(r => inFigma.byUrl.has(withoutHash(r.url)));
+      const doneCount = done.filter(Boolean).length;
       // Segundos aproximados por página (carga, espera de estabilidad, recorrido y envío)
       const SECONDS_PER_PAGE = 12;
       return new Promise(resolve => {
@@ -2607,8 +2651,8 @@
           .map(
             (r, i) => `
               <label class="scan-route">
-                <input type="checkbox" data-idx="${i}" checked />
-                <span class="scan-path">${escapeHtml(r.path)}</span>
+                <input type="checkbox" data-idx="${i}" ${done[i] ? 'data-done="1"' : 'checked'} />
+                <span class="scan-path">${escapeHtml(r.path)}</span>${done[i] ? '<span class="scan-done">ya en Figma</span>' : ''}
                 <span class="scan-label">${escapeHtml(r.label || '')}${r.grouped > 1 ? ` · ${r.grouped} similares, se escanea 1` : ''}</span>
               </label>`,
           )
@@ -2619,6 +2663,12 @@
               .map(e => `<div><span class="scan-path">${escapeHtml(e.path)}</span> — ${escapeHtml(e.reason)}</div>`)
               .join('')}</details>`
           : '';
+        const note =
+          doneCount > 0
+            ? `<p class="scan-note" id="__scan_note">${doneCount === routes.length ? 'Todas' : doneCount} ya ${doneCount === 1 ? 'está' : 'están'} en este archivo de Figma y ${doneCount === 1 ? 'sale desmarcada' : 'salen desmarcadas'}. El tablero nuevo incluye solo las que escanees ahora.</p>`
+            : inFigma.reason
+              ? `<p class="scan-note" id="__scan_note">No se pudo saber qué páginas ya están en Figma (${escapeHtml(inFigma.reason)}): se proponen todas.</p>`
+              : '';
         backdrop.innerHTML = `
           <div class="heavy-dialog scan-dialog" role="dialog" aria-modal="true" aria-labelledby="__scan_title">
             <h3 id="__scan_title">${ICONS.layers} Escanear el sitio</h3>
@@ -2629,9 +2679,11 @@
                 <input type="search" id="__scan_filter" placeholder="Filtrar rutas (ej. /blog)" aria-label="Filtrar rutas" />
                 <button class="btn-secondary" data-pick="all">Todas</button>
                 <button class="btn-secondary" data-pick="none">Ninguna</button>
+                ${doneCount > 0 && doneCount < routes.length ? '<button class="btn-secondary" data-pick="missing">Las que faltan</button>' : ''}
               </div>`
                 : ''
             }
+            ${note}
             <div class="scan-list">${rows || '<p>No se encontraron otras páginas en este sitio.</p>'}</div>
             ${ex}
             <div class="heavy-stats"><span id="__scan_count"></span></div>
@@ -2671,8 +2723,10 @@
         backdrop.addEventListener('click', e => {
           const pick = e.target.closest ? e.target.closest('[data-pick]') : null;
           if (pick) {
-            const on = pick.getAttribute('data-pick') === 'all';
-            visibleBoxes().forEach(b => (b.checked = on));
+            const kind = pick.getAttribute('data-pick');
+            visibleBoxes().forEach(
+              b => (b.checked = kind === 'all' || (kind === 'missing' && !b.hasAttribute('data-done'))),
+            );
             refresh();
             return;
           }

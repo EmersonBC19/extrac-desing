@@ -89,6 +89,15 @@ Antes de enviar, marca en el panel:
 
 Si la página no tiene modo oscuro, se avisa y se envía solo el tema actual.
 
+### Llevar el sitio completo a Figma
+
+Pulsa **Escanear sitio** (tecla `S`) en el panel. La extensión busca las páginas del sitio (los enlaces de la página y su `sitemap.xml`) y te deja elegir cuáles escanear. Una ventana las recorre con tu sesión, una por una.
+
+* **Mientras escanea**, cada página aparece en Figma como un marco gris con su ruta. Al terminar se arma el tablero con todas: la página completa, una sección por ruta, los componentes que se repiten entre páginas y los estilos. Cada página se dibuja una sola vez, en el tablero. Con **Tablero: nunca** (Ajustes del plugin), cada página se dibuja en el mapa del sitio y ese es el resultado.
+* **Las páginas que ya están en tu archivo de Figma salen desmarcadas** y con la etiqueta "ya en Figma", así se escanea solo lo que falta. **Las que faltan** las vuelve a elegir de un clic y **Todas** las incluye otra vez. Lo que cuenta es lo que hay en el lienzo: si borras una página en Figma, vuelve a salir como pendiente.
+* Si el escaneo se corta (cierras la ventana, Figma se cierra…), con **Tablero: nunca** las páginas ya dibujadas quedan marcadas y el siguiente escaneo sigue por las demás. Con tablero, las páginas cuentan cuando el tablero está armado.
+* El tablero nuevo incluye solo las páginas que escaneas en esa vuelta: los componentes repetidos se buscan entre ellas, no entre las de un tablero anterior.
+
 ### Revisar si la web respeta el diseño
 
 Sirve para comprobar si lo que se programó coincide con lo que se diseñó, sin medir a mano.
@@ -135,7 +144,7 @@ El diálogo indica qué porcentaje de los elementos quedó exactamente en su sit
 * **Solución**: Comprueba que `code-to-figma-hub.exe` esté abierto. Si lo estás usando en modo desarrollo, puedes iniciarlo con `npm run start:hub`.
 
 ### 4. "Es de una versión anterior" tras actualizar
-* **Causa**: el hub o el plugin siguen abiertos desde antes de la actualización y no conocen las funciones nuevas (breakpoints, claro/oscuro, Comparar con Figma).
+* **Causa**: el hub o el plugin siguen abiertos desde antes de la actualización y no conocen las funciones nuevas (breakpoints, claro/oscuro, Comparar con Figma, las páginas que ya están en Figma al escanear el sitio).
 * **Solución**: el aviso dice cuál de los dos es.
   * **Hub**: ciérralo y vuelve a abrirlo. Si usas el ejecutable, regenéralo antes con `npm run build:hub-exe`.
   * **Plugin**: ciérralo en Figma y vuelve a ejecutarlo.

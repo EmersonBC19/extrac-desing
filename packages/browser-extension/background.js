@@ -300,7 +300,7 @@ async function captureRegions(windowId, rects, viewportWidth) {
 // ── Envío al hub (inicio) ─────────────────────────────────────────────────────────────────
 const HUB_URL = 'ws://localhost:8080';
 // = HUB_PROTOCOL de packages/contracts (lo comprueba tests/integration/messages.test.ts)
-const HUB_PROTOCOL = 2;
+const HUB_PROTOCOL = 3;
 const OUTDATED_HUB =
   'El hub de Code to Figma es de una versión anterior: ciérralo y vuelve a abrirlo (npm run start:hub, o recompila el ejecutable con npm run build:hub-exe)';
 const OUTDATED_PLUGIN = 'El plugin de Figma es de una versión anterior: ciérralo y vuelve a abrirlo en Figma';
@@ -583,6 +583,9 @@ function createSiteScanner(deps) {
             source: { url: page.url, title: page.title },
             scan: {
               id: scan.id,
+              // La URL pedida (no la final, que puede ser una redirección): con ella el plugin marca
+              // la página y la próxima vez se sabe que esta ruta ya está en Figma
+              url: route.url,
               index: i,
               total: routes.length,
               path: route.path,
@@ -722,6 +725,32 @@ async function queryFigmaSelection() {
   );
   if (reply.error) throw new Error(reply.error);
   return reply.selection || null;
+}
+
+/**
+ * Escaneo del sitio: las rutas de `origin` que ya están en el archivo de Figma abierto. Nunca falla:
+ * sin hub, sin plugin o con versiones anteriores devuelve routes null y el motivo, y el escaneo sigue
+ * como siempre (todas las rutas propuestas).
+ */
+async function queryFigmaRoutes(origin) {
+  if (!origin) return { routes: null, reason: 'sitio desconocido' };
+  const st = await checkHubStatus();
+  if (!st.hubRunning) return { routes: null, reason: 'el hub no está en marcha' };
+  if (!st.figmaConnected) return { routes: null, reason: 'el plugin de Figma no está abierto' };
+  if ((st.protocol || 1) < HUB_PROTOCOL) return { routes: null, reason: OUTDATED_HUB };
+  if (st.pluginProtocol && st.pluginProtocol < HUB_PROTOCOL) return { routes: null, reason: OUTDATED_PLUGIN };
+  const requestId = Math.random().toString(36).slice(2, 12);
+  try {
+    const reply = await hubRequest(
+      [{ type: 'GET_FIGMA_ROUTES', requestId, origin }],
+      m => m.type === 'FIGMA_ROUTES' && m.requestId === requestId,
+      10000,
+    );
+    if (reply.error) return { routes: null, reason: reply.error };
+    return { routes: Array.isArray(reply.routes) ? reply.routes : [] };
+  } catch (err) {
+    return { routes: null, reason: String((err && err.message) || err) };
+  }
 }
 
 async function compareInFigma(payload) {
@@ -868,6 +897,9 @@ const MESSAGE_HANDLERS = {
   SCAN_START: (message, sender) => siteScanner.start(message.routes, sender && sender.tab),
 
   SCAN_CANCEL: () => Promise.resolve(siteScanner.cancel()),
+
+  // Qué rutas del sitio de la pestaña ya están en Figma (el sitio lo da Chrome, no el mensaje)
+  QUERY_FIGMA_ROUTES: (_message, sender) => queryFigmaRoutes(sender && sender.tab ? originOf(sender.tab.url) : ''),
 
   // Avisos del inspector al log del hub, con el sitio de la pestaña (lo da Chrome, no el mensaje)
   REPORT_TO_HUB: (message, sender) => {

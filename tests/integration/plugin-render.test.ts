@@ -778,3 +778,41 @@ describe('dynamic-page y manifiesto (fase 7)', () => {
     expect(secs).toEqual(expect.arrayContaining(['01 · Página completa', '02 · Secciones', '04 · Estilos']));
   });
 });
+
+describe('Figma sigue respondiendo mientras se dibuja', () => {
+  // Página grande y plana: miles de textos
+  const bigPage = (n: number) => ({
+    type: 'FRAME',
+    name: 'Body',
+    layout: { mode: 'VERTICAL', width: 1280, height: 'HUG', itemSpacing: 4 },
+    styles: { fills: [] },
+    children: Array.from({ length: n }, (_, i) => ({
+      type: 'TEXT',
+      name: 'Texto',
+      layout: { width: 'HUG', height: 'HUG' },
+      styles: { fills: [{ r: 0.1, g: 0.1, b: 0.1, a: 1 }] },
+      textData: { characters: 'Línea ' + i, fontSize: 14, fontFamily: 'Inter', fontWeight: 400 },
+    })),
+  });
+
+  it('el render le devuelve el control al editor: otro trabajo corre antes de que termine', async () => {
+    const figma = loadPlugin({}, { ...console, log() {}, warn() {}, error() {} });
+    let ticks = 0;
+    let ticksAtEnd = -1;
+    const timer = setInterval(() => ticks++, 0);
+    const post = figma.ui.postMessage;
+    figma.ui.postMessage = (m: any) => {
+      if (m.type === 'RENDER_SUCCESS') ticksAtEnd = ticks;
+      post(m);
+    };
+    const t0 = Date.now();
+    await figma.ui.onmessage({ type: 'RENDER_NODES', payload: { rootNode: bigPage(3000) } });
+    clearInterval(timer);
+    expect(errorsOf(figma)).toEqual([]);
+    expect(Date.now() - t0).toBeGreaterThan(50); // de verdad largo: hubo ocasión de ceder
+    expect(ticksAtEnd).toBeGreaterThan(0);
+    // el avance cuenta capas (antes solo contaba imágenes y no avanzaba)
+    const progress = figma.logs.filter((m: any) => m.type === 'RENDER_PROGRESS');
+    expect(progress.at(-1).rendered).toBeGreaterThanOrEqual(3000);
+  });
+});

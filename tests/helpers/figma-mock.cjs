@@ -89,6 +89,13 @@ function createFigma(opts = {}) {
       this.parent = null;
       this.removed = true;
     }
+    // Datos del plugin: viajan con clone() (como en Figma) y no pasan a una instancia nueva
+    setPluginData(key, value) {
+      this._pd = { ...(this._pd || {}), [key]: String(value) };
+    }
+    getPluginData(key) {
+      return (this._pd && this._pd[key]) || '';
+    }
     findAll(pred) {
       const out = [];
       (function w(n) {
@@ -190,6 +197,7 @@ function createFigma(opts = {}) {
       const c = this.clone();
       c.type = 'INSTANCE';
       c._master = this;
+      delete c._pd;
       return c;
     }
     set layoutSizingHorizontal(v) {

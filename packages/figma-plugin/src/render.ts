@@ -9,6 +9,7 @@ import { buildBoardInstance } from './board/board';
 import { getBoardCtx } from './board/context';
 import { applyTextSegments, applyNoWrapSizing } from './text-sizing';
 import { errText, log } from './log';
+import { markRoute } from './route-marks';
 
 let _renderedNodeCount = 0;
 let _totalBatchNodes = 0;
@@ -26,9 +27,26 @@ export function setColorBinder(fn: ColorBinder | null): void {
 export function setRenderBatchContext(total: number): void {
   _renderedNodeCount = 0;
   _totalBatchNodes = total;
+  _lastYield = Date.now();
 }
 
-export async function yieldToFigma(_force = false): Promise<void> {
+/**
+ * Cada cuánto se le devuelve el control a Figma mientras se dibuja. El sandbox corre en el mismo
+ * hilo que el editor: sin pausas, una página grande dejaba Figma sin responder hasta terminar (y la
+ * UI del plugin, el hub o una consulta de la extensión esperaban con él). 16 ms ≈ un cuadro.
+ */
+const YIELD_BUDGET_MS = 16;
+let _lastYield = 0;
+
+/** Pausa real (vuelta al bucle de eventos) si pasó el presupuesto de tiempo, o siempre con `force` */
+export async function yieldToFigma(force = false): Promise<void> {
+  if (!force && Date.now() - _lastYield < YIELD_BUDGET_MS) return;
+  await new Promise(resolve => setTimeout(resolve, 0));
+  _lastYield = Date.now();
+}
+
+/** Una capa más dibujada: avance a la UI cada 10 capas */
+function countRenderedNode(): void {
   _renderedNodeCount++;
   if (_totalBatchNodes > 0 && typeof figma !== 'undefined' && figma.ui && _renderedNodeCount % 10 === 0) {
     try {
@@ -52,6 +70,8 @@ export function countNodes(node: UINode): number {
 
 export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null> {
   let createdNode: SceneNode | null = null;
+  countRenderedNode();
+  await yieldToFigma();
 
   // Tablero de design system: un bloque repetido se dibuja como instancia de su componente
   const cg = (nodeData as any).__cg;
@@ -770,6 +790,8 @@ export async function buildFigmaNode(nodeData: UINode): Promise<SceneNode | null
 
     if (createdNode) {
       createdNode.name = nodeData.name || createdNode.name;
+      // Página de un escaneo del sitio: marca con su ruta (route-marks.ts)
+      if ((nodeData as any).__route) markRoute(createdNode, (nodeData as any).__route);
       if (_colorBinder) {
         try {
           _colorBinder(createdNode, nodeData);

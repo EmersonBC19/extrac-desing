@@ -257,7 +257,10 @@ export async function renderNodesCommand(
       });
     }
     if (board) {
-      figma.currentPage.selection = [board.main];
+      // En su página, no en la actual: mientras se dibuja (cede el control) el usuario puede cambiar de página
+      try {
+        board.page.selection = [board.main];
+      } catch (_e) {}
       post({
         type: 'LOG',
         level: 'success',

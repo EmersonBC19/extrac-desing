@@ -141,9 +141,10 @@ describe('escaneo del sitio: recorrido', () => {
     expect(t.windows.removed).toHaveLength(1); // la ventana de escaneo se cierra al terminar
     expect(t.visited).toEqual([`${ORIGIN}/inicio`, `${ORIGIN}/precios`, `${ORIGIN}/equipo`]);
     expect(t.renders.map(r => r.scan)).toEqual([
-      expect.objectContaining({ index: 0, total: 3, path: '/inicio' }),
-      expect.objectContaining({ index: 1, total: 3, path: '/precios' }),
-      expect.objectContaining({ index: 2, total: 3, path: '/equipo' }),
+      // con la URL pedida: el plugin marca la página con ella (rutas que ya están en Figma)
+      expect.objectContaining({ index: 0, total: 3, path: '/inicio', url: `${ORIGIN}/inicio` }),
+      expect.objectContaining({ index: 1, total: 3, path: '/precios', url: `${ORIGIN}/precios` }),
+      expect.objectContaining({ index: 2, total: 3, path: '/equipo', url: `${ORIGIN}/equipo` }),
     ]);
     expect(new Set(t.renders.map(r => r.scan.id)).size).toBe(1);
     expect(t.hubMessages).toEqual([

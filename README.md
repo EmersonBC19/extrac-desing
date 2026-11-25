@@ -106,6 +106,18 @@ Si prefieres que cada pestaña sea una página interna de tu archivo en lugar de
 npm run crawl -- --url http://localhost:4200 --routes /dashboard,/clientes --pages
 ```
 
+#### Opción D: Escanear el sitio desde la extensión (con tu sesión)
+**Escanear sitio** (tecla `S`) en el HUD lista las páginas del sitio y las recorre en una ventana con tu sesión.
+- Con tablero, cada página llega a Figma como un **marcador** (marco gris con su ruta). Se dibuja **una sola vez**,
+  en el tablero final. Antes se dibujaba en el mapa y otra vez en el tablero, y la primera copia se borraba.
+- Cada página dibujada lleva una marca invisible con su URL (`pluginData` `c2f-route`). Antes de escanear, la
+  extensión le pregunta al plugin a través del hub (`GET_FIGMA_ROUTES`) cuáles están en el archivo. Esas salen
+  desmarcadas y con la etiqueta "ya en Figma". Borrar la página en Figma la vuelve pendiente.
+- Mientras dibuja, el plugin le devuelve el control a Figma cada ~16 ms para que el editor siga respondiendo.
+- Si el tablero no se puede armar (por ejemplo, demasiadas capas juntas), se dibuja el mapa del sitio en lugar de
+  los marcadores.
+- Límite: el tablero de un escaneo incluye solo las páginas de esa vuelta.
+
 ---
 
 ### 5. 📱 Breakpoints y claro/oscuro

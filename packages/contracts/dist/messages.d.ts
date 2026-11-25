@@ -155,6 +155,18 @@ export declare const MESSAGE_CATALOG: {
         readonly route: "plugin → hub → extensión";
         readonly description: "Respuesta a GET_FIGMA_SELECTION";
     };
+    readonly GET_FIGMA_ROUTES: {
+        readonly channel: "hub";
+        readonly kind: "query";
+        readonly route: "extensión → hub → plugin";
+        readonly description: "Escaneo del sitio: qué rutas de un sitio ya están dibujadas en el archivo de Figma";
+    };
+    readonly FIGMA_ROUTES: {
+        readonly channel: "hub";
+        readonly kind: "event";
+        readonly route: "plugin → hub → extensión";
+        readonly description: "Respuesta a GET_FIGMA_ROUTES";
+    };
     readonly CLEAR_PAGE: {
         readonly channel: "plugin";
         readonly kind: "command";
@@ -269,6 +281,18 @@ export declare const MESSAGE_CATALOG: {
         readonly route: "sandbox → UI";
         readonly description: "Respuesta a GET_SELECTION";
     };
+    readonly GET_ROUTES: {
+        readonly channel: "plugin";
+        readonly kind: "query";
+        readonly route: "UI → sandbox";
+        readonly description: "Escaneo del sitio: las rutas de un sitio marcadas en el archivo (todas sus páginas)";
+    };
+    readonly ROUTES_INFO: {
+        readonly channel: "plugin";
+        readonly kind: "event";
+        readonly route: "sandbox → UI";
+        readonly description: "Respuesta a GET_ROUTES";
+    };
     readonly PAGE_INFO: {
         readonly channel: "plugin";
         readonly kind: "event";
@@ -335,6 +359,12 @@ export declare const MESSAGE_CATALOG: {
         readonly route: "content → service worker";
         readonly description: "QA de diseño: el frame seleccionado en Figma (vía hub)";
     };
+    readonly QUERY_FIGMA_ROUTES: {
+        readonly channel: "extension";
+        readonly kind: "query";
+        readonly route: "content → service worker";
+        readonly description: "Escaneo del sitio: las rutas de este sitio que ya están en Figma (vía hub)";
+    };
     readonly COMPARE_IN_FIGMA: {
         readonly channel: "extension";
         readonly kind: "command";
@@ -389,12 +419,21 @@ export type MessageType = keyof typeof MESSAGE_CATALOG;
 export declare function messageTypesOf(channel: MessageChannel, route?: RegExp): MessageType[];
 /**
  * Versión del protocolo hub ↔ extensión ↔ plugin. Súbela cuando una función necesite que los tres
- * estén al día (2: breakpoints y tema, QA de diseño y selección de Figma). El hub la anuncia en
+ * estén al día (2: breakpoints y tema, QA de diseño y selección de Figma; 3: rutas del escaneo
+ * que ya están en el archivo de Figma). El hub la anuncia en
  * STATUS_RESPONSE y el plugin al registrarse: un hub arrancado antes de actualizar, o el plugin
  * abierto desde entonces, descartan los mensajes nuevos sin avisar, y así la extensión puede decir
  * qué hay que reiniciar en vez de esperar una respuesta que nunca llega.
  */
-export declare const HUB_PROTOCOL = 2;
+export declare const HUB_PROTOCOL = 3;
+/** Escaneo del sitio: una ruta que ya está dibujada en el archivo de Figma */
+declare const FigmaRouteSchema: z.ZodObject<{
+    url: z.ZodString;
+    path: z.ZodString;
+    label: z.ZodOptional<z.ZodString>;
+    at: z.ZodOptional<z.ZodNumber>;
+}, z.core.$loose>;
+export type FigmaRoute = z.infer<typeof FigmaRouteSchema>;
 /** Tiempos de dibujo en Figma por etapa (fase 5.1: medir en lugar de suponer) */
 declare const RenderTimingsSchema: z.ZodObject<{
     fontsMs: z.ZodOptional<z.ZodNumber>;
@@ -492,6 +531,20 @@ export declare const HubInboundSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         height: z.ZodNumber;
     }, z.core.$loose>>>;
     error: z.ZodOptional<z.ZodString>;
+}, z.core.$loose>, z.ZodObject<{
+    type: z.ZodLiteral<"GET_FIGMA_ROUTES">;
+    requestId: z.ZodOptional<z.ZodString>;
+    origin: z.ZodString;
+}, z.core.$loose>, z.ZodObject<{
+    type: z.ZodLiteral<"FIGMA_ROUTES">;
+    requestId: z.ZodOptional<z.ZodString>;
+    routes: z.ZodOptional<z.ZodArray<z.ZodObject<{
+        url: z.ZodString;
+        path: z.ZodString;
+        label: z.ZodOptional<z.ZodString>;
+        at: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$loose>>>;
+    error: z.ZodOptional<z.ZodString>;
 }, z.core.$loose>], "type">;
 export type HubInboundMessage = z.infer<typeof HubInboundSchema>;
 export type HubInboundType = HubInboundMessage['type'];
@@ -565,6 +618,15 @@ export type HubOutboundMessage = {
     requestId?: string;
     selection?: FigmaSelection | null;
     error?: string;
+} | {
+    type: 'GET_FIGMA_ROUTES';
+    requestId: string;
+    origin: string;
+} | {
+    type: 'FIGMA_ROUTES';
+    requestId?: string;
+    routes?: FigmaRoute[];
+    error?: string;
 };
 /** Frame de Figma seleccionado (QA de diseño) */
 export interface FigmaSelection {
@@ -598,6 +660,10 @@ export type PluginUiMessage = {
 } | {
     type: 'GET_SELECTION';
     requestId?: string;
+} | {
+    type: 'GET_ROUTES';
+    requestId?: string;
+    origin: string;
 } | {
     type: 'GET_PAIRING_CODE';
 } | {
@@ -678,6 +744,11 @@ export type PluginSandboxMessage = {
     type: 'SELECTION_INFO';
     requestId?: string;
     selection: FigmaSelection | null;
+} | {
+    type: 'ROUTES_INFO';
+    requestId?: string;
+    routes: FigmaRoute[];
+    error?: string;
 };
 export {};
 //# sourceMappingURL=messages.d.ts.map

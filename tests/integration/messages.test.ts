@@ -55,6 +55,7 @@ describe('catálogo de mensajes', () => {
         RENDER_CHUNK: { transferId: 't', index: 0, total: 1, data: '{}' },
         SCAN_FINISH: { scanId: 's', count: 1 },
         CLIENT_LOG: { source: 'plugin', level: 'warn', message: 'aviso' },
+        GET_FIGMA_ROUTES: { origin: 'https://ejemplo.com' },
       };
       const extra = samples[type] || {};
       expect(HubInboundSchema.safeParse({ type, ...extra }).success, type).toBe(true);

@@ -6468,6 +6468,12 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     width: number2().finite().nonnegative(),
     height: number2().finite().nonnegative()
   }).passthrough();
+  var FigmaRouteSchema = object({
+    url: string2().max(4096),
+    path: string2().max(2e3),
+    label: string2().max(200).optional(),
+    at: number2().finite().optional()
+  }).passthrough();
   var RegisterSchema = object({
     type: _enum(["REGISTER_CLIENT", "REGISTER"]),
     clientType: string2().max(64).optional(),
@@ -6524,6 +6530,17 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       type: literal("FIGMA_SELECTION"),
       requestId: string2().max(64).optional(),
       selection: FigmaSelectionSchema.nullable().optional(),
+      error: string2().max(1e3).optional()
+    }).passthrough(),
+    object({
+      type: literal("GET_FIGMA_ROUTES"),
+      requestId: string2().max(64).optional(),
+      origin: string2().min(1).max(400)
+    }).passthrough(),
+    object({
+      type: literal("FIGMA_ROUTES"),
+      requestId: string2().max(64).optional(),
+      routes: array(FigmaRouteSchema).max(5e3).optional(),
       error: string2().max(1e3).optional()
     }).passthrough()
   ]);
@@ -8082,6 +8099,65 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
     }
   }
 
+  // packages/figma-plugin/src/route-marks.ts
+  var ROUTE_KEY = "c2f-route";
+  function routeKey(url) {
+    try {
+      const u = new URL(url);
+      u.hash = "";
+      return u.href;
+    } catch (_e) {
+      return "";
+    }
+  }
+  function markRoute(node2, mark) {
+    if (!mark || typeof node2.setPluginData !== "function") return;
+    try {
+      node2.setPluginData(ROUTE_KEY, JSON.stringify(mark));
+    } catch (_e) {
+    }
+  }
+  function readMark(node2) {
+    try {
+      const raw = node2.getPluginData(ROUTE_KEY);
+      if (!raw) return null;
+      const m = JSON.parse(raw);
+      return m && typeof m.url === "string" && typeof m.path === "string" ? m : null;
+    } catch (_e) {
+      return null;
+    }
+  }
+  function markedIn(page) {
+    const p = page;
+    if (typeof p.findAllWithCriteria === "function") {
+      try {
+        return p.findAllWithCriteria({ pluginData: { keys: [ROUTE_KEY] } });
+      } catch (_e) {
+      }
+    }
+    return p.findAll((n) => !!readMark(n));
+  }
+  async function routesInFile(origin) {
+    if (typeof figma.loadAllPagesAsync === "function") await figma.loadAllPagesAsync();
+    const byUrl = /* @__PURE__ */ new Map();
+    for (const page of figma.root.children) {
+      for (const node2 of markedIn(page)) {
+        const m = readMark(node2);
+        if (!m) continue;
+        const key = routeKey(m.url);
+        let o = "";
+        try {
+          o = new URL(key).origin;
+        } catch (_e) {
+        }
+        if (!key || o !== origin) continue;
+        const prev = byUrl.get(key);
+        if (!prev || (m.at || 0) > (prev.at || 0)) byUrl.set(key, { ...m, url: key });
+      }
+    }
+    return [...byUrl.values()];
+  }
+
   // packages/figma-plugin/src/render.ts
   var _renderedNodeCount = 0;
   var _totalBatchNodes = 0;
@@ -8092,8 +8168,16 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
   function setRenderBatchContext(total) {
     _renderedNodeCount = 0;
     _totalBatchNodes = total;
+    _lastYield = Date.now();
   }
-  async function yieldToFigma(_force = false) {
+  var YIELD_BUDGET_MS = 16;
+  var _lastYield = 0;
+  async function yieldToFigma(force = false) {
+    if (!force && Date.now() - _lastYield < YIELD_BUDGET_MS) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    _lastYield = Date.now();
+  }
+  function countRenderedNode() {
     _renderedNodeCount++;
     if (_totalBatchNodes > 0 && typeof figma !== "undefined" && figma.ui && _renderedNodeCount % 10 === 0) {
       try {
@@ -8116,6 +8200,8 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
   }
   async function buildFigmaNode(nodeData) {
     let createdNode = null;
+    countRenderedNode();
+    await yieldToFigma();
     const cg = nodeData.__cg;
     const boardCtx = getBoardCtx();
     if (boardCtx && cg && boardCtx.masters.has(cg)) {
@@ -8702,6 +8788,7 @@ ${g.items.length} usos`, 11, 500, { r: 0.3, g: 0.3, b: 0.35 });
       }
       if (createdNode) {
         createdNode.name = nodeData.name || createdNode.name;
+        if (nodeData.__route) markRoute(createdNode, nodeData.__route);
         if (_colorBinder) {
           try {
             _colorBinder(createdNode, nodeData);
@@ -10109,7 +10196,10 @@ ${g.message}`,
         });
       }
       if (board) {
-        figma.currentPage.selection = [board.main];
+        try {
+          board.page.selection = [board.main];
+        } catch (_e) {
+        }
         post2({
           type: "LOG",
           level: "success",
@@ -10292,28 +10382,123 @@ ${g.message}`,
     const others = figma.currentPage.children;
     const originX = others.length ? Math.round(Math.max(...others.map((c) => c.x + c.width)) + 400) : 0;
     const y = (others.length ? Math.round(Math.min(...others.map((c) => c.y))) : 0) + TITLE_SPACE;
-    return { originX, y, nextX: originX, nodeIds: [], pages: [], tokens: null };
+    return { originX, y, nextX: originX, nodeIds: [], pages: [], count: 0, tokens: null };
   }
   var widthOf = (n) => typeof n?.layout?.measuredWidth === "number" ? n.layout.measuredWidth : typeof n?.layout?.width === "number" ? n.layout.width : 1440;
   var heightOf = (n) => typeof n?.layout?.measuredHeight === "number" ? n.layout.measuredHeight : typeof n?.layout?.height === "number" ? n.layout.height : 900;
+  async function routeTitle(text, x, y) {
+    try {
+      const font = await loadFontSafely("Inter", 700);
+      const t = figma.createText();
+      t.fontName = font;
+      t.characters = text;
+      t.fontSize = 18;
+      t.fills = [{ type: "SOLID", color: { r: 0.2, g: 0.3, b: 0.5 }, opacity: 0.9 }];
+      t.x = x;
+      t.y = y - 65;
+      figma.currentPage.appendChild(t);
+      return t;
+    } catch (_e) {
+      return null;
+    }
+  }
+  async function drawPlaceholder(title, x, y, w, h) {
+    const frame = figma.createFrame();
+    frame.name = title;
+    frame.resize(Math.max(1, Math.round(w)), Math.max(1, Math.round(h)));
+    frame.fills = [{ type: "SOLID", color: { r: 0.96, g: 0.96, b: 0.97 } }];
+    frame.strokes = [{ type: "SOLID", color: { r: 0.8, g: 0.8, b: 0.84 } }];
+    frame.strokeWeight = 2;
+    frame.x = x;
+    frame.y = y;
+    figma.currentPage.appendChild(frame);
+    const ids = [frame.id];
+    try {
+      const font = await loadFontSafely("Inter", 400);
+      const note = figma.createText();
+      note.fontName = font;
+      note.characters = "Se dibuja en el tablero al terminar el escaneo";
+      note.fontSize = 24;
+      note.fills = [{ type: "SOLID", color: { r: 0.45, g: 0.45, b: 0.5 } }];
+      frame.appendChild(note);
+      note.x = 40;
+      note.y = 40;
+    } catch (_e) {
+    }
+    const t = await routeTitle(title, x, y);
+    if (t) ids.push(t.id);
+    return ids;
+  }
+  async function removeNodes(ids) {
+    for (const id of ids) {
+      try {
+        const n = typeof figma.getNodeByIdAsync === "function" ? await figma.getNodeByIdAsync(id) : figma.getNodeById(id);
+        if (n && !n.removed) n.remove();
+      } catch (_e) {
+      }
+    }
+  }
   async function renderScanPage(payload, post2, log2) {
     const scan = payload.scan;
     const state = scans.get(scan.id) || startState();
     scans.set(scan.id, state);
-    state.pages.push({
-      index: scan.index,
-      path: scan.path,
-      label: scan.label || "",
-      rootNode: JSON.parse(JSON.stringify(payload.rootNode))
-    });
+    if (state.board === void 0 && typeof scan.board === "boolean") state.board = scan.board;
     if (payload.tokens) state.tokens = payload.tokens;
-    const title = `${scan.index + 1} · ${scan.path}` + (scan.label ? ` — ${scan.label}` : "");
+    const url = routeKey(String(scan.url || payload.source?.url || ""));
+    if (url && payload.rootNode) {
+      const mark = { url, path: String(scan.path || ""), scanId: scan.id, at: Date.now() };
+      if (scan.label) mark.label = String(scan.label).slice(0, 200);
+      payload.rootNode.__route = mark;
+    }
+    const title = (`${scan.index + 1} · ${scan.path}` + (scan.label ? ` — ${scan.label}` : "")).slice(0, 300);
+    const reply = (m) => post2({ ...m, scan: { id: scan.id, index: scan.index, total: scan.total, path: scan.path } });
+    if (state.board) {
+      const invalid = payload.rootNode ? guardRenderPayload(payload) : "sin rootNode";
+      if (invalid) throw new Error(`Payload inválido: ${invalid}`);
+      state.count++;
+      const w = widthOf(payload.rootNode);
+      const h = heightOf(payload.rootNode);
+      const x = state.nextX;
+      const ids = await drawPlaceholder(title, x, state.y, w, h);
+      state.nodeIds.push(...ids);
+      state.pages.push({
+        index: scan.index,
+        path: scan.path,
+        label: scan.label || "",
+        title,
+        rootNode: payload.rootNode,
+        layout: payload.rootNode.layout,
+        placeholder: { x, y: state.y, ids }
+      });
+      state.nextX += Math.round(w) + GAP;
+      reply({
+        type: "RENDER_SUCCESS",
+        nodeId: ids[0],
+        nodeIds: ids,
+        name: title,
+        nodeType: "SCAN_PLACEHOLDER",
+        width: Math.round(w),
+        height: Math.round(h)
+      });
+      return;
+    }
+    if (state.board === void 0) {
+      state.pages.push({
+        index: scan.index,
+        path: scan.path,
+        label: scan.label || "",
+        title,
+        rootNode: JSON.parse(JSON.stringify(payload.rootNode)),
+        layout: payload.rootNode.layout
+      });
+    }
+    state.count++;
     const pagePayload = {
       ...payload,
       board: false,
       createAsComponent: false,
       targetCanvasPosition: { x: state.nextX, y: state.y },
-      sectionTitle: title.slice(0, 300)
+      sectionTitle: title
     };
     const wrapped = (m) => {
       if (m.type === "RENDER_SUCCESS") {
@@ -10321,17 +10506,49 @@ ${g.message}`,
         state.nodeIds.push(...ids);
         const w = Number(m.width) || widthOf(payload.rootNode);
         state.nextX += Math.round(w) + GAP;
-        post2({ ...m, scan: { id: scan.id, index: scan.index, total: scan.total, path: scan.path } });
+        reply(m);
         return;
       }
       post2(m);
     };
     await renderNodesCommand(pagePayload, wrapped, log2);
   }
+  async function drawMapInstead(pages, post2, log2) {
+    const ids = [];
+    for (const p of pages) {
+      if (!p.placeholder) continue;
+      await removeNodes(p.placeholder.ids);
+      const node2 = p.rootNode;
+      node2.layout = p.layout;
+      delete node2.__cg;
+      try {
+        await renderNodesCommand(
+          {
+            rootNode: node2,
+            board: false,
+            createAsComponent: false,
+            targetCanvasPosition: { x: p.placeholder.x, y: p.placeholder.y },
+            sectionTitle: p.title
+          },
+          (m) => {
+            if (m.type === "RENDER_SUCCESS") {
+              ids.push(...Array.isArray(m.nodeIds) ? m.nodeIds : [m.nodeId]);
+              return;
+            }
+            post2(m);
+          },
+          log2
+        );
+      } catch (err) {
+        post2({ type: "LOG", level: "error", message: `No se pudo dibujar ${p.path}: ${err?.message || err}` });
+      }
+    }
+    return ids;
+  }
   async function finishScan(msg, post2, log2) {
     const state = scans.get(msg.scanId);
     scans.delete(msg.scanId);
-    if (!state || !state.pages.length) {
+    if (!state || !state.count) {
       post2({ type: "LOG", level: "warn", message: "El escaneo terminó sin páginas recibidas." });
       return;
     }
@@ -10341,16 +10558,20 @@ ${g.message}`,
     } catch (_e) {
     }
     const pages = [...state.pages].sort((a, b) => a.index - b.index);
-    if (!msg.board) {
+    const board = state.board ?? msg.board;
+    const mapResult = (nodeIds, count) => {
       post2({
         type: "RENDER_SUCCESS",
-        nodeId: state.nodeIds[0],
-        nodeIds: state.nodeIds,
-        name: `Mapa del sitio · ${host} (${pages.length} páginas)`,
+        nodeId: nodeIds[0],
+        nodeIds,
+        name: `Mapa del sitio · ${host} (${count} páginas)`,
         nodeType: "SCAN_MAP",
-        nodeCount: pages.length
+        nodeCount: count
       });
-      post2({ type: "LOG", level: "success", message: `Mapa del sitio listo: ${pages.length} páginas de ${host}.` });
+      post2({ type: "LOG", level: "success", message: `Mapa del sitio listo: ${count} páginas de ${host}.` });
+    };
+    if (!board || !pages.length) {
+      mapResult(state.nodeIds, state.count);
       return;
     }
     let x = 0;
@@ -10358,7 +10579,7 @@ ${g.message}`,
     const children = pages.map((p) => {
       const node2 = p.rootNode;
       node2.name = `${p.path}` + (p.label ? ` — ${p.label}` : "");
-      node2.layout = { ...node2.layout, positioning: "ABSOLUTE", x, y: 0 };
+      node2.layout = { ...p.layout, positioning: "ABSOLUTE", x, y: 0 };
       x += widthOf(node2) + GAP;
       maxH = Math.max(maxH, heightOf(node2));
       return node2;
@@ -10389,20 +10610,18 @@ ${g.message}`,
       );
     } catch (err) {
       log2.error("No se pudo armar el tablero del sitio", { error: String(err?.message || err) });
+      const withPlaceholders = pages.some((p) => p.placeholder);
       post2({
         type: "LOG",
         level: "error",
-        message: `No se pudo armar el tablero del sitio (${err?.message || err}). El mapa del sitio queda como resultado.`
+        message: `No se pudo armar el tablero del sitio (${err?.message || err}). ` + (withPlaceholders ? "Se dibuja el mapa del sitio en su lugar." : "El mapa del sitio queda como resultado.")
       });
+      if (withPlaceholders) {
+        mapResult(await drawMapInstead(pages, post2, log2), pages.length);
+      }
       return;
     }
-    for (const id of state.nodeIds) {
-      try {
-        const n = typeof figma.getNodeByIdAsync === "function" ? await figma.getNodeByIdAsync(id) : figma.getNodeById(id);
-        if (n && !n.removed) n.remove();
-      } catch (_e) {
-      }
-    }
+    await removeNodes(state.nodeIds);
   }
 
   // packages/figma-plugin/src/code.ts
@@ -10519,6 +10738,17 @@ ${g.message}`,
         height: Math.round(node2.height)
       } : null;
       post({ type: "SELECTION_INFO", requestId: msg.requestId, selection });
+    },
+    // Escaneo del sitio: qué rutas de ese sitio ya están en este archivo (la extensión propone el resto).
+    // Fuera de la cola de renders a propósito: responde aunque haya un dibujo en curso (cede el control)
+    GET_ROUTES: async (msg) => {
+      const requestId = msg.requestId;
+      try {
+        const routes = await routesInFile(String(msg.origin || ""));
+        post({ type: "ROUTES_INFO", requestId, routes });
+      } catch (err) {
+        post({ type: "ROUTES_INFO", requestId, routes: [], error: String(err?.message || err) });
+      }
     },
     FOCUS_NODE: async (msg) => {
       if (!msg.nodeId) return;

@@ -2,6 +2,7 @@ import type { PluginSandboxMessage, PluginUiMessage, PluginUiMessageType } from 
 import { renderNodesCommand } from './render-command';
 import { log } from './log';
 import { finishScan, renderScanPage } from './scan-map';
+import { routesInFile } from './route-marks';
 
 /** Cola de trabajo del sandbox: una tarea a la vez, en el orden en que llegan */
 let workQueue: Promise<void> = Promise.resolve();
@@ -139,6 +140,18 @@ const handlers: { [T in PluginUiMessageType]: Handler<T> } = {
           }
         : null;
     post({ type: 'SELECTION_INFO', requestId: (msg as any).requestId, selection });
+  },
+
+  // Escaneo del sitio: qué rutas de ese sitio ya están en este archivo (la extensión propone el resto).
+  // Fuera de la cola de renders a propósito: responde aunque haya un dibujo en curso (cede el control)
+  GET_ROUTES: async msg => {
+    const requestId = msg.requestId;
+    try {
+      const routes = await routesInFile(String(msg.origin || ''));
+      post({ type: 'ROUTES_INFO', requestId, routes });
+    } catch (err: any) {
+      post({ type: 'ROUTES_INFO', requestId, routes: [], error: String(err?.message || err) });
+    }
   },
 
   FOCUS_NODE: async msg => {

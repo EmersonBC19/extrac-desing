@@ -1616,7 +1616,7 @@
     // ── Estado Global del Plugin UI ──
     const HUB_URL = 'ws://localhost:8080';
     // = HUB_PROTOCOL de packages/contracts (lo comprueba tests/integration/messages.test.ts)
-    const HUB_PROTOCOL = 2;
+    const HUB_PROTOCOL = 3;
     let socket = null;
     let pairingCode = '';          // código de vinculación guardado en figma.clientStorage
     let awaitingPairing = false;   // esperando que el usuario ingrese el código: no reconectar solo
@@ -1840,6 +1840,10 @@
       GET_FIGMA_SELECTION(msg) {
         parent.postMessage({ pluginMessage: { type: 'GET_SELECTION', requestId: msg.requestId } }, '*');
       },
+      // Escaneo del sitio: qué rutas de ese sitio ya están en este archivo (responde el sandbox)
+      GET_FIGMA_ROUTES(msg) {
+        parent.postMessage({ pluginMessage: { type: 'GET_ROUTES', requestId: msg.requestId, origin: msg.origin } }, '*');
+      },
       RENDER_NODES(msg) {
         lastRenderStartTime = performance.now();
         log(`Recibido componente desde WebSocket: "${msg.payload?.rootNode?.name || 'Component'}"`, 'info');
@@ -1862,7 +1866,12 @@
         // Tablero design system (fase 6.3): la extensión propone, el ajuste del usuario decide
         if (settings.boardMode === 'ALWAYS') payloadToSend.board = true;
         else if (settings.boardMode === 'NEVER') payloadToSend.board = false;
-        if (payloadToSend.scan) payloadToSend.board = false;
+        // Escaneo: cada página va al mapa, y la página sabe si al final habrá tablero (entonces llega
+        // como marcador y se dibuja una sola vez, en el tablero)
+        if (payloadToSend.scan) {
+          payloadToSend.board = false;
+          payloadToSend.scan = { ...payloadToSend.scan, board: settings.boardMode !== 'NEVER' };
+        }
 
         // Ajustar imágenes a lo que acepta figma.createImage antes de dibujar: también las de los
         // estados y las de cada ancho y tema (breakpoints), que viajan en otros árboles
@@ -2029,6 +2038,10 @@
         if (msg.pageName) {
           activePageName.textContent = `Página: ${msg.pageName}`;
         }
+      },
+      ROUTES_INFO(msg) {
+        notifyHub({ type: 'FIGMA_ROUTES', requestId: msg.requestId, routes: msg.routes || [], ...(msg.error ? { error: msg.error } : {}) });
+        if (msg.error) log(`Escaneo: no se pudo leer qué rutas hay en el archivo (${msg.error}).`, 'warn');
       },
       SELECTION_INFO(msg) {
         notifyHub({ type: 'FIGMA_SELECTION', requestId: msg.requestId, selection: msg.selection || null });

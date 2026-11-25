@@ -21,7 +21,8 @@ afterAll(async () => {
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
-async function openUi(saved: Record<string, unknown>): Promise<Page> {
+/** fakeHub: un socket "abierto" que guarda lo que la UI envía al hub en window.__wsSent */
+async function openUi(saved: Record<string, unknown>, fakeHub = false): Promise<Page> {
   // Sin hub: un puerto cerrado (la UI reintenta en segundo plano, no afecta)
   const html = fs
     .readFileSync(path.join(ROOT, 'packages/figma-plugin/src/ui.html'), 'utf8')
@@ -29,6 +30,25 @@ async function openUi(saved: Record<string, unknown>): Promise<Page> {
   const file = path.join(tmp, `ui-${Date.now()}.html`);
   fs.writeFileSync(file, html);
   const page = await browser.newPage();
+  if (fakeHub) {
+    await page.addInitScript(() => {
+      const w = window as any;
+      w.__wsSent = [];
+      w.WebSocket = class {
+        static CONNECTING = 0;
+        static OPEN = 1;
+        readyState = 1;
+        onopen: any = null;
+        constructor() {
+          setTimeout(() => this.onopen && this.onopen());
+        }
+        send(d: string) {
+          w.__wsSent.push(JSON.parse(d));
+        }
+        close() {}
+      };
+    });
+  }
   await page.addInitScript((saved: any) => {
     (window as any).__toSandbox = [];
     const orig = window.postMessage.bind(window);
@@ -162,6 +182,32 @@ describe('ajustes del plugin', () => {
     await page.close();
   });
 
+  it('escaneo: la consulta de rutas del hub va al sandbox y su respuesta vuelve al hub', async () => {
+    const page = await openUi({}, true);
+    // la UI se conecta al hub poco después de abrir (se registra al conectar)
+    await page.waitForFunction(() => (window as any).__wsSent.length > 0);
+    await page.evaluate(() =>
+      (window as any).handleWebSocketMessage({
+        type: 'GET_FIGMA_ROUTES',
+        requestId: 'r7',
+        origin: 'https://ejemplo.com',
+      }),
+    );
+    const ask = await page.evaluate(() => (window as any).__toSandbox.find((m: any) => m.type === 'GET_ROUTES'));
+    expect(ask).toEqual({ type: 'GET_ROUTES', requestId: 'r7', origin: 'https://ejemplo.com' });
+    const routes = [{ url: 'https://ejemplo.com/precios', path: '/precios' }];
+    await page.evaluate(
+      r =>
+        window.dispatchEvent(
+          new MessageEvent('message', { data: { pluginMessage: { type: 'ROUTES_INFO', requestId: 'r7', routes: r } } }),
+        ),
+      routes,
+    );
+    const sent = await page.evaluate(() => (window as any).__wsSent.filter((m: any) => m.type === 'FIGMA_ROUTES'));
+    expect(sent).toEqual([{ type: 'FIGMA_ROUTES', requestId: 'r7', routes }]);
+    await page.close();
+  });
+
   it('escaneo: el fin va al sandbox después de la última página y respeta "Tablero: nunca"', async () => {
     for (const [saved, board] of [
       [{}, true],
@@ -192,6 +238,8 @@ describe('ajustes del plugin', () => {
       );
       expect(seq.map((m: any) => m.type)).toEqual(['RENDER_NODES', 'SCAN_FINISH']);
       expect(seq[0].payload.board).toBe(false); // una página del escaneo nunca arma tablero sola
+      // pero sabe si habrá tablero al final: entonces el sandbox la guarda como marcador, sin dibujarla
+      expect(seq[0].payload.scan).toMatchObject({ id: 's9', board });
       expect(seq[1]).toMatchObject({ scanId: 's9', board });
       await page.close();
     }

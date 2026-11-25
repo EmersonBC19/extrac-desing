@@ -35,9 +35,6 @@
   window[KEY] = true;
 
   // ── Palette & Constants ──
-  const PURPLE = '#A259FF';
-  const BLUE = '#0D99FF';
-  const DARK_BG = 'rgba(15, 23, 42, 0.96)';
   const BORDER_GLOW = '0 0 20px rgba(162, 89, 255, 0.45), inset 0 0 15px rgba(13, 153, 255, 0.12)';
 
   // ── Vector SVG Icons (Clean UI, Zero Emojis) ──
@@ -53,6 +50,12 @@
     close: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
     arrowUp: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><polyline points="18 15 12 9 6 15"/></svg>`,
     arrowDown: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><polyline points="6 9 12 15 18 9"/></svg>`,
+    arrowLeft: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;"><polyline points="15 18 9 12 15 6"/></svg>`,
+    arrowRight: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;"><polyline points="9 18 15 12 9 6"/></svg>`,
+    search: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`,
+    chevronDown: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`,
+    minimize: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`,
+    expand: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>`,
     check: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><polyline points="20 6 9 17 4 12"/></svg>`,
     warning: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
     spinner: `<svg class="spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`,
@@ -217,6 +220,7 @@
       // Breakpoints y claro/oscuro (Función A): apagados por defecto, multiplican el tiempo de envío
       this.extractBreakpoints = false;
       this.extractThemes = false;
+      this.isHudCollapsed = false;
 
       // Live Figma status tracking
       this.figmaStatus = { hubRunning: false, figmaConnected: false, figmaCount: 0 };
@@ -271,11 +275,20 @@
 
       const style = document.createElement('style');
       style.textContent = `
-        * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        * {
+          box-sizing: border-box;
+          font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+          scrollbar-width: thin;
+          scrollbar-color: rgba(148, 163, 184, 0.28) transparent;
+        }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.28); border-radius: 999px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.48); }
         svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         .spin { animation: spin 0.8s linear infinite; }
-        
+
         /* Top Freeze Banner */
         .freeze-banner {
           position: fixed;
@@ -286,16 +299,14 @@
           display: none;
           align-items: center;
           gap: 8px;
-          background: rgba(14, 165, 233, 0.95);
-          backdrop-filter: blur(12px);
-          -webkit-backdrop-filter: blur(12px);
-          border: 1px solid rgba(56, 189, 248, 0.6);
-          box-shadow: 0 8px 24px rgba(14, 165, 233, 0.35);
+          background: linear-gradient(135deg, rgba(14, 165, 233, 0.96) 0%, rgba(2, 132, 199, 0.96) 100%);
+          border: 1px solid rgba(125, 211, 252, 0.55);
+          box-shadow: 0 12px 32px rgba(2, 132, 199, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.25);
           color: #fff;
-          font-size: 12px;
+          font-size: 12.5px;
           font-weight: 600;
-          padding: 6px 16px;
-          border-radius: 20px;
+          padding: 7px 16px;
+          border-radius: 999px;
           pointer-events: auto;
           z-index: 2147483647;
           transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s;
@@ -306,14 +317,13 @@
           transform: translateX(-50%) translateY(0);
         }
 
-        /* Highlight box for hovering */
+        /* Highlight box for hovering (uses real border so border-radius stays smooth) */
         .highlight-box {
           position: fixed;
           pointer-events: none;
           display: none;
-          border: 2px solid transparent;
-          border-image: linear-gradient(135deg, ${PURPLE}, ${BLUE}) 1;
-          box-shadow: ${BORDER_GLOW};
+          border: 2px solid #8b5cf6;
+          box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.45), ${BORDER_GLOW};
           border-radius: 8px;
           transition: all 0.08s cubic-bezier(0.16, 1, 0.3, 1);
           z-index: 2147483646;
@@ -322,40 +332,43 @@
         /* Floating pill badge on hover */
         .pill-badge {
           position: absolute;
-          top: -34px;
+          top: -36px;
           left: 0;
           display: flex;
           align-items: center;
           gap: 8px;
-          background: ${DARK_BG};
-          backdrop-filter: blur(8px);
-          -webkit-backdrop-filter: blur(8px);
-          border: 1px solid rgba(162, 89, 255, 0.4);
-          color: #fff;
+          background: #0b0e16;
+          border: 1px solid rgba(139, 92, 246, 0.48);
+          color: #f8fafc;
           font-size: 12px;
           font-weight: 500;
-          padding: 4px 10px;
-          border-radius: 6px;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+          padding: 5px 10px;
+          border-radius: 8px;
+          box-shadow: 0 10px 28px rgba(0, 0, 0, 0.52), inset 0 1px 0 rgba(255, 255, 255, 0.1);
           white-space: nowrap;
           pointer-events: none;
+          font-variant-numeric: tabular-nums;
         }
 
         .pill-tag {
-          color: #c084fc;
+          color: #c4b5fd;
           font-weight: 700;
+          font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+          font-size: 11.5px;
         }
 
         .pill-dims {
           color: #94a3b8;
-          font-size: 11px;
+          font-size: 11.5px;
+          font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         }
 
         .pill-hint {
-          background: rgba(255, 255, 255, 0.12);
-          padding: 2px 5px;
-          border-radius: 4px;
-          font-size: 10px;
+          background: rgba(255, 255, 255, 0.08);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          padding: 2px 6px;
+          border-radius: 5px;
+          font-size: 10.5px;
           color: #cbd5e1;
         }
 
@@ -364,8 +377,8 @@
           position: fixed;
           pointer-events: none;
           display: none;
-          border: 2.5px solid #a855f7;
-          box-shadow: 0 0 0 1px rgba(168, 85, 247, 0.5), 0 0 35px rgba(168, 85, 247, 0.45);
+          border: 2.5px solid #8b5cf6;
+          box-shadow: 0 0 0 1px rgba(139, 92, 246, 0.55), 0 0 36px rgba(139, 92, 246, 0.4);
           border-radius: 8px;
           overflow: hidden;
           transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1),
@@ -374,21 +387,18 @@
           z-index: 2147483646;
         }
 
-        /* Componente elevado: sombra profunda bajo el componente "levantado" */
         .spotlight-box.lifted {
-          box-shadow: 0 0 0 1px rgba(168, 85, 247, 0.5),
-                      0 0 35px rgba(168, 85, 247, 0.4),
-                      0 28px 55px -14px rgba(0, 0, 0, 0.6),
-                      0 12px 22px -10px rgba(0, 0, 0, 0.45);
+          box-shadow: 0 0 0 1px rgba(139, 92, 246, 0.55),
+                      0 0 38px rgba(139, 92, 246, 0.42),
+                      0 28px 55px -14px rgba(0, 0, 0, 0.62),
+                      0 12px 22px -10px rgba(0, 0, 0, 0.48);
         }
 
-        /* Reflejo de luz tipo espejo: barre en diagonal de la esquina superior izquierda a la inferior derecha */
         .spotlight-sheen {
           position: absolute;
           inset: 0;
           pointer-events: none;
           border-radius: inherit;
-          /* Banda diagonal fina: núcleo blanco brillante con halo morado/azul (colores de la extensión) */
           background-image: linear-gradient(
             125deg,
             transparent 0%,
@@ -401,8 +411,6 @@
             transparent 58%,
             transparent 100%
           );
-          /* 200%: el centro de la banda recorre el componente entero de una esquina a la otra
-             (con 300% solo se veía la mitad del tiempo de la animación) */
           background-size: 200% 200%;
           background-repeat: no-repeat;
           background-position: 112% 112%;
@@ -436,28 +444,43 @@
           display: block;
         }
 
-        /* Action HUD toolbar — modern floating command island */
+        /* Action HUD toolbar — Studio Floating Command Island */
         .action-hud {
           position: fixed !important;
           pointer-events: auto !important;
           display: none;
-          background: #0f121a !important;
-          /* Sin backdrop-filter para evitar el desenfoque y subpixel rasterization de Chromium */
-          border: 1.5px solid rgba(255, 255, 255, 0.22) !important;
-          box-shadow: 0 24px 60px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
-          border-radius: 14px;
-          padding: 13px 18px;
+          background: #0b0e16 !important;
+          border: 1px solid rgba(255, 255, 255, 0.14) !important;
+          box-shadow:
+            0 24px 64px rgba(0, 0, 0, 0.86),
+            0 0 0 1px rgba(139, 92, 246, 0.14),
+            inset 0 1px 0 rgba(255, 255, 255, 0.09) !important;
+          border-radius: 16px;
+          padding: 12px 15px;
           z-index: 2147483647 !important;
           animation: hudPop 0.16s cubic-bezier(0.16, 1, 0.3, 1) forwards;
           color: #f8fafc;
           width: auto;
-          max-width: min(740px, calc(100vw - 24px));
+          max-width: min(780px, calc(100vw - 24px));
           box-sizing: border-box;
           user-select: none;
-          -webkit-font-smoothing: antialiased !important;
-          -moz-osx-font-smoothing: grayscale !important;
-          text-rendering: geometricPrecision !important;
+          color-scheme: dark;
+          text-rendering: optimizeLegibility !important;
+          font-variant-numeric: tabular-nums;
           transform: translateZ(0);
+        }
+
+        .action-hud.collapsed {
+          padding: 8px 12px;
+          border-radius: 999px;
+        }
+        .action-hud.collapsed .hud-header {
+          margin-bottom: 0;
+          padding-bottom: 0;
+          border-bottom: none;
+        }
+        .action-hud.collapsed .hud-body {
+          display: none;
         }
 
         @keyframes hudPop {
@@ -471,11 +494,11 @@
           justify-content: space-between;
           flex-wrap: wrap;
           gap: 10px;
-          margin-bottom: 9px;
+          margin-bottom: 10px;
           cursor: grab;
           user-select: none;
-          padding-bottom: 8px;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+          padding-bottom: 9px;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.08);
         }
         .hud-header:active {
           cursor: grabbing;
@@ -486,37 +509,65 @@
           align-items: center;
           gap: 8px;
           flex-wrap: wrap;
+          min-width: 0;
         }
 
         .hud-title {
-          font-size: 13.5px;
+          font-size: 13px;
           font-weight: 700;
           color: #fff;
           display: flex;
           align-items: center;
           gap: 6px;
           pointer-events: none;
-          letter-spacing: -0.2px;
         }
 
         .hud-drag-pill {
           display: inline-flex;
           align-items: center;
-          gap: 5px;
-          background: rgba(255, 255, 255, 0.08);
-          border: 1px solid rgba(255, 255, 255, 0.15);
-          padding: 3px 8px;
-          border-radius: 6px;
+          gap: 4px;
+          background: rgba(255, 255, 255, 0.06);
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          padding: 4px 8px;
+          border-radius: 8px;
           font-size: 11px;
           font-weight: 600;
-          color: #cbd5e1;
-          letter-spacing: 0.2px;
+          color: #94a3b8;
           cursor: grab;
-          transition: all 0.15s ease;
+          transition: background 0.15s, color 0.15s, border-color 0.15s;
         }
         .hud-drag-pill:hover {
-          background: rgba(255, 255, 255, 0.18);
+          background: rgba(255, 255, 255, 0.12);
           color: #fff;
+          border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .hud-icon-btn {
+          appearance: none;
+          -webkit-appearance: none;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 26px;
+          height: 26px;
+          border-radius: 8px;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          background: rgba(255, 255, 255, 0.05);
+          color: #cbd5e1;
+          cursor: pointer;
+          transition: background 0.15s, color 0.15s, border-color 0.15s;
+        }
+        .hud-icon-btn:hover {
+          background: rgba(255, 255, 255, 0.14);
+          border-color: rgba(255, 255, 255, 0.24);
+          color: #fff;
+        }
+
+        .hud-quick-send {
+          display: none;
+        }
+        .action-hud.collapsed .hud-quick-send {
+          display: inline-flex;
         }
 
         /* Status Pills */
@@ -526,10 +577,14 @@
           gap: 6px;
           font-size: 11px;
           font-weight: 600;
-          padding: 3px 9px;
-          border-radius: 12px;
+          padding: 4px 10px;
+          border-radius: 999px;
           pointer-events: auto;
-          cursor: help;
+          cursor: pointer;
+          transition: filter 0.15s;
+        }
+        .hud-status-pill:hover {
+          filter: brightness(1.1);
         }
         .status-dot {
           display: inline-block;
@@ -538,37 +593,37 @@
           border-radius: 50%;
         }
         .hud-status-pill.connected {
-          background: rgba(16, 185, 129, 0.16);
+          background: rgba(16, 185, 129, 0.14);
           color: #34d399;
-          border: 1px solid rgba(16, 185, 129, 0.35);
+          border: 1px solid rgba(16, 185, 129, 0.32);
         }
         .hud-status-pill.connected .status-dot {
           background: #10b981;
           box-shadow: 0 0 8px #10b981;
         }
         .hud-status-pill.waiting {
-          background: rgba(245, 158, 11, 0.16);
+          background: rgba(245, 158, 11, 0.14);
           color: #fbbf24;
-          border: 1px solid rgba(245, 158, 11, 0.35);
+          border: 1px solid rgba(245, 158, 11, 0.32);
         }
         .hud-status-pill.waiting .status-dot {
           background: #f59e0b;
           box-shadow: 0 0 8px #f59e0b;
         }
         .hud-status-pill.disconnected {
-          background: rgba(239, 68, 68, 0.16);
-          color: #f87171;
-          border: 1px solid rgba(239, 68, 68, 0.35);
+          background: rgba(244, 63, 94, 0.14);
+          color: #fb7185;
+          border: 1px solid rgba(244, 63, 94, 0.32);
         }
         .hud-status-pill.disconnected .status-dot {
-          background: #ef4444;
+          background: #f43f5e;
         }
 
         .hud-meta {
           font-size: 11.5px;
           color: #94a3b8;
           font-weight: 500;
-          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
           pointer-events: none;
           display: flex;
           align-items: center;
@@ -576,35 +631,36 @@
         }
 
         .hud-radius-badge {
-          background: rgba(168, 85, 247, 0.18) !important;
+          background: rgba(168, 85, 247, 0.16) !important;
           color: #d8b4fe !important;
-          border: 1px solid rgba(168, 85, 247, 0.35) !important;
+          border: 1px solid rgba(168, 85, 247, 0.32) !important;
           font-weight: 600 !important;
           display: inline-flex;
           align-items: center;
-          padding: 1.5px 6px;
-          border-radius: 4px;
+          padding: 2px 7px;
+          border-radius: 6px;
+          font-size: 11px;
         }
 
         .hud-tag-pill {
           display: inline-flex;
           align-items: center;
-          padding: 2px 7px;
-          border-radius: 5px;
-          background: rgba(56, 189, 248, 0.16);
+          padding: 2px 8px;
+          border-radius: 6px;
+          background: rgba(56, 189, 248, 0.14);
           border: 1px solid rgba(56, 189, 248, 0.32);
           color: #7dd3fc;
-          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-          font-size: 11px;
-          font-weight: 600;
+          font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+          font-size: 11.5px;
+          font-weight: 700;
         }
 
         .hud-meta-badge {
           display: inline-flex;
           align-items: center;
-          padding: 2px 6px;
-          border-radius: 4px;
-          background: rgba(255, 255, 255, 0.06);
+          padding: 2px 7px;
+          border-radius: 6px;
+          background: rgba(255, 255, 255, 0.05);
           border: 1px solid rgba(255, 255, 255, 0.1);
           color: #cbd5e1;
           font-size: 11px;
@@ -614,11 +670,11 @@
           display: flex;
           align-items: center;
           gap: 4px;
-          margin-bottom: 8px;
-          padding: 4px 8px;
-          background: rgba(255, 255, 255, 0.04);
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          border-radius: 7px;
+          margin-bottom: 9px;
+          padding: 5px 8px;
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(255, 255, 255, 0.07);
+          border-radius: 9px;
           overflow-x: auto;
           white-space: nowrap;
           scrollbar-width: none;
@@ -628,52 +684,52 @@
         }
 
         .hud-crumb-btn {
+          appearance: none;
           background: transparent;
           border: none;
           color: #94a3b8;
-          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-          font-size: 11px;
+          font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+          font-size: 11.5px;
           padding: 2px 6px;
-          border-radius: 4px;
+          border-radius: 5px;
           cursor: pointer;
-          transition: all 0.15s ease;
+          transition: background 0.15s, color 0.15s;
         }
         .hud-crumb-btn:hover {
-          background: rgba(255, 255, 255, 0.12);
-          color: #38bdf8;
+          background: rgba(255, 255, 255, 0.1);
+          color: #7dd3fc;
         }
 
         .hud-crumb-sep {
           color: #64748b;
-          font-size: 10px;
+          font-size: 11px;
           user-select: none;
         }
 
         .hud-crumb-current {
-          color: #38bdf8;
-          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-          font-size: 11px;
-          font-weight: 600;
+          color: #7dd3fc;
+          font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+          font-size: 11.5px;
+          font-weight: 700;
           background: rgba(56, 189, 248, 0.14);
-          padding: 2px 6px;
-          border-radius: 4px;
+          padding: 2px 7px;
+          border-radius: 5px;
           border: 1px solid rgba(56, 189, 248, 0.3);
         }
 
         .hud-nav-row {
           display: flex;
-          align-items: center;
-          justify-content: space-between;
-          flex-wrap: wrap;
+          flex-direction: column;
           gap: 8px;
-          margin-bottom: 9px;
-          font-size: 11.5px;
+          margin-bottom: 11px;
+          font-size: 12px;
           color: #94a3b8;
         }
 
         .hud-nav-left {
           display: flex;
           align-items: center;
+          justify-content: space-between;
           gap: 6px;
           flex-wrap: wrap;
         }
@@ -681,29 +737,33 @@
         .hud-hierarchy-group {
           display: inline-flex;
           align-items: center;
-          background: rgba(255, 255, 255, 0.05);
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          border-radius: 8px;
-          padding: 2.5px;
+          flex-wrap: wrap;
+          background: rgba(255, 255, 255, 0.035);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 10px;
+          padding: 3px;
           gap: 3px;
+          width: 100%;
         }
 
         .btn-hierarchy {
+          appearance: none;
           background: transparent;
           color: #cbd5e1;
           border: 1px solid transparent;
           font-size: 11.5px;
-          padding: 4.5px 9px;
-          border-radius: 6px;
+          font-weight: 500;
+          padding: 5px 9px;
+          border-radius: 7px;
           cursor: pointer;
-          transition: all 0.15s ease;
+          transition: background 0.15s, color 0.15s, border-color 0.15s;
           display: inline-flex;
           align-items: center;
           gap: 5px;
           user-select: none;
         }
         .btn-hierarchy:hover {
-          background: rgba(255, 255, 255, 0.14);
+          background: rgba(255, 255, 255, 0.1);
           color: #fff;
         }
         .btn-hierarchy:active {
@@ -711,54 +771,108 @@
         }
 
         .hud-kbd {
-          background: rgba(255, 255, 255, 0.1);
-          border: 1px solid rgba(255, 255, 255, 0.2);
-          padding: 1.5px 5px;
+          background: rgba(255, 255, 255, 0.09);
+          border: 1px solid rgba(255, 255, 255, 0.18);
+          padding: 1px 5px;
           border-radius: 4px;
-          font-family: ui-monospace, monospace;
-          font-size: 9.5px;
+          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-size: 10px;
           color: #cbd5e1;
         }
 
-        /* Toggle Component Pill */
-        .hud-component-toggle {
-          display: inline-flex;
+        /* Custom Studio Toggle Switches (zero native browser checkboxes) */
+        .hud-toggles-strip {
+          display: flex;
           align-items: center;
           gap: 6px;
+          flex-wrap: wrap;
+          padding: 6px 8px;
+          background: rgba(255, 255, 255, 0.028);
+          border: 1px solid rgba(255, 255, 255, 0.07);
+          border-radius: 10px;
+        }
+
+        .hud-component-toggle {
+          position: relative;
+          display: inline-flex;
+          align-items: center;
+          gap: 7px;
           font-size: 11.5px;
-          color: #cbd5e1;
+          font-weight: 500;
+          color: #94a3b8;
           cursor: pointer;
           user-select: none;
-          background: rgba(255, 255, 255, 0.05);
-          padding: 4.5px 10px;
-          border-radius: 7px;
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          transition: all 0.15s;
+          background: rgba(255, 255, 255, 0.04);
+          padding: 5px 10px;
+          border-radius: 8px;
+          border: 1px solid rgba(255, 255, 255, 0.09);
+          transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
         }
         .hud-component-toggle:hover {
-          background: rgba(139, 92, 246, 0.18);
-          border-color: rgba(139, 92, 246, 0.4);
-          color: #ddd6fe;
-        }
-        .hud-component-toggle:has(input:checked) {
-          background: rgba(139, 92, 246, 0.24);
-          border-color: #8b5cf6;
-          color: #fff;
+          background: rgba(139, 92, 246, 0.12);
+          border-color: rgba(139, 92, 246, 0.35);
+          color: #e2e8f0;
         }
         .hud-component-toggle input {
-          cursor: pointer;
+          position: absolute;
+          opacity: 0;
+          width: 1px;
+          height: 1px;
           margin: 0;
-          accent-color: #8b5cf6;
+          pointer-events: none;
+          appearance: none;
+          -webkit-appearance: none;
+        }
+        .hud-toggle-pill {
+          width: 24px;
+          height: 14px;
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.14);
+          border: 1px solid rgba(255, 255, 255, 0.16);
+          position: relative;
+          flex-shrink: 0;
+          transition: background 0.18s, border-color 0.18s;
+        }
+        .hud-toggle-pill::after {
+          content: "";
+          position: absolute;
+          top: 1px;
+          left: 1px;
+          width: 10px;
+          height: 10px;
+          border-radius: 50%;
+          background: #cbd5e1;
+          transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), background 0.18s;
+        }
+        .hud-component-toggle:has(input:checked) {
+          background: rgba(139, 92, 246, 0.2);
+          border-color: rgba(139, 92, 246, 0.72);
+          color: #f8fafc;
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+        }
+        .hud-component-toggle input:checked + .hud-toggle-pill {
+          background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+          border-color: #a78bfa;
+        }
+        .hud-component-toggle input:checked + .hud-toggle-pill::after {
+          transform: translateX(10px);
+          background: #fff;
+        }
+        .hud-component-toggle:has(input:focus-visible) {
+          outline: 2px solid #a78bfa;
+          outline-offset: 1px;
         }
 
         .hud-buttons {
           display: flex;
           align-items: center;
           flex-wrap: wrap;
-          gap: 8px;
+          gap: 7px;
         }
 
         .btn-figma {
+          appearance: none;
+          -webkit-appearance: none;
           display: inline-flex;
           align-items: center;
           gap: 7px;
@@ -766,44 +880,50 @@
           color: #fff;
           font-size: 12.5px;
           font-weight: 700;
-          border: none;
-          padding: 8px 18px;
-          border-radius: 8px;
+          border: 1px solid rgba(255, 255, 255, 0.16);
+          padding: 8px 16px;
+          border-radius: 9px;
           cursor: pointer;
           transition: transform 0.12s, box-shadow 0.15s, filter 0.15s;
-          box-shadow: 0 4px 16px rgba(139, 92, 246, 0.45);
+          box-shadow: 0 4px 16px rgba(139, 92, 246, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.2);
           user-select: none;
         }
-        .btn-figma:hover {
+        .btn-figma:hover:not(:disabled) {
           transform: translateY(-1px);
-          filter: brightness(1.08);
-          box-shadow: 0 4px 20px rgba(139, 92, 246, 0.65);
+          filter: brightness(1.07);
+          box-shadow: 0 6px 22px rgba(139, 92, 246, 0.6);
         }
-        .btn-figma:active {
+        .btn-figma:active:not(:disabled) {
           transform: translateY(0);
+        }
+        .btn-figma:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
         }
 
         .btn-secondary {
+          appearance: none;
+          -webkit-appearance: none;
           display: inline-flex;
           align-items: center;
           gap: 6px;
-          background: rgba(255, 255, 255, 0.08);
+          background: rgba(255, 255, 255, 0.06);
           color: #e2e8f0;
           font-size: 12px;
           font-weight: 600;
-          border: 1px solid rgba(255, 255, 255, 0.15);
-          padding: 8px 14px;
-          border-radius: 8px;
+          border: 1px solid rgba(255, 255, 255, 0.13);
+          padding: 8px 13px;
+          border-radius: 9px;
           cursor: pointer;
           transition: background 0.15s, color 0.15s, border-color 0.15s;
           user-select: none;
         }
-        .btn-secondary:hover {
-          background: rgba(255, 255, 255, 0.16);
-          border-color: rgba(255, 255, 255, 0.25);
+        .btn-secondary:hover:not(:disabled) {
+          background: rgba(255, 255, 255, 0.14);
+          border-color: rgba(255, 255, 255, 0.24);
           color: #fff;
         }
-        .btn-secondary:active {
+        .btn-secondary:active:not(:disabled) {
           transform: translateY(1px);
         }
 
@@ -812,18 +932,16 @@
           position: fixed;
           bottom: 24px;
           right: 24px;
-          background: ${DARK_BG};
-          backdrop-filter: blur(12px);
-          -webkit-backdrop-filter: blur(12px);
-          border: 1px solid rgba(162, 89, 255, 0.4);
-          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+          background: #0b0e16;
+          border: 1px solid rgba(139, 92, 246, 0.42);
+          box-shadow: 0 14px 36px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
           color: #fff;
-          border-radius: 10px;
-          padding: 12px 18px;
+          border-radius: 12px;
+          padding: 12px 16px;
           font-size: 13px;
           z-index: 2147483647;
           pointer-events: auto;
-          animation: toastIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+          animation: toastIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
           max-width: min(420px, calc(100vw - 32px));
           box-sizing: border-box;
         }
@@ -835,80 +953,304 @@
 
         .toast-title {
           font-weight: 700;
-          margin-bottom: 2px;
+          font-size: 13px;
+          margin-bottom: 3px;
           display: flex;
           align-items: center;
           gap: 6px;
+          color: #f8fafc;
         }
         .toast-desc {
           color: #94a3b8;
           font-size: 12px;
+          line-height: 1.45;
         }
 
-        /* Aviso de selección pesada (fase 5.1) */
+        /* Studio Modal Backdrop & Dialogs */
         .heavy-backdrop {
           position: fixed;
           inset: 0;
-          background: rgba(2, 6, 23, 0.55);
+          background: rgba(3, 6, 16, 0.68);
           z-index: 2147483647;
           display: flex;
           align-items: center;
           justify-content: center;
           padding: 16px;
           pointer-events: auto;
+          color-scheme: dark;
         }
         .heavy-dialog {
-          background: ${DARK_BG};
+          background: #0b0e16;
           border: 1px solid rgba(251, 191, 36, 0.45);
-          box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
-          color: #fff;
-          border-radius: 12px;
-          padding: 18px 20px;
-          width: min(440px, 100%);
+          box-shadow: 0 24px 64px rgba(0, 0, 0, 0.72), inset 0 1px 0 rgba(255, 255, 255, 0.09);
+          color: #f8fafc;
+          border-radius: 16px;
+          padding: 20px;
+          width: min(460px, 100%);
           box-sizing: border-box;
           font-size: 13px;
+          text-rendering: optimizeLegibility;
         }
         .heavy-dialog h3 {
-          margin: 0 0 6px;
-          font-size: 15px;
+          margin: 0 0 8px;
+          font-size: 15.5px;
+          font-weight: 700;
           display: flex;
           align-items: center;
-          gap: 6px;
+          gap: 7px;
+          color: #fff;
         }
         .heavy-dialog p {
-          margin: 0 0 10px;
+          margin: 0 0 12px;
           color: #cbd5e1;
-          line-height: 1.45;
+          line-height: 1.5;
+          font-size: 12.5px;
         }
         .heavy-dialog ul {
-          margin: 0 0 12px;
-          padding-left: 18px;
+          margin: 0 0 14px;
+          padding: 10px 14px 10px 28px;
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 10px;
           color: #fbbf24;
+          font-size: 12.5px;
+          line-height: 1.5;
         }
         .heavy-dialog .heavy-stats {
           color: #94a3b8;
-          font-size: 11px;
+          font-size: 11.5px;
+          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-variant-numeric: tabular-nums;
           margin-bottom: 14px;
+          padding: 8px 10px;
+          border-radius: 8px;
+          background: rgba(255, 255, 255, 0.035);
+          border: 1px solid rgba(255, 255, 255, 0.07);
         }
-        .scan-dialog { width: min(560px, 100%); }
-        .scan-tools { display: flex; gap: 6px; margin: 0 0 8px; }
-        .scan-tools input { flex: 1; min-width: 0; padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.06); color: #e2e8f0; font-size: 12px; }
-        .scan-tools button { padding: 6px 10px; font-size: 12px; }
-        .scan-list { max-height: 46vh; overflow: auto; margin: 0 0 10px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 6px; }
-        .scan-route { display: flex; align-items: baseline; gap: 8px; padding: 4px 6px; border-radius: 6px; cursor: pointer; }
-        .scan-route:hover { background: rgba(255,255,255,0.06); }
-        .scan-path { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: #e2e8f0; word-break: break-all; }
-        .scan-label { color: #94a3b8; font-size: 11px; }
-        .scan-done { color: #4ade80; font-size: 11px; white-space: nowrap; }
-        .scan-note { margin: 0 0 8px; color: #94a3b8; font-size: 12px; }
-        .scan-excluded { margin: 0 0 10px; color: #fbbf24; font-size: 11px; }
-        .scan-excluded div { color: #94a3b8; margin: 2px 0 0 12px; }
+        .scan-dialog {
+          width: min(580px, 100%);
+          border-color: rgba(139, 92, 246, 0.42);
+        }
+        .scan-tools {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin: 0 0 10px;
+        }
+        .scan-search-wrap {
+          position: relative;
+          flex: 1;
+          min-width: 0;
+          display: flex;
+          align-items: center;
+        }
+        .scan-search-icon {
+          position: absolute;
+          left: 10px;
+          pointer-events: none;
+          display: flex;
+          align-items: center;
+        }
+        .scan-tools input {
+          appearance: none;
+          -webkit-appearance: none;
+          width: 100%;
+          padding: 7px 10px 7px 30px;
+          border-radius: 8px;
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          background: rgba(255, 255, 255, 0.05);
+          color: #f8fafc;
+          font-size: 12.5px;
+          outline: none;
+          transition: border-color 0.15s, box-shadow 0.15s;
+        }
+        .scan-tools input::-webkit-search-decoration,
+        .scan-tools input::-webkit-search-cancel-button {
+          -webkit-appearance: none;
+        }
+        .scan-tools input:focus {
+          border-color: #8b5cf6;
+          box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.25);
+        }
+        .scan-tools button {
+          padding: 7px 11px;
+          font-size: 12px;
+        }
+        .scan-list {
+          max-height: 44vh;
+          overflow: auto;
+          margin: 0 0 10px;
+          border: 1px solid rgba(255, 255, 255, 0.09);
+          border-radius: 10px;
+          padding: 6px;
+          background: rgba(0, 0, 0, 0.26);
+          display: flex;
+          flex-direction: column;
+          gap: 3px;
+        }
+        /* Custom Route Row & Custom SVG Checkbox (native checkbox visually replaced) */
+        .scan-route {
+          position: relative;
+          display: flex;
+          align-items: center;
+          gap: 9px;
+          padding: 7px 9px;
+          border-radius: 8px;
+          border: 1px solid transparent;
+          cursor: pointer;
+          transition: background 0.14s, border-color 0.14s;
+        }
+        .scan-route:hover {
+          background: rgba(255, 255, 255, 0.055);
+        }
+        .scan-route:has(input:checked) {
+          background: rgba(139, 92, 246, 0.1);
+          border-color: rgba(139, 92, 246, 0.28);
+        }
+        .scan-route input[type="checkbox"] {
+          position: absolute;
+          opacity: 0;
+          width: 1px;
+          height: 1px;
+          margin: 0;
+          pointer-events: none;
+          appearance: none;
+          -webkit-appearance: none;
+        }
+        .ctf-check {
+          width: 16px;
+          height: 16px;
+          border-radius: 5px;
+          border: 1.5px solid rgba(255, 255, 255, 0.26);
+          background: rgba(255, 255, 255, 0.04);
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+          transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+        }
+        .ctf-check svg {
+          width: 11px;
+          height: 11px;
+          stroke: #fff;
+          fill: none;
+          stroke-width: 2.3;
+          stroke-linecap: round;
+          stroke-linejoin: round;
+          opacity: 0;
+          transform: scale(0.7);
+          transition: opacity 0.14s, transform 0.14s;
+        }
+        .scan-route input:checked + .ctf-check {
+          background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+          border-color: #a78bfa;
+          box-shadow: 0 2px 8px rgba(139, 92, 246, 0.38);
+        }
+        .scan-route input:checked + .ctf-check svg {
+          opacity: 1;
+          transform: scale(1);
+        }
+        .scan-route:has(input:focus-visible) {
+          outline: 2px solid #a78bfa;
+          outline-offset: -1px;
+        }
+        .scan-path {
+          font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+          font-size: 12px;
+          font-weight: 600;
+          color: #f1f5f9;
+          word-break: break-all;
+        }
+        .scan-label {
+          color: #94a3b8;
+          font-size: 11.5px;
+          margin-left: auto;
+        }
+        .scan-done {
+          color: #34d399;
+          background: rgba(16, 185, 129, 0.12);
+          border: 1px solid rgba(16, 185, 129, 0.28);
+          padding: 1px 7px;
+          border-radius: 999px;
+          font-size: 10.5px;
+          font-weight: 600;
+          white-space: nowrap;
+        }
+        .scan-note {
+          margin: 0 0 9px;
+          color: #94a3b8;
+          font-size: 12px;
+          line-height: 1.45;
+        }
+        .scan-excluded {
+          margin: 0 0 10px;
+          color: #fbbf24;
+          font-size: 11.5px;
+          background: rgba(245, 158, 11, 0.08);
+          border: 1px solid rgba(245, 158, 11, 0.22);
+          border-radius: 9px;
+          padding: 7px 10px;
+        }
+        .scan-excluded summary {
+          list-style: none;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-weight: 600;
+        }
+        .scan-excluded summary::-webkit-details-marker {
+          display: none;
+        }
+        .scan-excluded-chevron {
+          transition: transform 0.16s ease;
+          display: inline-flex;
+        }
+        .scan-excluded[open] .scan-excluded-chevron {
+          transform: rotate(180deg);
+        }
+        .scan-excluded div {
+          color: #cbd5e1;
+          margin: 5px 0 0 18px;
+          font-size: 11.5px;
+        }
         .scan-panel {
-          position: fixed; left: 24px; bottom: 24px; z-index: 2147483647; pointer-events: auto;
-          display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 10px;
-          background: ${DARK_BG}; color: #fff; font-size: 13px;
-          border: 1px solid rgba(162, 89, 255, 0.4); box-shadow: 0 10px 30px rgba(0,0,0,0.45);
-          max-width: min(520px, calc(100vw - 48px));
+          position: fixed;
+          left: 24px;
+          bottom: 24px;
+          z-index: 2147483647;
+          pointer-events: auto;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 11px 15px;
+          border-radius: 12px;
+          background: #0b0e16;
+          color: #f8fafc;
+          font-size: 12.5px;
+          font-weight: 600;
+          border: 1px solid rgba(139, 92, 246, 0.45);
+          box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+          max-width: min(540px, calc(100vw - 48px));
+        }
+        .scan-panel-body {
+          display: flex;
+          flex-direction: column;
+          gap: 5px;
+          min-width: 180px;
+        }
+        .scan-panel-bar {
+          height: 4px;
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.1);
+          overflow: hidden;
+        }
+        .scan-panel-fill {
+          height: 100%;
+          width: 8%;
+          border-radius: 999px;
+          background: linear-gradient(90deg, #8b5cf6 0%, #38bdf8 100%);
+          transition: width 0.25s ease;
         }
         .heavy-actions {
           display: flex;
@@ -917,7 +1259,7 @@
           justify-content: flex-end;
         }
         .heavy-dialog.export-dialog {
-          border-color: rgba(162, 89, 255, 0.5);
+          border-color: rgba(139, 92, 246, 0.48);
         }
         .heavy-dialog.export-dialog ul {
           color: #cbd5e1;
@@ -1523,7 +1865,13 @@
 
     // ── Drag & Drop HUD Implementation ──
     onHudMouseDown(e) {
-      if (e.target.closest('button') || e.target.closest('a') || e.target.closest('input') || e.target.closest('label'))
+      if (
+        e.target.closest('button') ||
+        e.target.closest('a') ||
+        e.target.closest('input') ||
+        e.target.closest('label') ||
+        e.target.closest('#__hud_figma_status')
+      )
         return;
       this.isDragging = true;
       this.dragStartX = e.clientX;
@@ -1631,76 +1979,90 @@
         }
       }
 
+      this.hud.className = 'action-hud' + (this.isHudCollapsed ? ' collapsed' : '');
       this.hud.innerHTML = `
         <div class="hud-header" id="__hud_header" title="Haz clic y arrastra para mover esta barra libremente por la pantalla">
           <div class="hud-title-group">
             <span class="hud-drag-pill">${ICONS.drag} Mover</span>
             <div class="hud-title">${titleHtml}</div>
           </div>
-          <div style="display:flex;align-items:center;gap:7px;">
-            <span id="__hud_figma_status" class="hud-status-pill waiting" title="Verificando conexión con Figma...">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span id="__hud_figma_status" class="hud-status-pill waiting" title="Clic para comprobar conexión con Figma">
               <span class="status-dot"></span> Verificando...
             </span>
             <div class="hud-meta">${metaHtml}</div>
+            <button class="btn-figma hud-quick-send" id="__btn_send_figma_mini" style="padding:5px 10px;font-size:11.5px;" title="Enviar selección a Figma">${ICONS.figma} Enviar</button>
+            <button class="hud-icon-btn" id="__btn_hud_collapse" title="${this.isHudCollapsed ? 'Expandir barra del extractor' : 'Colapsar barra para liberar espacio en pantalla'}" aria-expanded="${!this.isHudCollapsed}">
+              ${this.isHudCollapsed ? ICONS.expand : ICONS.minimize}
+            </button>
           </div>
         </div>
 
-        ${crumbsHtml}
+        <div class="hud-body">
+          ${crumbsHtml}
 
-        <div class="hud-nav-row">
-          <div class="hud-nav-left">
-            ${
-              !isMulti
-                ? `
-              <div class="hud-hierarchy-group">
-                <button class="btn-hierarchy" id="__btn_hud_parent" title="Seleccionar contenedor padre (Flecha arriba)">${ICONS.arrowUp} Padre <span class="hud-kbd">↑</span></button>
-                <button class="btn-hierarchy" id="__btn_hud_child" title="Seleccionar elemento hijo (Flecha abajo)">${ICONS.arrowDown} Hijo <span class="hud-kbd">↓</span></button>
-                <button class="btn-hierarchy" id="__btn_hud_body" title="Seleccionar la página completa (${document.body ? 'body' : 'html'})">${ICONS.layers} Toda la Página</button>
-                <button class="btn-hierarchy" id="__btn_hud_theme" title="Alternar Modo Claro / Oscuro en la página">${ICONS.sun} Tema</button>
-                <button class="btn-hierarchy" id="__btn_hud_scan" title="Recorrer las páginas de este sitio y llevarlas todas a Figma (tecla S)">${ICONS.layers} Escanear sitio <span class="hud-kbd">S</span></button>
-              </div>
-            `
-                : `
-              <span style="color:#38bdf8;font-weight:600;">${ICONS.multi} ${this.selectedElements.length} elementos agrupados listos para Figma</span>
-            `
-            }
+          <div class="hud-nav-row">
+            <div class="hud-nav-left">
+              ${
+                !isMulti
+                  ? `
+                <div class="hud-hierarchy-group">
+                  <button class="btn-hierarchy" id="__btn_hud_parent" title="Seleccionar contenedor padre (Flecha arriba)">${ICONS.arrowUp} Padre <span class="hud-kbd">↑</span></button>
+                  <button class="btn-hierarchy" id="__btn_hud_child" title="Seleccionar elemento hijo (Flecha abajo)">${ICONS.arrowDown} Hijo <span class="hud-kbd">↓</span></button>
+                  <button class="btn-hierarchy" id="__btn_hud_prev" title="Hermano anterior (Flecha izquierda)">${ICONS.arrowLeft}</button>
+                  <button class="btn-hierarchy" id="__btn_hud_next" title="Hermano siguiente (Flecha derecha)">${ICONS.arrowRight}</button>
+                  <button class="btn-hierarchy" id="__btn_hud_body" title="Seleccionar la página completa (${document.body ? 'body' : 'html'})">${ICONS.layers} Toda la Página</button>
+                  <button class="btn-hierarchy" id="__btn_hud_theme" title="Alternar Modo Claro / Oscuro en la página">${ICONS.sun} Tema</button>
+                  <button class="btn-hierarchy" id="__btn_hud_scan" title="Recorrer las páginas de este sitio y llevarlas todas a Figma (tecla S)">${ICONS.layers} Escanear sitio <span class="hud-kbd">S</span></button>
+                </div>
+              `
+                  : `
+                <span style="color:#7dd3fc;font-weight:600;display:inline-flex;align-items:center;gap:4px;">${ICONS.multi} ${this.selectedElements.length} elementos agrupados listos para Figma</span>
+              `
+              }
+            </div>
+
+            <div class="hud-toggles-strip" role="group" aria-label="Opciones de extracción">
+              <label class="hud-component-toggle" title="Extraer también la variante interactiva :hover si está definida en el CSS">
+                <input type="checkbox" id="__chk_hover" ${this.extractHover ? 'checked' : ''} />
+                <span class="hud-toggle-pill" aria-hidden="true"></span>
+                <span>${ICONS.sparkle} Hover</span>
+              </label>
+
+              <label class="hud-component-toggle" title="Incluir imágenes rasterizadas y avatares en la extracción">
+                <input type="checkbox" id="__chk_images" ${this.includeImages ? 'checked' : ''} />
+                <span class="hud-toggle-pill" aria-hidden="true"></span>
+                <span>${ICONS.image} Imágenes</span>
+              </label>
+
+              <label class="hud-component-toggle" title="Enviar también a 375 y 768 px como variantes Breakpoint=… (con los @media de la página)">
+                <input type="checkbox" id="__chk_breakpoints" ${this.extractBreakpoints ? 'checked' : ''} />
+                <span class="hud-toggle-pill" aria-hidden="true"></span>
+                <span>${ICONS.devices} Breakpoints</span>
+              </label>
+
+              <label class="hud-component-toggle" title="Capturar también el tema oscuro: los colores llegan como Variables con modos Light y Dark">
+                <input type="checkbox" id="__chk_themes" ${this.extractThemes ? 'checked' : ''} />
+                <span class="hud-toggle-pill" aria-hidden="true"></span>
+                <span>${ICONS.moon} Claro/Oscuro</span>
+              </label>
+
+              <label class="hud-component-toggle" title="Crear en Figma como Componente reutilizable oficial (figma.createComponent)">
+                <input type="checkbox" id="__chk_component" ${this.createAsComponent ? 'checked' : ''} />
+                <span class="hud-toggle-pill" aria-hidden="true"></span>
+                <span>${ICONS.component} Componente</span>
+              </label>
+            </div>
           </div>
 
-          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-            <label class="hud-component-toggle" title="Extraer también la variante interactiva :hover si está definida en el CSS">
-              <input type="checkbox" id="__chk_hover" ${this.extractHover ? 'checked' : ''} />
-              <span>${ICONS.sparkle} Hover</span>
-            </label>
-
-            <label class="hud-component-toggle" title="Incluir imágenes rasterizadas y avatares en la extracción">
-              <input type="checkbox" id="__chk_images" ${this.includeImages ? 'checked' : ''} />
-              <span>${ICONS.image} Imágenes</span>
-            </label>
-
-            <label class="hud-component-toggle" title="Enviar también a 375 y 768 px como variantes Breakpoint=… (con los @media de la página)">
-              <input type="checkbox" id="__chk_breakpoints" ${this.extractBreakpoints ? 'checked' : ''} />
-              <span>${ICONS.devices} Breakpoints</span>
-            </label>
-
-            <label class="hud-component-toggle" title="Capturar también el tema oscuro: los colores llegan como Variables con modos Light y Dark">
-              <input type="checkbox" id="__chk_themes" ${this.extractThemes ? 'checked' : ''} />
-              <span>${ICONS.moon} Claro/Oscuro</span>
-            </label>
-
-            <label class="hud-component-toggle" title="Crear en Figma como Componente reutilizable oficial (figma.createComponent)">
-              <input type="checkbox" id="__chk_component" ${this.createAsComponent ? 'checked' : ''} />
-              <span>${ICONS.component} Componente</span>
-            </label>
+          <div class="hud-buttons">
+            <button class="btn-figma" id="__btn_send_figma" title="Extraer y enviar este diseño directamente a Figma">${ICONS.figma} Enviar a Figma <span class="hud-kbd" style="color:#fff;background:rgba(255,255,255,0.2);border-color:transparent;">↵</span></button>
+            <button class="btn-secondary" id="__btn_freeze" title="Pausa animaciones y menús desplegables para inspeccionarlos">${ICONS.snowflake} ${this.isFrozen ? 'Descongelar' : 'Congelar'} <span class="hud-kbd">F</span></button>
+            <button class="btn-secondary" id="__btn_copy_json" title="Copiar el JSON exportado al portapapeles">${ICONS.copy} Copiar JSON</button>
+            <button class="btn-secondary" id="__btn_export_html" title="Exportar este bloque como HTML + CSS + JS que funciona fuera de la página">${ICONS.code} Exportar HTML</button>
+            <button class="btn-secondary" id="__btn_compare" title="Comparar este bloque con el frame seleccionado en Figma y listar las diferencias">${ICONS.compare} Comparar con Figma</button>
+            <button class="btn-secondary" id="__btn_cancel" title="Cancelar selección (Esc)">${ICONS.close} Cancelar <span class="hud-kbd">Esc</span></button>
           </div>
-        </div>
-
-        <div class="hud-buttons">
-          <button class="btn-figma" id="__btn_send_figma" title="Extraer y enviar este diseño directamente a Figma">${ICONS.figma} Enviar a Figma <span class="hud-kbd" style="color:#fff;background:rgba(255,255,255,0.2);border-color:transparent;">↵</span></button>
-          <button class="btn-secondary" id="__btn_freeze" title="Pausa animaciones y menús desplegables para inspeccionarlos">${ICONS.snowflake} ${this.isFrozen ? 'Descongelar' : 'Congelar'} <span class="hud-kbd">F</span></button>
-          <button class="btn-secondary" id="__btn_copy_json" title="Copiar el JSON exportado al portapapeles">${ICONS.copy} Copiar JSON</button>
-          <button class="btn-secondary" id="__btn_export_html" title="Exportar este bloque como HTML + CSS + JS que funciona fuera de la página">${ICONS.code} Exportar HTML</button>
-          <button class="btn-secondary" id="__btn_compare" title="Comparar este bloque con el frame seleccionado en Figma y listar las diferencias">${ICONS.compare} Comparar con Figma</button>
-          <button class="btn-secondary" id="__btn_cancel" title="Cancelar selección (Esc)">${ICONS.close} Cancelar <span class="hud-kbd">Esc</span></button>
         </div>
       `;
 
@@ -1712,6 +2074,19 @@
       if (header) {
         header.addEventListener('mousedown', this.onHudMouseDown);
       }
+
+      const btnCollapse = this.hud.querySelector('#__btn_hud_collapse');
+      if (btnCollapse) {
+        btnCollapse.addEventListener('click', () => {
+          this.isHudCollapsed = !this.isHudCollapsed;
+          this.renderHUD();
+        });
+      }
+      const btnSendMini = this.hud.querySelector('#__btn_send_figma_mini');
+      if (btnSendMini) btnSendMini.addEventListener('click', () => this.sendToFigma());
+
+      const statusPill = this.hud.querySelector('#__hud_figma_status');
+      if (statusPill) statusPill.addEventListener('click', () => this.checkFigmaStatus());
 
       // Attach button & toggle events
       const btnSend = this.hud.querySelector('#__btn_send_figma');
@@ -1731,6 +2106,8 @@
       const btnTheme = this.hud.querySelector('#__btn_hud_theme');
       const btnParent = this.hud.querySelector('#__btn_hud_parent');
       const btnChild = this.hud.querySelector('#__btn_hud_child');
+      const btnPrev = this.hud.querySelector('#__btn_hud_prev');
+      const btnNext = this.hud.querySelector('#__btn_hud_next');
       const btnBody = this.hud.querySelector('#__btn_hud_body');
 
       if (btnSend) btnSend.addEventListener('click', () => this.sendToFigma());
@@ -1770,6 +2147,8 @@
 
       if (btnParent) btnParent.addEventListener('click', () => this.elevateParent());
       if (btnChild) btnChild.addEventListener('click', () => this.elevateChild());
+      if (btnPrev) btnPrev.addEventListener('click', () => this.elevateSibling(-1));
+      if (btnNext) btnNext.addEventListener('click', () => this.elevateSibling(1));
       if (btnBody) {
         btnBody.addEventListener('click', () => {
           const body = document.body || document.documentElement;
@@ -1853,14 +2232,14 @@
         root.setAttribute('data-theme', 'light');
         root.setAttribute('data-bs-theme', 'light');
         root.setAttribute('data-color-mode', 'light');
-        this.showToast('☀️ Modo Claro activado', 'Se cambió la página a tema claro.', 2500);
+        this.showToast(`${ICONS.sun} Modo Claro activado`, 'Se cambió la página a tema claro.', 2500);
       } else {
         root.classList.add('dark');
         if (body) body.classList.add('dark');
         root.setAttribute('data-theme', 'dark');
         root.setAttribute('data-bs-theme', 'dark');
         root.setAttribute('data-color-mode', 'dark');
-        this.showToast('🌙 Modo Oscuro activado', 'Se cambió la página a tema oscuro.', 2500);
+        this.showToast(`${ICONS.moon} Modo Oscuro activado`, 'Se cambió la página a tema oscuro.', 2500);
       }
 
       if (this.isElevated && this.selectedElements.length > 0) {
@@ -2798,13 +3177,14 @@
             (r, i) => `
               <label class="scan-route">
                 <input type="checkbox" data-idx="${i}" ${done[i] ? 'data-done="1"' : 'checked'} />
+                <span class="ctf-check" aria-hidden="true"><svg viewBox="0 0 12 12"><polyline points="2.2 6.2 4.8 8.8 9.8 3.4"/></svg></span>
                 <span class="scan-path">${escapeHtml(r.path)}</span>${done[i] ? '<span class="scan-done">ya en Figma</span>' : ''}
                 <span class="scan-label">${escapeHtml(r.label || '')}${r.grouped > 1 ? ` · ${r.grouped} similares, se escanea 1` : ''}</span>
               </label>`,
           )
           .join('');
         const ex = excluded.length
-          ? `<details class="scan-excluded"><summary>${excluded.length} enlaces excluidos por seguridad</summary>${excluded
+          ? `<details class="scan-excluded"><summary><span class="scan-excluded-chevron">${ICONS.chevronDown}</span> ${excluded.length} enlaces excluidos por seguridad</summary>${excluded
               .slice(0, 50)
               .map(e => `<div><span class="scan-path">${escapeHtml(e.path)}</span> — ${escapeHtml(e.reason)}</div>`)
               .join('')}</details>`
@@ -2822,7 +3202,10 @@
             ${
               routes.length > 1
                 ? `<div class="scan-tools">
-                <input type="search" id="__scan_filter" placeholder="Filtrar rutas (ej. /blog)" aria-label="Filtrar rutas" />
+                <div class="scan-search-wrap">
+                  <span class="scan-search-icon" aria-hidden="true">${ICONS.search}</span>
+                  <input type="search" id="__scan_filter" placeholder="Filtrar rutas (ej. /blog)" aria-label="Filtrar rutas" />
+                </div>
                 <button class="btn-secondary" data-pick="all">Todas</button>
                 <button class="btn-secondary" data-pick="none">Ninguna</button>
                 ${doneCount > 0 && doneCount < routes.length ? '<button class="btn-secondary" data-pick="missing">Las que faltan</button>' : ''}
@@ -2891,11 +3274,17 @@
       });
     }
 
-    showScanPanel(text) {
+    showScanPanel(text, pct = null) {
       if (!this.scanPanel) {
         this.scanPanel = document.createElement('div');
         this.scanPanel.className = 'scan-panel';
-        this.scanPanel.innerHTML = `<span class="scan-panel-text"></span><button class="btn-secondary" id="__scan_cancel">Cancelar</button>`;
+        this.scanPanel.innerHTML = `
+          ${ICONS.spinner}
+          <div class="scan-panel-body">
+            <span class="scan-panel-text"></span>
+            <div class="scan-panel-bar"><div class="scan-panel-fill"></div></div>
+          </div>
+          <button class="btn-secondary" id="__scan_cancel">Cancelar</button>`;
         this.scanPanel.querySelector('#__scan_cancel').addEventListener('click', () => {
           try {
             chrome.runtime.sendMessage({ type: 'SCAN_CANCEL' }, () => void chrome.runtime.lastError);
@@ -2905,6 +3294,8 @@
         this.shadow.appendChild(this.scanPanel);
       }
       this.scanPanel.querySelector('.scan-panel-text').textContent = text;
+      const fill = this.scanPanel.querySelector('.scan-panel-fill');
+      if (fill && typeof pct === 'number') fill.style.width = `${Math.max(5, Math.min(100, Math.round(pct)))}%`;
     }
 
     /** Aviso al log del hub (~/.code-to-figma/hub.log) a través del service worker */
@@ -2926,8 +3317,10 @@
     onScanProgress(m) {
       if (!this.scanState || m.scanId !== this.scanState.scanId) return;
       const st = this.scanState;
-      if (m.status === 'page') this.showScanPanel(`Escaneando ${m.index + 1} de ${m.total} · ${m.path}`);
-      else if (m.status === 'skip') st.skipped++;
+      if (m.status === 'page') {
+        const pct = m.total > 0 ? ((m.index + 1) / m.total) * 100 : 10;
+        this.showScanPanel(`Escaneando ${m.index + 1} de ${m.total} · ${m.path}`, pct);
+      } else if (m.status === 'skip') st.skipped++;
       else if (m.status === 'error') st.errors++;
       else if (m.status === 'done' || m.status === 'cancelled' || m.status === 'failed') {
         this.hideScanPanel();

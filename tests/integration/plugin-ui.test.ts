@@ -244,4 +244,67 @@ describe('ajustes del plugin', () => {
       await page.close();
     }
   });
+
+  it('minimizar y restaurar sin cerrar: redimensiona el plugin, mantiene el estado y auto-expande al pedir código', async () => {
+    const page = await openUi({}, true);
+    await page.waitForFunction(() => (window as any).__wsSent.length > 0);
+
+    await page.click('#btnMinimize');
+    expect(await page.evaluate(() => document.body.classList.contains('minimized'))).toBe(true);
+    const minMsg = await page.evaluate(() =>
+      (window as any).__toSandbox.filter((m: any) => m.type === 'RESIZE_UI').at(-1),
+    );
+    expect(minMsg).toEqual({ type: 'RESIZE_UI', width: 304, height: 54 });
+
+    // Si llega AUTH_REQUIRED mientras está minimizado, se expande automáticamente
+    await page.evaluate(() => (window as any).handleWebSocketMessage({ type: 'AUTH_REQUIRED' }));
+    expect(await page.evaluate(() => document.body.classList.contains('minimized'))).toBe(false);
+    expect(await page.evaluate(() => document.getElementById('pairingBanner')!.classList.contains('visible'))).toBe(
+      true,
+    );
+
+    const maxMsg = await page.evaluate(() =>
+      (window as any).__toSandbox.filter((m: any) => m.type === 'RESIZE_UI').at(-1),
+    );
+    expect(maxMsg).toEqual({ type: 'RESIZE_UI', width: 484, height: 650 });
+    await page.close();
+  });
+
+  it('sin controles nativos: selector custom de modelo y modal propio para borrar todo', async () => {
+    const page = await openUi({});
+    expect(await page.evaluate(() => document.querySelectorAll('select').length)).toBe(0);
+
+    // Cambiar modelo con el selector propio
+    await page.click('#tabBtnSettings');
+    await page.click('#customSelGeminiModel .ctf-select-trigger');
+    await page.click('#customSelGeminiModel [data-value="gemini-2.5-flash-lite"]');
+    const saved = await page.evaluate(() =>
+      (window as any).__toSandbox.filter((m: any) => m.type === 'SET_SETTINGS').at(-1),
+    );
+    expect(saved.settings.geminiModel).toBe('gemini-2.5-flash-lite');
+
+    // Modal de confirmación propio en lugar de window.confirm
+    await page.evaluate(() =>
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            pluginMessage: {
+              type: 'HISTORY',
+              items: [{ id: 'n1', name: 'Card', nodeIds: ['n1'], timestamp: '2026-11-25T10:00:00Z' }],
+            },
+          },
+        }),
+      ),
+    );
+    await page.click('#tabBtnReceiver');
+    await page.click('.receiver-shortcuts button');
+    expect(await page.evaluate(() => document.getElementById('confirmModal')!.classList.contains('open'))).toBe(true);
+    await page.click('#confirmBtnCancel');
+    expect(await page.evaluate(() => document.getElementById('badgeReceiverCount')!.textContent)).toBe('1');
+
+    await page.click('.receiver-shortcuts button');
+    await page.click('#confirmBtnOk');
+    expect(await page.evaluate(() => document.getElementById('badgeReceiverCount')!.textContent)).toBe('0');
+    await page.close();
+  });
 });

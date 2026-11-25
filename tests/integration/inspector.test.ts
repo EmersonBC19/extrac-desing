@@ -252,4 +252,34 @@ describe('inspector de la extensión', () => {
     const toast = await page.evaluate(() => (window as any).__codeToFigmaInstance.shadow.textContent);
     expect(toast).toMatch(/La extensión se actualizó/);
   });
+
+  it('barra del extractor: colapsa/expande y usa toggles propios sin checkbox nativo visible', async () => {
+    const page = await openInspector();
+    const p1 = await center(page, '#c1');
+    await page.mouse.click(...p1);
+    await page.waitForTimeout(250);
+
+    const checkHidden = await page.evaluate(() => {
+      const sh = (window as any).__codeToFigmaInstance.shadow;
+      const inp = sh.querySelector('#__chk_component') as HTMLInputElement;
+      const cs = getComputedStyle(inp);
+      return { opacity: cs.opacity, hasCustomPill: !!sh.querySelector('.hud-toggle-pill') };
+    });
+    expect(checkHidden).toEqual({ opacity: '0', hasCustomPill: true });
+
+    await page.evaluate(() =>
+      (window as any).__codeToFigmaInstance.shadow.querySelector('#__btn_hud_collapse').click(),
+    );
+    expect(
+      await page.evaluate(() =>
+        (window as any).__codeToFigmaInstance.shadow.querySelector('.action-hud').classList.contains('collapsed'),
+      ),
+    ).toBe(true);
+
+    // Envío directo desde la barra colapsada
+    await page.evaluate(() =>
+      (window as any).__codeToFigmaInstance.shadow.querySelector('#__btn_send_figma_mini').click(),
+    );
+    await page.waitForFunction(() => (window as any).__sent.length === 1);
+  });
 });

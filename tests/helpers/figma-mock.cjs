@@ -334,7 +334,14 @@ function createFigma(opts = {}) {
     loadAllPagesAsync: async () => {},
     showUI() {},
     on() {},
-    ui: { postMessage: m => logs.push(m), onmessage: null },
+    ui: {
+      postMessage: m => logs.push(m),
+      onmessage: null,
+      size: { width: 484, height: 650 },
+      resize(w, h) {
+        this.size = { width: w, height: h };
+      },
+    },
     viewport: { center: { x: 0, y: 0 }, scrollAndZoomIntoView() {} },
     // opts.families: familias "instaladas" (por defecto solo Inter)
     listAvailableFontsAsync: async () =>

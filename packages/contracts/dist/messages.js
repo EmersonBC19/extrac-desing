@@ -219,6 +219,12 @@ exports.MESSAGE_CATALOG = {
         route: 'UI → sandbox',
         description: 'Ajustar el zoom a todo el contenido',
     },
+    RESIZE_UI: {
+        channel: 'plugin',
+        kind: 'command',
+        route: 'UI → sandbox',
+        description: 'Minimizar o restaurar la ventana del plugin sin desconectarlo',
+    },
     SET_PAIRING_CODE: {
         channel: 'plugin',
         kind: 'command',

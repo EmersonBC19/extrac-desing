@@ -10812,9 +10812,9 @@ ${g.message}`,
   }
   var post = (m) => figma.ui.postMessage(m);
   figma.showUI(__html__, {
-    width: 470,
-    height: 630,
-    title: "⚡ Code to Figma AI — Studio & Receiver"
+    width: 484,
+    height: 650,
+    title: "Code to Figma AI — Studio & Receiver"
   });
   figma.on("currentpagechange", () => {
     try {
@@ -10908,6 +10908,14 @@ ${g.message}`,
     ZOOM_ALL: () => {
       if (figma.currentPage.children.length > 0) {
         figma.viewport.scrollAndZoomIntoView(figma.currentPage.children);
+      }
+    },
+    RESIZE_UI: (msg) => {
+      const w = Math.max(240, Math.min(960, Math.round(Number(msg.width) || 484)));
+      const h = Math.max(48, Math.min(960, Math.round(Number(msg.height) || 650)));
+      try {
+        if (typeof figma.ui.resize === "function") figma.ui.resize(w, h);
+      } catch (_e) {
       }
     },
     GET_PAGE_INFO: () => {

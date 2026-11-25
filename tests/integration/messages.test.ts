@@ -125,6 +125,8 @@ describe('catálogo de mensajes', () => {
       type: 'SETTINGS',
       settings: { placement: 'BELOW', fontMap: { Circular: 'Inter' } },
     });
+    await figma.ui.onmessage({ type: 'RESIZE_UI', width: 304, height: 54 });
+    expect((figma.ui as any).size).toEqual({ width: 304, height: 54 });
     // un payload vacío responde RENDER_ERROR, no revienta
     expect(figma.logs.some((m: any) => m.type === 'RENDER_ERROR')).toBe(true);
 

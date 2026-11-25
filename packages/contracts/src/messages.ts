@@ -197,6 +197,12 @@ export const MESSAGE_CATALOG = {
     route: 'UI → sandbox',
     description: 'Ajustar el zoom a todo el contenido',
   },
+  RESIZE_UI: {
+    channel: 'plugin',
+    kind: 'command',
+    route: 'UI → sandbox',
+    description: 'Minimizar o restaurar la ventana del plugin sin desconectarlo',
+  },
   SET_PAIRING_CODE: {
     channel: 'plugin',
     kind: 'command',
@@ -591,6 +597,7 @@ export type PluginUiMessage =
   | { type: 'CONVERT_TO_COMPONENT'; nodeId: string }
   | { type: 'FOCUS_NODE'; nodeId: string }
   | { type: 'ZOOM_ALL' }
+  | { type: 'RESIZE_UI'; width: number; height: number }
   | { type: 'GET_PAGE_INFO' }
   | { type: 'GET_SELECTION'; requestId?: string }
   | { type: 'GET_ROUTES'; requestId?: string; origin: string }

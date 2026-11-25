@@ -5,59 +5,60 @@
   <title>Code to Figma AI — Studio & Receiver</title>
   <style>
     :root {
-      --bg: #131417;
-      --surface-1: #1a1b20;
+      color-scheme: dark;
+      --bg: #0b0d14;
+      --surface-1: #131622;
       --surface: var(--surface-1);
-      --surface-2: #22242b;
-      --surface-hover: #292c35;
-      --surface-active: #323541;
-      --border: rgba(255, 255, 255, 0.08);
-      --border-hover: rgba(255, 255, 255, 0.16);
+      --surface-2: #191d2d;
+      --surface-hover: #21263b;
+      --surface-active: #282e47;
+      --border: rgba(255, 255, 255, 0.09);
+      --border-hover: rgba(255, 255, 255, 0.18);
       --border-focus: #8b5cf6;
-      --text: #f4f4f7;
-      --text-muted: #8b8f9e;
-      --text-dim: #606473;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
       --accent: #8b5cf6;
       --accent-gradient: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
       --accent-gradient-hover: linear-gradient(135deg, #986ef8 0%, #7276f5 100%);
-      --accent-glow: rgba(139, 92, 246, 0.25);
+      --accent-glow: rgba(139, 92, 246, 0.28);
       --green: #10b981;
-      --green-bg: rgba(16, 185, 129, 0.12);
-      --green-border: rgba(16, 185, 129, 0.28);
+      --green-bg: rgba(16, 185, 129, 0.13);
+      --green-border: rgba(16, 185, 129, 0.3);
       --amber: #f59e0b;
       --red: #f43f5e;
-      --red-bg: rgba(244, 63, 94, 0.12);
-      --red-border: rgba(244, 63, 94, 0.28);
-      --radius-sm: 6px;
-      --radius-md: 8px;
-      --radius-lg: 12px;
+      --red-bg: rgba(244, 63, 94, 0.13);
+      --red-border: rgba(244, 63, 94, 0.3);
+      --radius-sm: 7px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
       --radius-pill: 9999px;
+      --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+      --font-mono: ui-monospace, "Cascadia Code", "JetBrains Mono", SFMono-Regular, Menlo, Consolas, monospace;
     }
 
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif;
+      font-family: var(--font-sans);
       scrollbar-width: thin;
-      scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
+      scrollbar-color: rgba(148, 163, 184, 0.24) transparent;
     }
 
     ::-webkit-scrollbar {
-      width: 4px;
-      height: 4px;
+      width: 5px;
+      height: 5px;
     }
     ::-webkit-scrollbar-track {
       background: transparent;
     }
     ::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.14);
-      border-radius: 4px;
+      background: rgba(148, 163, 184, 0.24);
+      border-radius: 999px;
     }
     ::-webkit-scrollbar-thumb:hover {
-      background: rgba(255, 255, 255, 0.24);
+      background: rgba(148, 163, 184, 0.42);
     }
     ::-webkit-scrollbar-button {
       display: none !important;
@@ -66,15 +67,29 @@
     }
 
     body {
-      background: var(--bg);
+      background: radial-gradient(circle at 12% -10%, rgba(139, 92, 246, 0.1), transparent 45%), var(--bg);
       color: var(--text);
-      padding: 10px 12px;
-      font-size: 11px;
+      padding: 11px 13px;
+      font-size: 12px;
+      line-height: 1.45;
+      text-rendering: optimizeLegibility;
+      font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+      font-variant-numeric: tabular-nums;
       user-select: none;
       overflow: hidden;
       display: flex;
       flex-direction: column;
       height: 100vh;
+    }
+
+    input, textarea, button {
+      font-family: inherit;
+      appearance: none;
+      -webkit-appearance: none;
+    }
+
+    input, textarea {
+      user-select: text;
     }
 
     svg {
@@ -83,13 +98,59 @@
       flex-shrink: 0;
     }
 
+    /* ── Modo Minimizado (Barra flotante compacta sin cerrar) ── */
+    body.minimized {
+      padding: 8px 11px;
+      justify-content: center;
+      background: var(--bg);
+    }
+    body.minimized .header {
+      margin-bottom: 0;
+      padding-bottom: 0;
+      border-bottom: none;
+    }
+    body.minimized .brand-sub,
+    body.minimized .brand-pill,
+    body.minimized .tabs-nav,
+    body.minimized .tab-content,
+    body.minimized .pairing-banner,
+    body.minimized .footer {
+      display: none !important;
+    }
+    body.minimized .brand-title {
+      font-size: 12.5px;
+    }
+    .mini-activity-pill {
+      display: none;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(139, 92, 246, 0.14);
+      border: 1px solid rgba(139, 92, 246, 0.32);
+      color: #c4b5fd;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s;
+    }
+    .mini-activity-pill:hover {
+      background: rgba(139, 92, 246, 0.24);
+      color: #fff;
+    }
+    body.minimized .mini-activity-pill {
+      display: inline-flex;
+    }
+
     /* ── Header ── */
     .header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 8px;
-      padding-bottom: 8px;
+      gap: 8px;
+      margin-bottom: 10px;
+      padding-bottom: 10px;
       border-bottom: 1px solid var(--border);
       flex-shrink: 0;
     }
@@ -97,60 +158,90 @@
     .brand {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 9px;
+      min-width: 0;
     }
 
     .brand-icon {
-      width: 26px;
-      height: 26px;
-      border-radius: 7px;
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
       background: var(--accent-gradient);
       display: flex;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 2px 10px var(--accent-glow);
+      box-shadow: 0 4px 12px var(--accent-glow), inset 0 1px 0 rgba(255, 255, 255, 0.24);
       color: #fff;
+      flex-shrink: 0;
     }
 
     .brand-title {
       font-weight: 700;
-      font-size: 12.5px;
-      letter-spacing: -0.2px;
+      font-size: 13.5px;
+      letter-spacing: -0.015em;
       color: #fff;
       display: flex;
       align-items: center;
       gap: 6px;
+      white-space: nowrap;
     }
 
     .brand-pill {
-      font-size: 9px;
+      font-size: 10px;
       font-weight: 600;
-      color: #a78bfa;
-      background: rgba(139, 92, 246, 0.15);
-      border: 1px solid rgba(139, 92, 246, 0.3);
-      padding: 1px 5px;
-      border-radius: 10px;
+      color: #c4b5fd;
+      background: rgba(139, 92, 246, 0.16);
+      border: 1px solid rgba(139, 92, 246, 0.34);
+      padding: 1px 6px;
+      border-radius: 999px;
       letter-spacing: 0;
     }
 
     .brand-sub {
-      font-size: 9.5px;
+      font-size: 11px;
       color: var(--text-muted);
       font-weight: 500;
+    }
+
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .btn-icon-header {
+      width: 27px;
+      height: 27px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface-1);
+      color: var(--text-muted);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+    .btn-icon-header:hover {
+      background: var(--surface-hover);
+      border-color: var(--border-hover);
+      color: #fff;
     }
 
     /* ── Status Badge ── */
     .badge {
       display: inline-flex;
       align-items: center;
-      gap: 5px;
-      padding: 3px 9px;
-      border-radius: 12px;
-      font-size: 10px;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
       font-weight: 600;
       cursor: pointer;
       transition: all 0.2s ease;
       border: 1px solid transparent;
+      white-space: nowrap;
     }
     .badge.connected {
       background: var(--green-bg);
@@ -163,9 +254,9 @@
       border-color: var(--red-border);
     }
     .badge.connecting {
-      background: rgba(245, 158, 11, 0.12);
+      background: rgba(245, 158, 11, 0.13);
       color: #fbbf24;
-      border-color: rgba(245, 158, 11, 0.3);
+      border-color: rgba(245, 158, 11, 0.32);
     }
     .pulse-dot {
       width: 6px;
@@ -185,42 +276,42 @@
     /* ── Vinculación con el hub ── */
     .pairing-banner {
       display: none;
-      margin-bottom: 8px;
-      padding: 10px 12px;
+      margin-bottom: 10px;
+      padding: 12px 13px;
       background: var(--surface-1);
-      border: 1px solid rgba(139, 92, 246, 0.4);
+      border: 1px solid rgba(139, 92, 246, 0.45);
       border-radius: var(--radius-md);
-      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.06);
     }
     .pairing-banner.visible { display: block; }
-    .pairing-title { font-size: 11.5px; font-weight: 700; color: #fff; margin-bottom: 3px; display: flex; align-items: center; gap: 6px; }
-    .pairing-desc { font-size: 10px; color: var(--text-muted); line-height: 1.4; margin-bottom: 8px; }
-    .pairing-desc code { color: #a78bfa; background: rgba(255, 255, 255, 0.06); padding: 1px 4px; border-radius: 4px; font-family: ui-monospace, monospace; }
-    .pairing-row { display: flex; gap: 6px; }
+    .pairing-title { font-size: 12.5px; font-weight: 700; color: #fff; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+    .pairing-desc { font-size: 11px; color: var(--text-muted); line-height: 1.45; margin-bottom: 9px; }
+    .pairing-desc code { color: #c4b5fd; background: rgba(255, 255, 255, 0.07); padding: 1px 5px; border-radius: 4px; font-family: var(--font-mono); }
+    .pairing-row { display: flex; gap: 7px; }
     .pairing-row input {
       flex: 1; min-width: 0;
       background: var(--bg); color: var(--text);
       border: 1px solid var(--border); border-radius: var(--radius-sm);
-      padding: 6px 9px; font: 600 12px/1 ui-monospace, monospace; letter-spacing: 1.5px; text-transform: uppercase;
-      outline: none; transition: border-color 0.15s;
+      padding: 7px 10px; font: 600 12.5px/1 var(--font-mono); letter-spacing: 1.5px; text-transform: uppercase;
+      outline: none; transition: border-color 0.15s, box-shadow 0.15s;
     }
     .pairing-row input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
     .pairing-row button {
       background: var(--accent-gradient); color: #fff; border: 0; border-radius: var(--radius-sm);
-      padding: 6px 14px; font-size: 10.5px; font-weight: 600; cursor: pointer;
-      transition: all 0.15s ease;
+      padding: 7px 15px; font-size: 11.5px; font-weight: 600; cursor: pointer;
+      transition: opacity 0.15s, transform 0.15s;
     }
     .pairing-row button:hover { opacity: 0.95; transform: translateY(-1px); }
-    .pairing-error { font-size: 10px; color: var(--red); margin-top: 5px; min-height: 0; }
+    .pairing-error { font-size: 11px; color: var(--red); margin-top: 6px; min-height: 0; }
 
     /* ── Pestañas de Navegación (Segmented Bar) ── */
     .tabs-nav {
       display: flex;
       gap: 3px;
-      margin-bottom: 8px;
+      margin-bottom: 10px;
       background: rgba(255, 255, 255, 0.035);
       padding: 3px;
-      border-radius: 9px;
+      border-radius: 10px;
       border: 1px solid var(--border);
       flex-shrink: 0;
       overflow: hidden;
@@ -229,19 +320,19 @@
     .tab-btn {
       flex: 1 1 0;
       min-width: 0;
-      padding: 6px 4px;
-      border-radius: 6px;
+      padding: 7px 5px;
+      border-radius: 7px;
       border: 1px solid transparent;
       background: transparent;
       color: var(--text-muted);
-      font-size: 10px;
+      font-size: 11px;
       font-weight: 600;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 4px;
-      transition: all 0.18s ease;
+      transition: all 0.16s ease;
       white-space: nowrap;
       overflow: hidden;
     }
@@ -260,16 +351,16 @@
     .tab-btn.active {
       background: var(--surface-2);
       color: #fff;
-      border-color: rgba(255, 255, 255, 0.12);
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+      border-color: rgba(255, 255, 255, 0.14);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.08);
     }
 
     .tab-badge {
-      font-size: 9px;
+      font-size: 10px;
       background: rgba(255, 255, 255, 0.12);
       color: var(--text);
-      padding: 1px 4px;
-      border-radius: 8px;
+      padding: 1px 5px;
+      border-radius: 999px;
       font-weight: 700;
       flex-shrink: 0;
       transition: all 0.15s ease;
@@ -293,11 +384,11 @@
 
     /* ── Tab 1: Receptor en Vivo ── */
     .receiver-banner {
-      background: rgba(139, 92, 246, 0.08);
-      border: 1px solid rgba(139, 92, 246, 0.22);
+      background: rgba(139, 92, 246, 0.09);
+      border: 1px solid rgba(139, 92, 246, 0.24);
       border-radius: var(--radius-md);
-      padding: 6px 10px;
-      margin-bottom: 8px;
+      padding: 8px 11px;
+      margin-bottom: 9px;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -307,10 +398,10 @@
     .receiver-status-title {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 7px;
       font-weight: 600;
-      color: #c4b5fd;
-      font-size: 10.5px;
+      color: #ddd6fe;
+      font-size: 11.5px;
     }
 
     .receiver-status-title svg {
@@ -328,7 +419,7 @@
       overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 7px;
       padding-right: 2px;
     }
 
@@ -340,40 +431,40 @@
       align-items: center;
       justify-content: center;
       text-align: center;
-      padding: 16px 12px;
+      padding: 18px 14px;
       color: var(--text-muted);
     }
 
     .empty-radar {
       position: relative;
-      width: 60px;
-      height: 60px;
+      width: 62px;
+      height: 62px;
       display: flex;
       align-items: center;
       justify-content: center;
-      margin-bottom: 12px;
+      margin-bottom: 14px;
     }
 
     .radar-ring {
       position: absolute;
       border-radius: 50%;
-      border: 1px dashed rgba(139, 92, 246, 0.35);
+      border: 1px dashed rgba(139, 92, 246, 0.38);
       animation: radarPulse 3s infinite ease-out;
     }
-    .radar-ring.r1 { width: 56px; height: 56px; animation-delay: 0s; }
-    .radar-ring.r2 { width: 40px; height: 40px; animation-delay: 1s; }
+    .radar-ring.r1 { width: 58px; height: 58px; animation-delay: 0s; }
+    .radar-ring.r2 { width: 42px; height: 42px; animation-delay: 1s; }
 
     .radar-center {
-      width: 32px;
-      height: 32px;
+      width: 34px;
+      height: 34px;
       border-radius: 50%;
       background: rgba(139, 92, 246, 0.16);
       border: 1px solid rgba(139, 92, 246, 0.45);
       display: flex;
       align-items: center;
       justify-content: center;
-      color: #a78bfa;
-      box-shadow: 0 0 14px var(--accent-glow);
+      color: #c4b5fd;
+      box-shadow: 0 0 16px var(--accent-glow);
     }
 
     @keyframes radarPulse {
@@ -383,27 +474,27 @@
     }
 
     .empty-title {
-      font-size: 13px;
+      font-size: 14px;
       font-weight: 700;
+      letter-spacing: -0.015em;
       color: #fff;
-      margin-bottom: 4px;
-      letter-spacing: -0.2px;
+      margin-bottom: 5px;
     }
 
     .empty-desc {
-      font-size: 10px;
-      line-height: 1.45;
-      max-width: 310px;
+      font-size: 11.5px;
+      line-height: 1.5;
+      max-width: 330px;
       margin-bottom: 14px;
       color: var(--text-muted);
     }
 
     .empty-steps {
       display: flex;
-      gap: 6px;
-      margin-bottom: 14px;
+      gap: 7px;
+      margin-bottom: 15px;
       width: 100%;
-      max-width: 380px;
+      max-width: 400px;
     }
 
     .step-card {
@@ -411,24 +502,26 @@
       background: var(--surface-1);
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
-      padding: 8px 6px;
+      padding: 9px 7px;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 4px;
-      font-size: 9.5px;
+      gap: 5px;
+      font-size: 11px;
       color: var(--text-muted);
       text-align: center;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
     }
 
     .step-num {
-      width: 17px;
-      height: 17px;
+      width: 20px;
+      height: 20px;
       border-radius: 50%;
-      background: rgba(255, 255, 255, 0.08);
-      color: #fff;
+      background: rgba(139, 92, 246, 0.2);
+      border: 1px solid rgba(139, 92, 246, 0.35);
+      color: #ddd6fe;
       font-weight: 700;
-      font-size: 9px;
+      font-size: 10.5px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -436,12 +529,12 @@
 
     .step-card kbd {
       background: rgba(255, 255, 255, 0.08);
-      border: 1px solid rgba(255, 255, 255, 0.14);
-      padding: 0 3px;
-      border-radius: 3px;
-      font-family: ui-monospace, monospace;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
       color: #fff;
-      font-size: 9px;
+      font-size: 10px;
     }
 
     /* ── Tarjetas del Inbox ── */
@@ -449,29 +542,30 @@
       background: var(--surface-1);
       border: 1px solid var(--border);
       border-radius: var(--radius-md);
-      padding: 8px 10px;
+      padding: 10px 12px;
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 7px;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
       transition: all 0.15s ease;
     }
 
     .inbox-card:hover {
       border-color: var(--border-hover);
       background: var(--surface-2);
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.06);
     }
 
     .inbox-card-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 6px;
+      gap: 8px;
     }
 
     .inbox-card-title {
       font-weight: 600;
-      font-size: 11px;
+      font-size: 12px;
       color: #fff;
       display: flex;
       align-items: center;
@@ -485,25 +579,25 @@
     .inbox-card-meta {
       display: flex;
       align-items: center;
-      gap: 4px;
+      gap: 5px;
       flex-wrap: wrap;
-      font-size: 9.5px;
+      font-size: 10.5px;
       color: var(--text-muted);
     }
 
     .meta-tag {
       background: rgba(255, 255, 255, 0.05);
       border: 1px solid var(--border);
-      padding: 1.5px 5px;
-      border-radius: 4px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 9px;
+      padding: 2px 6px;
+      border-radius: 5px;
+      font-family: var(--font-mono);
+      font-size: 10.5px;
     }
 
     .meta-tag.comp {
       color: #c4b5fd;
       border-color: rgba(139, 92, 246, 0.35);
-      background: rgba(139, 92, 246, 0.12);
+      background: rgba(139, 92, 246, 0.13);
     }
 
     .meta-tag.token {
@@ -515,22 +609,23 @@
     .inbox-card-actions {
       display: flex;
       align-items: center;
-      gap: 5px;
+      flex-wrap: wrap;
+      gap: 6px;
       margin-top: 2px;
     }
 
     .card-btn {
-      background: rgba(255, 255, 255, 0.06);
+      background: rgba(255, 255, 255, 0.055);
       border: 1px solid var(--border);
-      border-radius: 5px;
-      padding: 3.5px 8px;
-      font-size: 10px;
-      font-weight: 500;
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-size: 11px;
+      font-weight: 600;
       color: var(--text);
       cursor: pointer;
       display: inline-flex;
       align-items: center;
-      gap: 4px;
+      gap: 5px;
       transition: all 0.15s ease;
     }
 
@@ -541,9 +636,9 @@
     }
 
     .card-btn.primary {
-      background: rgba(139, 92, 246, 0.15);
-      border-color: rgba(139, 92, 246, 0.35);
-      color: #c4b5fd;
+      background: rgba(139, 92, 246, 0.16);
+      border-color: rgba(139, 92, 246, 0.38);
+      color: #ddd6fe;
     }
     .card-btn.primary:hover {
       background: var(--accent);
@@ -552,12 +647,12 @@
     }
 
     .card-btn.danger {
-      color: #fb7185;
+      color: #fda4af;
       border-color: var(--red-border);
       background: var(--red-bg);
     }
     .card-btn.danger:hover {
-      background: rgba(244, 63, 94, 0.22);
+      background: rgba(244, 63, 94, 0.24);
       border-color: var(--red);
       color: #fff;
     }
@@ -566,7 +661,7 @@
     .import-container {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 9px;
       height: 100%;
     }
 
@@ -574,17 +669,17 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 6px;
+      gap: 8px;
     }
 
     .import-title {
       font-weight: 700;
-      font-size: 11px;
+      font-size: 12.5px;
       color: #fff;
     }
 
     .import-subtitle {
-      font-size: 9.5px;
+      font-size: 11px;
       color: var(--text-muted);
     }
 
@@ -597,11 +692,11 @@
       flex: 1;
       display: flex;
       flex-direction: column;
-      background: #0d0e11;
+      background: #080a0f;
       border: 1px solid var(--border);
       border-radius: var(--radius-md);
       overflow: hidden;
-      transition: border-color 0.15s;
+      transition: border-color 0.15s, box-shadow 0.15s;
     }
 
     .json-editor-wrap:focus-within {
@@ -613,78 +708,138 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 4px 8px;
+      padding: 6px 10px;
       background: rgba(255, 255, 255, 0.03);
       border-bottom: 1px solid var(--border);
-      font-size: 9px;
-      color: var(--text-dim);
-      font-family: ui-monospace, monospace;
+      font-size: 10.5px;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
     }
 
     .json-textarea {
       flex: 1;
       background: transparent;
       border: none;
-      padding: 8px 10px;
+      padding: 10px 11px;
       color: #e2e8f0;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 10px;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
       resize: none;
       outline: none;
-      line-height: 1.45;
+      line-height: 1.5;
     }
 
     .json-status-bar {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      font-size: 10px;
+      font-size: 11px;
       color: var(--text-muted);
       padding: 0 2px;
     }
 
     .import-options-row {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 4px 0;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 7px;
+      padding: 2px 0;
     }
 
+    /* Custom Styled Checkbox Pill (zero native browser checkbox) */
     .checkbox-pill {
-      display: inline-flex;
+      position: relative;
+      display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 8px;
       cursor: pointer;
-      font-size: 10px;
+      font-size: 11px;
+      font-weight: 500;
       color: var(--text);
+      background: var(--surface-1);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 8px 10px;
       user-select: none;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .checkbox-pill:hover {
+      background: var(--surface-2);
+      border-color: var(--border-hover);
+    }
+    .checkbox-pill:has(input[type="checkbox"]:checked) {
+      background: rgba(139, 92, 246, 0.13);
+      border-color: rgba(139, 92, 246, 0.55);
+      color: #fff;
     }
     .checkbox-pill input[type="checkbox"] {
-      accent-color: var(--accent);
-      cursor: pointer;
+      position: absolute;
+      opacity: 0;
+      width: 1px;
+      height: 1px;
+      margin: 0;
+      pointer-events: none;
+      appearance: none;
+      -webkit-appearance: none;
+    }
+    .ctf-check-box {
+      width: 16px;
+      height: 16px;
+      border-radius: 5px;
+      border: 1.5px solid rgba(255, 255, 255, 0.25);
+      background: rgba(255, 255, 255, 0.04);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+    }
+    .ctf-check-box svg {
+      width: 11px;
+      height: 11px;
+      stroke: #fff;
+      fill: none;
+      stroke-width: 2.3;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      opacity: 0;
+      transform: scale(0.7);
+      transition: opacity 0.14s, transform 0.14s;
+    }
+    .checkbox-pill input[type="checkbox"]:checked + .ctf-check-box {
+      background: var(--accent-gradient);
+      border-color: #a78bfa;
+      box-shadow: 0 2px 8px rgba(139, 92, 246, 0.35);
+    }
+    .checkbox-pill input[type="checkbox"]:checked + .ctf-check-box svg {
+      opacity: 1;
+      transform: scale(1);
+    }
+    .checkbox-pill:has(input[type="checkbox"]:focus-visible) {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
     }
 
     .btn-gradient {
       background: var(--accent-gradient);
       color: #fff;
-      border: none;
+      border: 1px solid rgba(255, 255, 255, 0.14);
       border-radius: var(--radius-sm);
-      padding: 9px 14px;
+      padding: 10px 14px;
       font-weight: 600;
-      font-size: 11px;
+      font-size: 12px;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 6px;
-      box-shadow: 0 2px 10px var(--accent-glow);
+      gap: 7px;
+      box-shadow: 0 4px 14px var(--accent-glow), inset 0 1px 0 rgba(255, 255, 255, 0.2);
       transition: all 0.18s ease;
     }
 
     .btn-gradient:hover:not(:disabled) {
       background: var(--accent-gradient-hover);
       transform: translateY(-1px);
-      box-shadow: 0 4px 14px rgba(139, 92, 246, 0.4);
+      box-shadow: 0 6px 18px rgba(139, 92, 246, 0.44);
     }
 
     .btn-gradient:disabled {
@@ -694,12 +849,12 @@
       box-shadow: none;
     }
 
-    /* ── Tab 3: Ajustes (Segmented Controls) ── */
+    /* ── Tab 3: Ajustes (Segmented Controls & Custom Selects) ── */
     .settings-container {
       overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 9px;
       padding-right: 2px;
     }
 
@@ -707,28 +862,29 @@
       background: var(--surface-1);
       border: 1px solid var(--border);
       border-radius: var(--radius-md);
-      padding: 9px 11px;
+      padding: 11px 12px;
       display: flex;
       flex-direction: column;
-      gap: 7px;
+      gap: 8px;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
     }
 
     .settings-group-title {
       font-weight: 700;
-      font-size: 10.5px;
+      font-size: 12px;
       color: #fff;
       display: flex;
       align-items: center;
-      gap: 6px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-      padding-bottom: 5px;
+      gap: 7px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      padding-bottom: 6px;
     }
 
     /* Segmented Cards para Estructura */
     .segmented-cards {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 6px;
+      gap: 7px;
     }
 
     .segmented-card {
@@ -747,10 +903,10 @@
       background: var(--surface-2);
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
-      padding: 7px 8px;
+      padding: 9px 10px;
       display: flex;
       flex-direction: column;
-      gap: 3px;
+      gap: 4px;
       transition: all 0.15s ease;
       height: 100%;
     }
@@ -762,32 +918,32 @@
     .segmented-card:has(input[type="radio"]:checked) .segmented-card-inner {
       background: rgba(139, 92, 246, 0.14);
       border-color: var(--accent);
-      box-shadow: 0 0 0 1px var(--accent);
+      box-shadow: 0 0 0 1px var(--accent), inset 0 1px 0 rgba(255, 255, 255, 0.1);
     }
 
     .segmented-card-title {
       font-weight: 600;
-      font-size: 10.5px;
+      font-size: 11.5px;
       color: #fff;
       display: flex;
       align-items: center;
-      gap: 5px;
+      gap: 6px;
     }
 
     .segmented-card-desc {
-      font-size: 9px;
+      font-size: 10.5px;
       color: var(--text-muted);
-      line-height: 1.35;
+      line-height: 1.4;
     }
 
     /* Segmented Tabs para Tablero y Disposición */
     .segmented-tabs {
       display: flex;
-      background: rgba(255, 255, 255, 0.04);
-      padding: 2.5px;
-      border-radius: 7px;
+      background: rgba(255, 255, 255, 0.035);
+      padding: 3px;
+      border-radius: 8px;
       border: 1px solid var(--border);
-      gap: 2px;
+      gap: 3px;
     }
 
     .segmented-tab {
@@ -808,10 +964,10 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 4px;
-      padding: 5px 6px;
-      border-radius: 5px;
-      font-size: 10px;
+      gap: 5px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      font-size: 11px;
       font-weight: 600;
       color: var(--text-muted);
       transition: all 0.15s ease;
@@ -825,14 +981,14 @@
     .segmented-tab:has(input[type="radio"]:checked) .segmented-tab-label {
       background: var(--surface-active);
       color: #fff;
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
     }
 
     .setting-caption {
-      font-size: 9.2px;
-      color: var(--text-dim);
-      line-height: 1.35;
+      font-size: 11px;
+      color: var(--text-muted);
+      line-height: 1.45;
       padding: 0 2px;
     }
 
@@ -841,34 +997,34 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 8px;
+      gap: 10px;
       cursor: pointer;
-      padding: 3px 0;
+      padding: 4px 0;
     }
 
     .switch-text {
       display: flex;
       flex-direction: column;
-      gap: 1.5px;
+      gap: 2px;
       flex: 1;
     }
 
     .switch-title {
       font-weight: 600;
-      font-size: 10px;
+      font-size: 11.5px;
       color: var(--text);
     }
 
     .switch-desc {
-      font-size: 9px;
+      font-size: 10.5px;
       color: var(--text-muted);
-      line-height: 1.3;
+      line-height: 1.4;
     }
 
     .switch-toggle {
       position: relative;
-      width: 30px;
-      height: 17px;
+      width: 34px;
+      height: 19px;
       flex-shrink: 0;
     }
 
@@ -884,8 +1040,8 @@
       top: 0; left: 0; right: 0; bottom: 0;
       background-color: rgba(255, 255, 255, 0.12);
       transition: .2s ease;
-      border-radius: 17px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 19px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
     }
 
     .switch-track:before {
@@ -893,60 +1049,234 @@
       content: "";
       height: 13px;
       width: 13px;
-      left: 1px;
-      bottom: 1px;
-      background-color: #fff;
-      transition: .2s ease;
+      left: 2px;
+      bottom: 2px;
+      background-color: #e2e8f0;
+      transition: .2s cubic-bezier(0.22, 1, 0.36, 1);
       border-radius: 50%;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
     }
 
     .switch-toggle input:checked + .switch-track {
-      background-color: var(--accent);
-      border-color: var(--accent);
+      background: var(--accent-gradient);
+      border-color: #a78bfa;
     }
 
     .switch-toggle input:checked + .switch-track:before {
-      transform: translateX(13px);
+      transform: translateX(15px);
+      background-color: #fff;
     }
 
     .font-map-box {
-      margin-top: 3px;
+      margin-top: 4px;
       display: flex;
       flex-direction: column;
-      gap: 3px;
+      gap: 5px;
     }
 
     .font-map-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      font-size: 9.5px;
+      font-size: 11px;
+      font-weight: 600;
       color: var(--text-muted);
     }
 
     .font-map-tip {
-      font-family: ui-monospace, monospace;
+      font-family: var(--font-mono);
       color: var(--text-dim);
-      font-size: 8.5px;
+      font-size: 10px;
+      font-weight: 500;
+    }
+
+    .field-input-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    .field-input {
+      width: 100%;
+      box-sizing: border-box;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      padding: 8px 34px 8px 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .field-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-glow);
+    }
+    .field-eye-btn {
+      position: absolute;
+      right: 6px;
+      width: 24px;
+      height: 24px;
+      border: none;
+      border-radius: 5px;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .field-eye-btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
     }
 
     #txtFontMap {
       width: 100%;
       box-sizing: border-box;
-      font: 10px/1.4 ui-monospace, Menlo, Consolas, monospace;
+      font: 11px/1.45 var(--font-mono);
       background: var(--bg);
       color: var(--text);
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
-      padding: 6px 8px;
+      padding: 8px 10px;
       resize: vertical;
       outline: none;
-      transition: border-color 0.15s;
+      transition: border-color 0.15s, box-shadow 0.15s;
     }
     #txtFontMap:focus {
       border-color: var(--accent);
-      box-shadow: 0 0 0 1px var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-glow);
+    }
+
+    /* ── Custom Studio Select Component (zero native <select>) ── */
+    .ctf-select {
+      position: relative;
+      width: 100%;
+    }
+    .ctf-select-trigger {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 11.5px;
+      font-weight: 500;
+      cursor: pointer;
+      text-align: left;
+      outline: none;
+      transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+    }
+    .ctf-select-trigger:hover {
+      border-color: var(--border-hover);
+      background: #10131d;
+    }
+    .ctf-select.open .ctf-select-trigger {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-glow);
+    }
+    .ctf-select-value {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+    }
+    .ctf-select-caret {
+      color: var(--text-muted);
+      transition: transform 0.15s ease;
+      display: inline-flex;
+    }
+    .ctf-select.open .ctf-select-caret {
+      transform: rotate(180deg);
+      color: #c4b5fd;
+    }
+    .ctf-select-menu {
+      display: none;
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: calc(100% + 4px);
+      background: #141826;
+      border: 1px solid rgba(139, 92, 246, 0.42);
+      border-radius: var(--radius-md);
+      box-shadow: 0 16px 38px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      padding: 5px;
+      z-index: 50;
+      max-height: 220px;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .ctf-select.drop-up .ctf-select-menu {
+      top: auto;
+      bottom: calc(100% + 4px);
+    }
+    .ctf-select.open .ctf-select-menu {
+      display: flex;
+    }
+    .ctf-select-search {
+      width: 100%;
+      padding: 6px 9px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 11px;
+      outline: none;
+      margin-bottom: 2px;
+    }
+    .ctf-select-search:focus {
+      border-color: var(--accent);
+    }
+    .ctf-select-options {
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      max-height: 170px;
+    }
+    .ctf-select-option {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 7px 9px;
+      border-radius: 6px;
+      border: none;
+      background: transparent;
+      color: var(--text);
+      font-size: 11.5px;
+      text-align: left;
+      cursor: pointer;
+      transition: background 0.12s, color 0.12s;
+    }
+    .ctf-select-option:hover {
+      background: rgba(255, 255, 255, 0.07);
+      color: #fff;
+    }
+    .ctf-select-option.selected {
+      background: rgba(139, 92, 246, 0.2);
+      color: #fff;
+      font-weight: 600;
+    }
+    .ctf-select-option-sub {
+      font-size: 10px;
+      color: var(--text-muted);
+      display: block;
+      font-weight: 400;
+    }
+    .ctf-select-check {
+      color: #a78bfa;
+      opacity: 0;
+      flex-shrink: 0;
+    }
+    .ctf-select-option.selected .ctf-select-check {
+      opacity: 1;
     }
 
     /* ── Tab 4: Vistas App ── */
@@ -962,22 +1292,23 @@
       background: var(--surface-1);
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
-      padding: 6px 9px;
+      padding: 8px 10px;
       color: #fff;
-      font-size: 10px;
+      font-size: 11.5px;
       outline: none;
-      transition: border-color 0.15s;
+      transition: border-color 0.15s, box-shadow 0.15s;
     }
 
     .search-input:focus {
       border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-glow);
     }
 
     .filter-chips {
       display: flex;
-      gap: 4px;
+      gap: 5px;
       overflow-x: auto;
-      padding-bottom: 2px;
+      padding-bottom: 3px;
       scrollbar-width: none;
     }
     .filter-chips::-webkit-scrollbar {
@@ -987,9 +1318,9 @@
     .chip {
       background: rgba(255, 255, 255, 0.05);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 2.5px 8px;
-      font-size: 9.5px;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 11px;
       color: var(--text-muted);
       cursor: pointer;
       white-space: nowrap;
@@ -997,9 +1328,9 @@
     }
 
     .chip.active {
-      background: rgba(139, 92, 246, 0.15);
-      border-color: rgba(139, 92, 246, 0.4);
-      color: #c4b5fd;
+      background: rgba(139, 92, 246, 0.18);
+      border-color: rgba(139, 92, 246, 0.45);
+      color: #ddd6fe;
       font-weight: 600;
     }
 
@@ -1007,8 +1338,8 @@
     .stats-row {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 6px;
-      margin-bottom: 8px;
+      gap: 7px;
+      margin-bottom: 9px;
       flex-shrink: 0;
     }
 
@@ -1016,7 +1347,7 @@
       background: var(--surface-1);
       border: 1px solid var(--border);
       border-radius: var(--radius-md);
-      padding: 8px 6px;
+      padding: 9px 7px;
       text-align: center;
       position: relative;
       overflow: hidden;
@@ -1032,32 +1363,32 @@
     .stat-green .stat-indicator { background: #34d399; }
 
     .stat-label {
-      font-size: 8.5px;
-      font-weight: 600;
+      font-size: 10px;
+      font-weight: 700;
       color: var(--text-muted);
       text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 2px;
+      letter-spacing: 0.4px;
+      margin-bottom: 3px;
     }
 
     .stat-value {
-      font-size: 14px;
+      font-size: 15px;
       font-weight: 700;
       color: #fff;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-family: var(--font-mono);
     }
 
     .terminal-toolbar {
       display: flex;
       gap: 6px;
-      margin-bottom: 6px;
+      margin-bottom: 7px;
     }
 
     .terminal-window {
       flex: 1;
       display: flex;
       flex-direction: column;
-      background: #090a0d;
+      background: #08090d;
       border: 1px solid var(--border);
       border-radius: var(--radius-md);
       overflow: hidden;
@@ -1067,14 +1398,14 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 5px 9px;
+      padding: 6px 10px;
       background: rgba(255, 255, 255, 0.03);
       border-bottom: 1px solid var(--border);
     }
 
     .terminal-dots {
       display: flex;
-      gap: 4px;
+      gap: 5px;
     }
     .dot {
       width: 7px;
@@ -1086,54 +1417,100 @@
     .dot.green { background: #10b981; }
 
     .terminal-title {
-      font-size: 9px;
-      color: var(--text-dim);
-      font-family: ui-monospace, monospace;
+      font-size: 10.5px;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
     }
 
     .logs-terminal {
       flex: 1;
-      padding: 8px 10px;
+      padding: 9px 11px;
       overflow-y: auto;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 9.5px;
+      font-family: var(--font-mono);
+      font-size: 11px;
       display: flex;
       flex-direction: column;
-      gap: 3px;
+      gap: 4px;
     }
 
     .log-line {
       display: flex;
-      gap: 6px;
-      line-height: 1.4;
-      word-break: break-all;
+      gap: 7px;
+      line-height: 1.45;
+      word-break: break-word;
     }
     .log-time { color: #64748b; flex-shrink: 0; }
-    .log-info { color: #94a3b8; }
+    .log-info { color: #cbd5e1; }
     .log-success { color: #34d399; }
     .log-warn { color: #fbbf24; }
     .log-error { color: #fb7185; }
+
+    /* ── Custom In-Plugin Confirm Modal (zero window.confirm) ── */
+    .ctf-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(4, 6, 12, 0.72);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+      z-index: 200;
+    }
+    .ctf-modal-backdrop.open {
+      display: flex;
+    }
+    .ctf-modal-card {
+      width: 100%;
+      max-width: 350px;
+      background: #131724;
+      border: 1px solid rgba(244, 63, 94, 0.42);
+      border-radius: var(--radius-lg);
+      padding: 16px;
+      box-shadow: 0 22px 50px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .ctf-modal-title {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .ctf-modal-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+    .ctf-modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 4px;
+    }
 
     /* ── Footer ── */
     .footer {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-top: 8px;
-      padding-top: 6px;
+      margin-top: 9px;
+      padding-top: 8px;
       border-top: 1px solid var(--border);
-      font-size: 9.2px;
-      color: var(--text-dim);
+      font-size: 10.5px;
+      color: var(--text-muted);
       flex-shrink: 0;
     }
     .footer-left {
       display: flex;
       align-items: center;
-      gap: 5px;
+      gap: 6px;
     }
     .footer-dot {
-      width: 5px;
-      height: 5px;
+      width: 6px;
+      height: 6px;
       border-radius: 50%;
       background: #34d399;
     }
@@ -1142,9 +1519,9 @@
       background: var(--surface-2);
       border: 1px solid var(--border);
       color: var(--text);
-      padding: 7px 10px;
+      padding: 8px 11px;
       border-radius: var(--radius-sm);
-      font-size: 10.5px;
+      font-size: 11.5px;
       font-weight: 600;
       cursor: pointer;
       transition: background 0.15s, border-color 0.15s;
@@ -1155,8 +1532,8 @@
     }
 
     .empty-icon-wrap {
-      width: 44px;
-      height: 44px;
+      width: 46px;
+      height: 46px;
       border-radius: 12px;
       border: 1px solid var(--border);
       display: flex;
@@ -1182,9 +1559,18 @@
         <div class="brand-sub">Live Receiver & Component Cloner</div>
       </div>
     </div>
-    <div id="statusBadge" class="badge disconnected" onclick="reconnectHub()" title="Clic para reconectar al Hub local (ws://localhost:8080). En Figma Web permite 'Apps en el dispositivo'.">
-      <span class="pulse-dot"></span>
-      <span id="statusText">Desconectado</span>
+    <div class="header-controls">
+      <button type="button" id="miniReceiverPill" class="mini-activity-pill" onclick="setMinimized(false)" title="Volver a vista completa del receptor">
+        <span id="miniCountText">0</span>
+      </button>
+      <div id="statusBadge" class="badge disconnected" onclick="reconnectHub()" title="Clic para reconectar al Hub local (ws://localhost:8080). En Figma Web permite 'Apps en el dispositivo'.">
+        <span class="pulse-dot"></span>
+        <span id="statusText">Desconectado</span>
+      </div>
+      <button type="button" id="btnMinimize" class="btn-icon-header" onclick="toggleMinimize()" title="Minimizar sin cerrar (mantiene la conexión activa)" aria-pressed="false" aria-label="Minimizar ventana del plugin">
+        <svg id="iconMinimize" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <svg id="iconMaximize" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:none;"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+      </button>
     </div>
   </div>
 
@@ -1322,10 +1708,12 @@
       <div class="import-options-row">
         <label class="checkbox-pill">
           <input type="checkbox" id="chkImportAsComponent" />
+          <span class="ctf-check-box" aria-hidden="true"><svg viewBox="0 0 12 12"><polyline points="2.2 6.2 4.8 8.8 9.8 3.4"/></svg></span>
           <span>Crear como Componente nativo</span>
         </label>
         <label class="checkbox-pill">
           <input type="checkbox" id="chkImportTokens" checked />
+          <span class="ctf-check-box" aria-hidden="true"><svg viewBox="0 0 12 12"><polyline points="2.2 6.2 4.8 8.8 9.8 3.4"/></svg></span>
           <span>Extraer Paint Styles de Tokens</span>
         </label>
       </div>
@@ -1479,29 +1867,54 @@
             <span class="switch-track"></span>
           </div>
         </label>
-        <div class="font-map-box" style="margin-top: 8px;">
+        <div class="font-map-box" style="margin-top: 6px;">
           <div class="font-map-header">
             <span>Google AI Studio API Key (Gratis)</span>
-            <div style="display: flex; gap: 8px; align-items: center;">
-              <button type="button" onclick="clearGeminiKey()" style="background: none; border: none; color: #f87171; font-size: 9px; cursor: pointer; padding: 0; text-decoration: underline;" title="Eliminar clave guardada">Borrar clave</button>
-              <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color: #818cf8; font-size: 9px; text-decoration: none;">Obtener Clave</a>
+            <div style="display: flex; gap: 10px; align-items: center;">
+              <button type="button" onclick="clearGeminiKey()" style="background: none; border: none; color: #f87171; font-size: 10.5px; cursor: pointer; padding: 0; text-decoration: underline;" title="Eliminar clave guardada">Borrar clave</button>
+              <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color: #a5b4fc; font-size: 10.5px; text-decoration: none;">Obtener Clave</a>
             </div>
           </div>
-          <input type="password" id="txtGeminiKey" class="search-input" style="width: 100%; box-sizing: border-box; font-family: ui-monospace, monospace; font-size: 11px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" placeholder="AIzaSy..." oninput="savePluginSettings()" onchange="savePluginSettings()" />
-          <div class="setting-caption" style="margin-top: 4px;">
+          <div class="field-input-wrap">
+            <input type="password" id="txtGeminiKey" class="field-input" placeholder="AIzaSy..." oninput="savePluginSettings()" onchange="savePluginSettings()" />
+            <button type="button" id="btnToggleGeminiKey" class="field-eye-btn" onclick="toggleGeminiKeyVisibility()" title="Mostrar u ocultar clave" aria-label="Mostrar clave">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+          <div class="setting-caption" style="margin-top: 3px;">
             Tier gratuito de Google AI Studio: 15 peticiones/minuto sin costo. Se almacena de forma segura en tu cliente local.
           </div>
         </div>
-        <div class="font-map-box" style="margin-top: 8px;">
+        <div class="font-map-box" style="margin-top: 6px;">
           <div class="font-map-header">
             <span>Modelo de Gemini Flash</span>
           </div>
-          <select id="selGeminiModel" class="search-input" style="width: 100%; box-sizing: border-box; font-family: ui-monospace, monospace; font-size: 11px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" onchange="savePluginSettings()">
-            <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recomendado — Rápido y Preciso)</option>
-            <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite (Ultrarrápido / Menor latencia)</option>
-            <option value="gemini-flash-latest">gemini-flash-latest (Auto / Último estable)</option>
-          </select>
-          <div class="setting-caption" style="margin-top: 4px;">
+          <div class="ctf-select drop-up" id="customSelGeminiModel" data-select-target="selGeminiModel">
+            <input type="hidden" id="selGeminiModel" value="gemini-2.5-flash" />
+            <button type="button" class="ctf-select-trigger" aria-haspopup="listbox" aria-expanded="false">
+              <span class="ctf-select-value">Gemini 2.5 Flash — Recomendado</span>
+              <span class="ctf-select-caret" aria-hidden="true">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="6 9 12 15 18 9"/></svg>
+              </span>
+            </button>
+            <div class="ctf-select-menu" role="listbox">
+              <div class="ctf-select-options">
+                <button type="button" class="ctf-select-option selected" data-value="gemini-2.5-flash" data-label="Gemini 2.5 Flash — Recomendado">
+                  <span>Gemini 2.5 Flash<span class="ctf-select-option-sub">Rápido y preciso para jerarquías UI</span></span>
+                  <svg class="ctf-select-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                </button>
+                <button type="button" class="ctf-select-option" data-value="gemini-2.5-flash-lite" data-label="Gemini 2.5 Flash-Lite — Ultrarrápido">
+                  <span>Gemini 2.5 Flash-Lite<span class="ctf-select-option-sub">Menor latencia y consumo mínimo</span></span>
+                  <svg class="ctf-select-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                </button>
+                <button type="button" class="ctf-select-option" data-value="gemini-flash-latest" data-label="gemini-flash-latest — Auto estable">
+                  <span>gemini-flash-latest<span class="ctf-select-option-sub">Última versión Flash estable automática</span></span>
+                  <svg class="ctf-select-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="setting-caption" style="margin-top: 3px;">
             Si el modelo elegido no está disponible en tu cuenta, el sistema intentará automáticamente con las alternativas Flash compatibles sin fallar.
           </div>
         </div>
@@ -1637,6 +2050,21 @@
     <span id="activePageName">Página: Dashboard</span>
   </div>
 
+  <!-- Modal Confirmación Propia (sin window.confirm nativo) -->
+  <div id="confirmModal" class="ctf-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+    <div class="ctf-modal-card">
+      <div class="ctf-modal-title" id="confirmTitle">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fb7185" stroke-width="2.2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        <span id="confirmTitleText">Confirmar acción</span>
+      </div>
+      <div class="ctf-modal-desc" id="confirmDescText"></div>
+      <div class="ctf-modal-actions">
+        <button type="button" class="card-btn" id="confirmBtnCancel">Cancelar</button>
+        <button type="button" class="card-btn danger" id="confirmBtnOk">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     // ── Estado Global del Plugin UI ──
     const HUB_URL = 'ws://localhost:8080';
@@ -1703,6 +2131,171 @@
       if (tabId === 'fonts') {
         refreshFigmaFonts();
         renderDetectedFontsList();
+      }
+      closeAllCustomSelects();
+    }
+
+    // ── Modo Minimizado (Barra flotante compacta sin desconectar) ──
+    let isMinimized = false;
+    function updateMiniBadge(overrideText = null) {
+      const el = document.getElementById('miniCountText');
+      if (!el) return;
+      if (overrideText) {
+        el.textContent = overrideText;
+        return;
+      }
+      el.textContent =
+        receivedItems.length > 0
+          ? `${receivedItems.length} listo${receivedItems.length === 1 ? '' : 's'}`
+          : 'En espera';
+    }
+
+    function setMinimized(flag) {
+      isMinimized = Boolean(flag);
+      closeAllCustomSelects();
+      document.body.classList.toggle('minimized', isMinimized);
+      const btn = document.getElementById('btnMinimize');
+      const icoMin = document.getElementById('iconMinimize');
+      const icoMax = document.getElementById('iconMaximize');
+      if (btn) {
+        btn.setAttribute('aria-pressed', String(isMinimized));
+        btn.title = isMinimized
+          ? 'Expandir Studio completo'
+          : 'Minimizar sin cerrar (mantiene la conexión activa)';
+        btn.setAttribute('aria-label', btn.title);
+      }
+      if (icoMin) icoMin.style.display = isMinimized ? 'none' : '';
+      if (icoMax) icoMax.style.display = isMinimized ? '' : 'none';
+      updateMiniBadge();
+      parent.postMessage(
+        {
+          pluginMessage: {
+            type: 'RESIZE_UI',
+            width: isMinimized ? 304 : 484,
+            height: isMinimized ? 54 : 650
+          }
+        },
+        '*'
+      );
+    }
+
+    function toggleMinimize() {
+      setMinimized(!isMinimized);
+    }
+
+    function toggleGeminiKeyVisibility() {
+      const input = document.getElementById('txtGeminiKey');
+      if (!input) return;
+      input.type = input.type === 'password' ? 'text' : 'password';
+    }
+
+    // ── Modal de Confirmación Propio (sin window.confirm nativo) ──
+    function showConfirmModal(title, desc, okLabel = 'Confirmar') {
+      const modal = document.getElementById('confirmModal');
+      if (!modal) return Promise.resolve(true);
+      document.getElementById('confirmTitleText').textContent = title;
+      document.getElementById('confirmDescText').textContent = desc;
+      const btnOk = document.getElementById('confirmBtnOk');
+      const btnCancel = document.getElementById('confirmBtnCancel');
+      btnOk.textContent = okLabel;
+      modal.classList.add('open');
+
+      return new Promise(resolve => {
+        const cleanup = result => {
+          modal.classList.remove('open');
+          btnOk.removeEventListener('click', onOk);
+          btnCancel.removeEventListener('click', onCancel);
+          modal.removeEventListener('click', onBackdrop);
+          document.removeEventListener('keydown', onKey);
+          resolve(result);
+        };
+        const onOk = () => cleanup(true);
+        const onCancel = () => cleanup(false);
+        const onBackdrop = e => { if (e.target === modal) cleanup(false); };
+        const onKey = e => { if (e.key === 'Escape') cleanup(false); };
+        btnOk.addEventListener('click', onOk);
+        btnCancel.addEventListener('click', onCancel);
+        modal.addEventListener('click', onBackdrop);
+        document.addEventListener('keydown', onKey);
+      });
+    }
+
+    // ── Selector Personalizado (.ctf-select) ──
+    function closeAllCustomSelects(exceptEl = null) {
+      document.querySelectorAll('.ctf-select.open').forEach(sel => {
+        if (sel !== exceptEl) {
+          sel.classList.remove('open');
+          const trig = sel.querySelector('.ctf-select-trigger');
+          if (trig) trig.setAttribute('aria-expanded', 'false');
+        }
+      });
+    }
+
+    function setCustomSelectValue(targetId, value) {
+      const input = document.getElementById(targetId);
+      const wrap = input ? input.closest('.ctf-select') : null;
+      if (!input || !wrap) return;
+      input.value = value;
+      const options = wrap.querySelectorAll('.ctf-select-option');
+      let matchedLabel = '';
+      options.forEach(opt => {
+        const isSel = opt.getAttribute('data-value') === value;
+        opt.classList.toggle('selected', isSel);
+        if (isSel) matchedLabel = opt.getAttribute('data-label') || opt.textContent.trim();
+      });
+      const valSpan = wrap.querySelector('.ctf-select-value');
+      if (valSpan && matchedLabel) valSpan.textContent = matchedLabel;
+    }
+
+    function initCustomSelect(wrap, onChange) {
+      if (!wrap || wrap.dataset.bound === '1') return;
+      wrap.dataset.bound = '1';
+      const trigger = wrap.querySelector('.ctf-select-trigger');
+      const hidden = wrap.querySelector('input[type="hidden"]');
+      const search = wrap.querySelector('.ctf-select-search');
+      const optionsBox = wrap.querySelector('.ctf-select-options');
+
+      if (trigger) {
+        trigger.addEventListener('click', e => {
+          e.stopPropagation();
+          const willOpen = !wrap.classList.contains('open');
+          closeAllCustomSelects(wrap);
+          wrap.classList.toggle('open', willOpen);
+          trigger.setAttribute('aria-expanded', String(willOpen));
+          if (willOpen && search) {
+            search.value = '';
+            optionsBox.querySelectorAll('.ctf-select-option').forEach(o => (o.style.display = ''));
+            setTimeout(() => search.focus(), 20);
+          }
+        });
+      }
+
+      if (search && optionsBox) {
+        search.addEventListener('click', e => e.stopPropagation());
+        search.addEventListener('input', () => {
+          const q = search.value.trim().toLowerCase();
+          optionsBox.querySelectorAll('.ctf-select-option').forEach(opt => {
+            const label = (opt.getAttribute('data-label') || opt.textContent || '').toLowerCase();
+            opt.style.display = !q || label.includes(q) ? '' : 'none';
+          });
+        });
+      }
+
+      if (optionsBox) {
+        optionsBox.addEventListener('click', e => {
+          const opt = e.target.closest ? e.target.closest('.ctf-select-option') : null;
+          if (!opt) return;
+          e.stopPropagation();
+          const val = opt.getAttribute('data-value') ?? '';
+          const label = opt.getAttribute('data-label') || opt.textContent.trim();
+          if (hidden) hidden.value = val;
+          optionsBox.querySelectorAll('.ctf-select-option').forEach(o => o.classList.toggle('selected', o === opt));
+          const valSpan = wrap.querySelector('.ctf-select-value');
+          if (valSpan) valSpan.textContent = label;
+          wrap.classList.remove('open');
+          if (trigger) trigger.setAttribute('aria-expanded', 'false');
+          if (typeof onChange === 'function') onChange(val);
+        });
       }
     }
 
@@ -1800,6 +2393,7 @@
 
     // ── Vinculación con el hub ──
     function showPairing(errorText) {
+      if (isMinimized) setMinimized(false);
       document.getElementById('pairingBanner').classList.add('visible');
       // Sin texto (ej. al cerrarse la conexión) se conserva el error que ya se mostraba
       if (errorText !== undefined) {
@@ -2044,6 +2638,7 @@
         // Solo lo que aún existe en el lienzo (el sandbox depura lo borrado a mano)
         receivedItems = (Array.isArray(msg.items) ? msg.items : []).map(i => ({ ...i, timestamp: new Date(i.timestamp || Date.now()) }));
         badgeReceiverCount.textContent = receivedItems.length;
+        updateMiniBadge();
         renderInboxFeed();
       },
       DELETED() {
@@ -2056,8 +2651,10 @@
         if (msg.percent >= 100) {
           updateLogLine(renderProgressLine, `Renderizado de capas en Figma completado (100%).`, 'success');
           renderProgressLine = null;
+          updateMiniBadge();
         } else {
           updateLogLine(renderProgressLine, `Renderizando capas en Figma: ${msg.rendered} / ${msg.total} (${msg.percent}%)...`, 'info');
+          updateMiniBadge(`Dibujando ${msg.percent}%`);
         }
       },
       PAGE_INFO(msg) {
@@ -2131,6 +2728,7 @@
       },
       RENDER_ERROR(msg) {
         renderProgressLine = null;
+        updateMiniBadge();
         log(`Error al renderizar en Figma: ${msg.error}`, 'error');
         notifyHub({
           type: 'CLIENT_LOG',
@@ -2182,6 +2780,7 @@
       PAGE_CLEARED() {
         receivedItems = [];
         badgeReceiverCount.textContent = '0';
+        updateMiniBadge();
         saveReceivedItemsToStorage();
         renderInboxFeed();
       },
@@ -2201,6 +2800,7 @@
     function addReceivedItem(item) {
       receivedItems.unshift(item);
       badgeReceiverCount.textContent = receivedItems.length;
+      updateMiniBadge();
       saveReceivedItemsToStorage();
       renderInboxFeed();
       if (item.rawPayload) collectDetectedFontsFromPayload(item.rawPayload);
@@ -2226,8 +2826,8 @@
 
         const isComp = item.nodeType === 'COMPONENT';
         const typeIcon = isComp 
-          ? `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>`
-          : `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>`;
+          ? `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>`
+          : `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>`;
 
         card.innerHTML = `
           <div class="inbox-card-header">
@@ -2235,38 +2835,42 @@
               ${typeIcon}
               ${escapeHtml(item.name)}
             </div>
-            <span style="font-size:9.5px;color:var(--text-muted);">${formatRelativeTime(item.timestamp)}</span>
+            <span style="font-size:10.5px;color:var(--text-muted);">${formatRelativeTime(item.timestamp)}</span>
           </div>
           <div class="inbox-card-meta">
             <span class="meta-tag ${isComp ? 'comp' : ''}">${item.nodeType}</span>
             <span class="meta-tag">${item.width} × ${item.height} px</span>
             <span class="meta-tag">${item.nodeCount} capas</span>
             ${item.tokensCount > 0 ? `<span class="meta-tag token">${item.tokensCount} tokens</span>` : ''}
-            <span style="color:#64748b;margin-left:auto;">${escapeHtml(item.pageName || 'Actual')}</span>
+            <span style="color:var(--text-dim);margin-left:auto;">${escapeHtml(item.pageName || 'Actual')}</span>
           </div>
           <div class="inbox-card-actions">
-            <button class="card-btn primary" onclick="focusCanvasNode('${item.id}')" title="Centrar y seleccionar en Figma">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="7"/><line x1="12" y1="1" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="1" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="23" y2="12"/></svg>
+            <button type="button" class="card-btn primary" data-action="focus" title="Centrar y seleccionar en Figma">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="7"/><line x1="12" y1="1" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="1" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="23" y2="12"/></svg>
               Enfocar
             </button>
             ${!isComp ? `
-              <button class="card-btn" onclick="convertToComponent('${item.id}')" title="Convertir a Componente oficial">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+              <button type="button" class="card-btn" data-action="convert" title="Convertir a Componente oficial">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
                 A Componente
               </button>
             ` : ''}
             ${item.rawPayload ? `
-              <button class="card-btn" onclick="reRenderItem('${item.id}')" title="Re-dibujar este componente en el lienzo">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+              <button type="button" class="card-btn" data-action="rerender" title="Re-dibujar este componente en el lienzo">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
                 Re-renderizar
               </button>
             ` : ''}
-            <button class="card-btn danger" onclick="deleteInboxItem('${item.id}')" title="Borrar este componente del receptor y del lienzo de Figma">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+            <button type="button" class="card-btn danger" data-action="delete" title="Borrar este componente del receptor y del lienzo de Figma">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
               Borrar
             </button>
           </div>
         `;
+        card.querySelector('[data-action="focus"]')?.addEventListener('click', () => focusCanvasNode(item.id));
+        card.querySelector('[data-action="convert"]')?.addEventListener('click', () => convertToComponent(item.id));
+        card.querySelector('[data-action="rerender"]')?.addEventListener('click', () => reRenderItem(item.id));
+        card.querySelector('[data-action="delete"]')?.addEventListener('click', () => deleteInboxItem(item.id));
         inboxList.appendChild(card);
       }
     }
@@ -2318,6 +2922,7 @@
       // 2. Remover del estado local del plugin
       receivedItems = receivedItems.filter(i => i.id !== id);
       badgeReceiverCount.textContent = receivedItems.length;
+      updateMiniBadge();
       saveReceivedItemsToStorage();
       renderInboxFeed();
 
@@ -2325,15 +2930,21 @@
       log(`Eliminando "${name}" del lienzo de Figma…`, 'info');
     }
 
-    function clearAllInboxItems() {
+    async function clearAllInboxItems() {
       if (receivedItems.length === 0) return;
-      if (!confirm(`¿Deseas eliminar los ${receivedItems.length} componentes de esta lista y del lienzo de Figma?`)) return;
+      const ok = await showConfirmModal(
+        'Borrar historial y capas',
+        `¿Deseas eliminar los ${receivedItems.length} componentes de esta lista y del lienzo de Figma?`,
+        'Borrar todo'
+      );
+      if (!ok) return;
 
       const nodeIds = receivedItems.flatMap(i => (Array.isArray(i.nodeIds) && i.nodeIds.length ? i.nodeIds : [i.id]));
       parent.postMessage({ pluginMessage: { type: 'DELETE_MULTIPLE_NODES', nodeIds } }, '*');
 
       receivedItems = [];
       badgeReceiverCount.textContent = '0';
+      updateMiniBadge();
       saveReceivedItemsToStorage();
       renderInboxFeed();
       log('Eliminando todos los envíos del lienzo de Figma…', 'info');
@@ -2585,7 +3196,7 @@
       const txtKey = document.getElementById('txtGeminiKey');
       if (txtKey) txtKey.value = s.geminiApiKey;
       const selModel = document.getElementById('selGeminiModel');
-      if (selModel) selModel.value = s.geminiModel || 'gemini-2.5-flash';
+      if (selModel) setCustomSelectValue('selGeminiModel', s.geminiModel || 'gemini-2.5-flash');
       document.getElementById('txtFontMap').value = formatFontMap(s.fontMap);
       if (socket && socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({
@@ -2676,33 +3287,49 @@
 
       if (btnApply) btnApply.style.display = 'block';
 
-      const figmaOptions = availableFigmaFonts.length > 0
-        ? availableFigmaFonts.map(f => `<option value="${escapeHtml(f.family)}">${escapeHtml(f.family)}</option>`).join('')
-        : `<option value="Inter">Inter (Por defecto)</option>
-           <option value="Roboto">Roboto</option>
-           <option value="Open Sans">Open Sans</option>
-           <option value="Poppins">Poppins</option>
-           <option value="Montserrat">Montserrat</option>`;
+      const families = availableFigmaFonts.length > 0
+        ? availableFigmaFonts.map(f => f.family)
+        : ['Inter', 'Roboto', 'Open Sans', 'Poppins', 'Montserrat'];
 
-      let html = '';
-      detectedPageFonts.forEach((info, fontFam) => {
-        html += `
-          <div class="detected-font-card" style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px;">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-              <span style="font-size: 11px; font-weight: 700; color: #f1f5f9;">${escapeHtml(fontFam)}</span>
-              <span style="font-size: 9.5px; color: var(--accent); background: rgba(56, 189, 248, 0.1); padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.2);">${info.count} capas</span>
-            </div>
-            <div style="display: flex; align-items: center; gap: 6px; margin-top: 2px;">
-              <span style="font-size: 9.5px; color: var(--text-dim); white-space: nowrap;">Sustituir por:</span>
-              <select class="font-replace-select" data-from-font="${escapeHtml(fontFam)}" style="flex: 1; padding: 5px 8px; font-size: 10.5px; border-radius: 5px; border: 1px solid var(--border); background: var(--bg); color: var(--text); outline: none;">
-                <option value="">(Conservar original si está instalada)</option>
-                ${figmaOptions}
-              </select>
+      const checkSvg = '<svg class="ctf-select-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>';
+      const optionsMarkup = [
+        `<button type="button" class="ctf-select-option selected" data-value="" data-label="Conservar original si está instalada"><span>Conservar original si está instalada</span>${checkSvg}</button>`,
+        ...families.map(
+          fam => `<button type="button" class="ctf-select-option" data-value="${escapeHtml(fam)}" data-label="${escapeHtml(fam)}"><span>${escapeHtml(fam)}</span>${checkSvg}</button>`
+        )
+      ].join('');
+
+      container.innerHTML = '';
+      const entries = Array.from(detectedPageFonts.entries());
+      entries.forEach(([fontFam, info], idx) => {
+        const card = document.createElement('div');
+        card.className = 'detected-font-card';
+        card.style.cssText = 'background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 10px 12px; display: flex; flex-direction: column; gap: 7px;';
+        const dropUp = entries.length > 1 && idx >= entries.length - 1 ? ' drop-up' : '';
+        card.innerHTML = `
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 12px; font-weight: 700; color: #f1f5f9;">${escapeHtml(fontFam)}</span>
+            <span style="font-size: 10.5px; color: #c4b5fd; background: rgba(139, 92, 246, 0.14); padding: 2px 7px; border-radius: 999px; border: 1px solid rgba(139, 92, 246, 0.28); font-weight: 600;">${info.count} capas</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 11px; color: var(--text-muted); white-space: nowrap;">Sustituir por:</span>
+            <div class="ctf-select${dropUp}" style="flex: 1;">
+              <input type="hidden" class="font-replace-select" data-from-font="${escapeHtml(fontFam)}" value="" />
+              <button type="button" class="ctf-select-trigger" aria-haspopup="listbox" aria-expanded="false">
+                <span class="ctf-select-value">Conservar original si está instalada</span>
+                <span class="ctf-select-caret" aria-hidden="true">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="6 9 12 15 18 9"/></svg>
+                </span>
+              </button>
+              <div class="ctf-select-menu" role="listbox">
+                <input type="text" class="ctf-select-search" placeholder="Buscar fuente en Figma..." autocomplete="off" />
+                <div class="ctf-select-options">${optionsMarkup}</div>
+              </div>
             </div>
           </div>`;
+        container.appendChild(card);
+        initCustomSelect(card.querySelector('.ctf-select'));
       });
-
-      container.innerHTML = html;
     }
 
     function applyFontReplacement() {
@@ -2779,11 +3406,14 @@
           if (info && info.family) {
             resBox.style.display = 'block';
             resBox.innerHTML = `
-              <div style="font-weight: 700; color: #38bdf8; margin-bottom: 3px;">✓ Archivo Identificado: ${escapeHtml(info.family)}</div>
+              <div style="font-weight: 700; color: #38bdf8; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                Archivo Identificado: ${escapeHtml(info.family)}
+              </div>
               <div><strong>Familia:</strong> ${escapeHtml(info.family)}</div>
               <div><strong>Estilo:</strong> ${escapeHtml(info.subfamily || 'Regular')}</div>
-              <div style="margin-top: 6px; font-size: 9.5px; color: #94a3b8; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 6px;">
-                💡 <strong>Para usarla en Figma:</strong> Instálala en tu sistema operativo (haz doble clic en el archivo <code>${escapeHtml(file.name)}</code> e "Instalar"). Luego presiona el botón <em>Refrescar Fuentes</em> abajo.
+              <div style="margin-top: 7px; font-size: 11px; color: #cbd5e1; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 7px;">
+                <strong>Para usarla en Figma:</strong> Instálala en tu sistema operativo (haz doble clic en <code>${escapeHtml(file.name)}</code> e "Instalar") y luego pulsa <em>Refrescar Fuentes</em>.
               </div>`;
             log(`Fuente inspeccionada: "${info.family}" (${info.subfamily || 'Regular'}).`, 'success');
           } else {
@@ -3096,6 +3726,12 @@
     }
 
     // ── Inicialización ──
+    initCustomSelect(document.getElementById('customSelGeminiModel'), () => savePluginSettings());
+    document.addEventListener('click', () => closeAllCustomSelects());
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') closeAllCustomSelects();
+    });
+    updateMiniBadge();
     applyPluginSettingsToUI();
     loadReceivedItemsFromStorage();
     parent.postMessage({ pluginMessage: { type: 'GET_PAGE_INFO' } }, '*');
